@@ -39,6 +39,13 @@ test('override template replaces template stops and suffixFirst', () => {
   expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES.codestral.stop, 'X']);
   expect(p.suffixFirst).toBe(true);
 });
+test('maxTokensOverride is set only when a matching override supplies sampling.maxTokens', () => {
+  expect(resolvePreset('qwen2.5-coder', {}).maxTokensOverride).toBeUndefined();
+  expect(resolvePreset('qwen2.5-coder', { coder: { sampling: { temperature: 0 } } }).maxTokensOverride).toBeUndefined();
+  expect(resolvePreset('qwen2.5-coder', { coder: { sampling: { maxTokens: 64 } } }).maxTokensOverride).toBe(64);
+  expect(resolvePreset('starcoder2-7b', { qwen: { sampling: { maxTokens: 64 } } }).maxTokensOverride).toBeUndefined();
+  expect(resolvePreset('qwen2.5-coder', { qwen: { sampling: { maxTokens: 64 } }, coder: { sampling: { maxTokens: 512 } } }).maxTokensOverride).toBe(512);
+});
 test('matching is case-insensitive', () => expect(resolvePreset('MY-FT', { 'my-ft': { fimTemplate: 'mellum' } }).fimTemplate).toBe('mellum'));
 test('invalid override regex is skipped', () => expect(() => resolvePreset('x', { '(': {} })).not.toThrow());
 test('results are copies', () => {

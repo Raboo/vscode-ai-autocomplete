@@ -108,6 +108,14 @@ describe('buildFimRequest', () => {
     expect(tokens(false, 30)).toBe(30);
   });
 
+  test('a per-model maxTokens override replaces fim.maxTokens; single-line still caps it at 48', () => {
+    const tokens = (maxTokensOverride: number, multiline: boolean, maxTokens: number) =>
+      buildFimRequest({ route: 'native', preset: { ...P('qwen'), maxTokensOverride }, model: undefined, multiline, maxTokens, input, signal }).sampling.maxTokens;
+    expect(tokens(64, true, 256)).toBe(64);
+    expect(tokens(512, true, 128)).toBe(512);
+    expect(tokens(512, false, 128)).toBe(48);
+  });
+
   test('an unknown model is left out of the request', () => {
     const req = buildFimRequest({ route: 'native', preset: P(), model: undefined, multiline: true, maxTokens: 128, input, signal });
     expect('model' in req).toBe(false);

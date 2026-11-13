@@ -144,7 +144,7 @@
           "type": "number",
           "default": 128,
           "scope": "resource",
-          "markdownDescription": "Maximum number of tokens to generate per completion."
+          "markdownDescription": "Maximum number of tokens to generate per completion. A `sampling.maxTokens` in `#aiAutocomplete.modelOverrides#` replaces it for matching models."
         },
         "aiAutocomplete.fim.prefixLines": {
           "type": "number",

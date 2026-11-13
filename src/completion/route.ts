@@ -56,7 +56,7 @@ export interface FimRequestPlan {
   preset: ResolvedPreset;
   model: string | undefined;
   multiline: boolean;
-  /** `fim.maxTokens` from settings; overrides the preset's value. */
+  /** `fim.maxTokens` from settings; a per-model override (`preset.maxTokensOverride`) replaces it. */
   maxTokens: number;
   input: TemplateInput;
   signal: AbortSignal;
@@ -64,6 +64,8 @@ export interface FimRequestPlan {
 
 export function buildFimRequest(p: FimRequestPlan): FimRequest {
   const { preset, input } = p;
+  // A modelOverrides maxTokens is more specific than fim.maxTokens; built-in preset values never cap it.
+  const budget = preset.maxTokensOverride ?? p.maxTokens;
   let payload: FimRequest['payload'];
   if (p.route === 'native') {
     payload = { route: 'native', ...input };
@@ -75,7 +77,7 @@ export function buildFimRequest(p: FimRequestPlan): FimRequest {
     ...(p.model !== undefined ? { model: p.model } : {}),
     payload,
     stop: preset.stop,
-    sampling: { ...preset.sampling, maxTokens: p.multiline ? p.maxTokens : Math.min(p.maxTokens, SINGLE_LINE_MAX_TOKENS) },
+    sampling: { ...preset.sampling, maxTokens: p.multiline ? budget : Math.min(budget, SINGLE_LINE_MAX_TOKENS) },
     timeMaxPredictMs: TIME_MAX_PREDICT_MS,
     extraBody: preset.extraBody,
     signal: p.signal,

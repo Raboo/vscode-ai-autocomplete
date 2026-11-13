@@ -1,7 +1,16 @@
 import type { FimTemplateId, ModelOverrideBody, Sampling } from '../types';
 import { TEMPLATES } from './templates';
 
-export interface ResolvedPreset { id: string; fimTemplate?: FimTemplateId; suffixFirst: boolean; stop: string[]; sampling: Sampling; extraBody: Record<string, unknown> }
+export interface ResolvedPreset {
+  id: string;
+  fimTemplate?: FimTemplateId;
+  suffixFirst: boolean;
+  stop: string[];
+  sampling: Sampling;
+  extraBody: Record<string, unknown>;
+  /** `sampling.maxTokens` from a matching modelOverrides entry; it replaces `fim.maxTokens` (built-in values never do). */
+  maxTokensOverride?: number;
+}
 
 interface Preset { id: string; re: RegExp; fimTemplate?: FimTemplateId; sampling: Sampling }
 
@@ -50,6 +59,7 @@ export function resolvePreset(modelId: string, overrides: Record<string, ModelOv
       out.stop = templateStops(body.fimTemplate);
     }
     if (body.sampling) out.sampling = { ...out.sampling, ...body.sampling };
+    if (body.sampling?.maxTokens !== undefined) out.maxTokensOverride = body.sampling.maxTokens;
     if (body.stop) out.stop = [...new Set([...out.stop, ...body.stop])];
     if (body.extraBody) out.extraBody = { ...out.extraBody, ...body.extraBody };
   }

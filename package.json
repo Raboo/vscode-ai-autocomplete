@@ -242,6 +242,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.retry",
+        "title": "Retry Now",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.showLog",
         "title": "Show Log",
         "category": "AI Autocomplete"

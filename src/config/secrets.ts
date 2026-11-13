@@ -13,4 +13,10 @@ export class Secrets {
   async delete(id: string): Promise<void> {
     await this.s.delete(PREFIX + id);
   }
+  /** Fires with the backend id when its API key is stored or deleted (in any window). */
+  onDidChange(listener: (id: string) => void): vscode.Disposable {
+    return this.s.onDidChange((e) => {
+      if (e.key.startsWith(PREFIX)) listener(e.key.slice(PREFIX.length));
+    });
+  }
 }

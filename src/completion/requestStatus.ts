@@ -1,4 +1,4 @@
-import type { ErrorBackoff } from '../backends/backoff';
+import type { BackoffState, ErrorBackoff } from '../backends/backoff';
 import { HttpError, type ErrorClass } from '../backends/http';
 import { REQUEST_TIMEOUT_MS } from './route';
 
@@ -59,6 +59,11 @@ export function describeFailure(err: unknown, cls: ErrorClass): string {
   return 'request failed';
 }
 
+/** "retrying in N s" while the backend backs off; undefined when it may be tried now or is stopped for good. */
+export function retryHint(state: BackoffState, now: number): string | undefined {
+  return state.kind === 'backoff' ? `retrying in ${Math.ceil((state.until - now) / 1000)} s` : undefined;
+}
+
 /**
  * Records a failure in the backend's backoff. Returns the status detail, plus a warn line only when the
  * backoff state changed (one log line per transition, not one per keystroke). The server's error body is
@@ -77,8 +82,7 @@ export function recordBackendFailure(
   const after = backoff.state();
   const detail = `${backendId}: ${describeFailure(err, cls)}`;
   if (after.kind === before) return { detail };
-  const next =
-    after.kind === 'fatal' ? 'requests stopped until the settings change' : after.kind === 'backoff' ? `retrying in ${Math.ceil((after.until - now) / 1000)} s` : 'retrying';
+  const next = after.kind === 'fatal' ? 'requests stopped until the API key or settings change, or "Retry now"' : (retryHint(after, now) ?? 'retrying');
   const body = logBody && err instanceof HttpError && err.bodyText ? ` ${JSON.stringify(err.bodyText.slice(0, 200))}` : '';
   return { detail, warn: `${detail}${body}; ${next}` };
 }

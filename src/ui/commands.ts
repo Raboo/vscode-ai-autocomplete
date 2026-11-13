@@ -3,6 +3,7 @@ import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
 import { readSettings } from '../config/vscodeSettings';
 import type { StatusBar } from './statusBar';
+import { menuEntries } from './statusModel';
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -19,16 +20,9 @@ export interface CommandDeps {
   snooze: Snooze;
   channel: vscode.OutputChannel;
   log: Log;
+  /** Clears every backend's backoff and shows idle, so the next keystroke sends a request. */
+  retry(): void;
 }
-
-const MENU: { label: string; command: string }[] = [
-  { label: 'Toggle completions on/off', command: 'aiAutocomplete.toggle' },
-  { label: 'Snooze...', command: 'aiAutocomplete.snooze' },
-  { label: 'Select backend...', command: 'aiAutocomplete.selectBackend' },
-  { label: 'Set API key...', command: 'aiAutocomplete.setApiKey' },
-  { label: 'Show log', command: 'aiAutocomplete.showLog' },
-  { label: 'About', command: 'aiAutocomplete.about' },
-];
 
 async function pickBackend(placeHolder: string): Promise<string | undefined> {
   const ids = readSettings().settings.backends.map((b) => b.id);
@@ -44,9 +38,10 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   const reg = (id: string, fn: (...args: unknown[]) => unknown): vscode.Disposable => vscode.commands.registerCommand(`aiAutocomplete.${id}`, fn);
   return [
     reg('menu', async () => {
-      const pick = await vscode.window.showQuickPick(MENU, { placeHolder: 'AI Autocomplete' });
-      if (pick) await vscode.commands.executeCommand(pick.command);
+      const pick = await vscode.window.showQuickPick(menuEntries(d.status.state()), { placeHolder: 'AI Autocomplete' });
+      if (pick) await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),
+    reg('retry', () => d.retry()),
     reg('toggle', async () => {
       const on = readSettings().settings.fim.enabled;
       await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.enabled', !on, vscode.ConfigurationTarget.Global);

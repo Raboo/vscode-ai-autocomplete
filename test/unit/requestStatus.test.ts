@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { ErrorBackoff } from '../../src/backends/backoff';
 import { classifyError, HttpError } from '../../src/backends/http';
-import { describeFailure, RequestStatus, recordBackendFailure, type StatusSink } from '../../src/completion/requestStatus';
+import { describeFailure, RequestStatus, recordBackendFailure, retryHint, type StatusSink } from '../../src/completion/requestStatus';
 
 function sink(): StatusSink & { calls: [string, string | undefined][] } {
   const calls: [string, string | undefined][] = [];
@@ -107,7 +107,7 @@ describe('recordBackendFailure', () => {
     const err = new HttpError(401, '{"error":"bad key"}', 'https://x/v1/completions');
     const r = recordBackendFailure(b, 'cloud', err, classifyError(err), false, 0);
     expect(r.detail).toBe('cloud: HTTP 401');
-    expect(r.warn).toBe('cloud: HTTP 401; requests stopped until the settings change');
+    expect(r.warn).toBe('cloud: HTTP 401; requests stopped until the API key or settings change, or "Retry now"');
     expect(b.state()).toEqual({ kind: 'fatal', status: 401 });
   });
 
@@ -125,6 +125,25 @@ describe('recordBackendFailure', () => {
     const r = recordBackendFailure(b, 'local', new DOMException('aborted', 'AbortError'), { kind: 'abort' }, false, 0);
     expect(r.warn).toBeUndefined();
     expect(b.canRequest()).toBe(true);
+  });
+});
+
+describe('retryHint', () => {
+  test('counts the seconds left while the backend backs off, rounding up', () => {
+    expect(retryHint({ kind: 'backoff', until: 10_000 }, 0)).toBe('retrying in 10 s');
+    expect(retryHint({ kind: 'backoff', until: 10_000 }, 9_001)).toBe('retrying in 1 s');
+  });
+  test('reads the until of a real ErrorBackoff (open circuit: 5 min)', () => {
+    let now = 0;
+    const b = new ErrorBackoff(() => now);
+    for (let i = 0; i < 5; i++) b.recordFailure({ kind: 'network' });
+    expect(retryHint(b.state(), now)).toBe('retrying in 300 s');
+    now = 299_500;
+    expect(retryHint(b.state(), now)).toBe('retrying in 1 s');
+  });
+  test('nothing when the backend may be tried, or is stopped for good', () => {
+    expect(retryHint({ kind: 'ok' }, 0)).toBeUndefined();
+    expect(retryHint({ kind: 'fatal', status: 401 }, 0)).toBeUndefined();
   });
 });
 

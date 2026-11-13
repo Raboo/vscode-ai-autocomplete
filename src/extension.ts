@@ -98,12 +98,26 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   });
   sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
 
+  // A new (or deleted) key may fix a 401/403 that stopped requests to that backend.
+  sub(
+    secrets.onDidChange((id) => {
+      backoffs.get(id)?.reset();
+      if (id === settings.fim.backendId) provider.clearError();
+      log.info(`backend "${id}": API key changed`);
+    }),
+  );
+
   for (const d of registerCommands({
     context,
     status,
     secrets,
     channel,
     log,
+    retry: () => {
+      for (const b of backoffs.values()) b.reset();
+      provider.clearError();
+      log.info('retry: backoffs cleared');
+    },
     snooze: {
       get: snoozedUntil,
       set: async (until, persist) => {

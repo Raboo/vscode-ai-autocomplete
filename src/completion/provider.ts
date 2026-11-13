@@ -11,7 +11,7 @@ import { buildFimWindow, DEFAULT_WINDOW, type ExtraContextRing } from './context
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
-import { recordBackendFailure, RequestStatus, type Outcome, type StatusSink } from './requestStatus';
+import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
 import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
@@ -59,14 +59,26 @@ interface Spot {
   backendId: string;
 }
 
+/** A failure's status detail, plus "retrying in N s" while the backend backs off. */
+function withRetry(detail: string, backoff: ErrorBackoff): string {
+  const hint = retryHint(backoff.state(), Date.now());
+  return hint ? `${detail}; ${hint}` : detail;
+}
+
 export class FimProvider implements vscode.InlineCompletionItemProvider {
   private readonly models = new WeakMap<FimBackend, string>();
   private readonly logged = new Set<string>();
-  private readonly failing = new Set<string>();
+  /** Backends whose last request failed, with the failure's status detail. */
+  private readonly failing = new Map<string, string>();
   private readonly requests: RequestStatus;
 
   constructor(private readonly d: FimDeps) {
     this.requests = new RequestStatus(d.status);
+  }
+
+  /** Shows idle again (after "Retry now" or an API key change); a request still running reports its own outcome. */
+  clearError(): void {
+    this.requests.report({ state: 'idle' });
   }
 
   async provideInlineCompletionItems(
@@ -127,7 +139,12 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       return [];
     }
     const backoff = this.d.backoff(id);
-    if (!backoff.canRequest()) return [];
+    if (!backoff.canRequest()) {
+      // Refresh the countdown in the error detail.
+      const failure = this.failing.get(id);
+      if (failure !== undefined) this.requests.report({ state: 'error', detail: withRetry(failure, backoff) });
+      return [];
+    }
 
     const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: s.fim.prefixLines, suffixLines: s.fim.suffixLines, ...DEFAULT_WINDOW });
     const uri = doc.uri.toString();
@@ -241,9 +258,9 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     else this.d.log.debug(detail);
     // Error messages can quote server output, so the raw one is logged only with logPrompts.
     if (j.logPrompts && err instanceof Error) this.d.log.debug(`${id}: raw error: ${err.message}`);
-    this.failing.add(id);
+    this.failing.set(id, detail);
     this.models.delete(j.backend); // the server may have restarted with another model
-    return { state: 'error', detail };
+    return { state: 'error', detail: withRetry(detail, j.backoff) };
   }
 
   /** Model id from settings, else detected once per backend instance (only a detected id is remembered). */

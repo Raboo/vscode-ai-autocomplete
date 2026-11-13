@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { displayState } from '../../src/ui/statusModel';
+import { displayState, menuEntries } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -16,6 +16,18 @@ describe('displayState', () => {
   });
   test('until-restart snooze stays snoozed', () => {
     expect(displayState(true, Number.MAX_SAFE_INTEGER, Date.now(), last).state).toBe('snoozed');
+  });
+});
+
+describe('menuEntries', () => {
+  const ids = (state: Parameters<typeof menuEntries>[0]) => menuEntries(state).map((e) => e.id);
+  test('lists Retry now first while the status is error', () => {
+    expect(menuEntries('error')[0]).toEqual({ label: 'Retry now', id: 'retry' });
+    expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);
+  });
+  test('lists Retry now after the setup entries otherwise', () => {
+    expect(ids('idle')).toEqual(['toggle', 'snooze', 'selectBackend', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('loading')).toEqual(ids('idle'));
   });
 });
 

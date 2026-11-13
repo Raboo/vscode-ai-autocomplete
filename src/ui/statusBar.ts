@@ -39,6 +39,11 @@ export class StatusBar implements StatusSink, vscode.Disposable {
     return this.shown.detail ? `${this.shown.state}: ${this.shown.detail}` : this.shown.state;
   }
 
+  /** The displayed state. */
+  state(): StatusState {
+    return this.shown.state;
+  }
+
   set(state: StatusState, detail?: string): void {
     this.last = { state, detail };
     this.refresh();

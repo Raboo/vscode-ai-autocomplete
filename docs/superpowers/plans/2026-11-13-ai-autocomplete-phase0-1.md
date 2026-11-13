@@ -998,7 +998,7 @@ Why each piece exists (put this reasoning in `AGENTS.md` section 7, one line eac
 - CodeQL scans the TypeScript on every PR and weekly.
 - `scripts/setup-github-repo.sh` records the repo settings these depend on, so they are reproducible and reviewable rather than clicked by hand.
 
-- [ ] **Step 1: Write failing `test/unit/repoAutomation.test.ts`** (read files with `node:fs`; no YAML parser dependency, use line/regex scans):
+- [x] **Step 1: Write failing `test/unit/repoAutomation.test.ts`** (read files with `node:fs`; no YAML parser dependency, use line/regex scans):
 
 ```ts
 test('every workflow action is pinned to a full commit SHA', () => {
@@ -1020,9 +1020,9 @@ test('setup script dry run prints the expected settings', () => {
 });
 ```
 
-- [ ] **Step 2: Run `npx vitest run test/unit/repoAutomation.test.ts`.** Expected: FAIL (files missing).
+- [x] **Step 2: Run `npx vitest run test/unit/repoAutomation.test.ts`.** Expected: FAIL (files missing).
 
-- [ ] **Step 3: release-please.**
+- [x] **Step 3: release-please.**
   - `release-please-config.json`: `$schema` `https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json`; `packages["."]`: `release-type: "node"`, `package-name: "ai-autocomplete"`, `include-component-in-tag: false`, `bump-minor-pre-major: true`, `changelog-path: "CHANGELOG.md"`; `changelog-sections` showing `feat` (Features), `fix` (Bug Fixes), `perf` (Performance), and hiding `docs`, `chore`, `test`, `ci`, `build`, `refactor`.
   - `.release-please-manifest.json`: `{ ".": "0.0.1" }`. The first release PR after Publish therefore proposes `0.1.0`.
   - `.github/workflows/release-please.yml`:
@@ -1031,7 +1031,7 @@ test('setup script dry run prints the expected settings', () => {
     - job `vsix` (`needs: release-please`, `if: needs.release-please.outputs.release_created == 'true'`, `permissions: contents: write`) checks out the tag, runs `npm ci`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`, `npm run package`, then `gh release upload "$TAG" ai-autocomplete-*.vsix --clobber` with `GH_TOKEN: ${{ github.token }}`.
   - Note for `AGENTS.md`: release PRs opened with the default token do not trigger CI, so the `check`/`integration` checks never report on them; either add a `RELEASE_PLEASE_TOKEN` secret (fine-grained PAT: contents + pull requests write on this repo) or merge release PRs with the admin bypass (`gh pr merge --admin`).
 
-- [ ] **Step 4: Dependabot.**
+- [x] **Step 4: Dependabot.**
   - `.github/dependabot.yml`, `version: 2`:
     - `npm` at `/`: weekly (Monday), `open-pull-requests-limit: 10`, `commit-message: { prefix: "chore(deps)", prefix-development: "chore(deps-dev)" }`, one group `dev-dependencies` (patterns `["*"]`, `update-types: [minor, patch]`), ignores: `@types/vscode` for `version-update:semver-minor` and `version-update:semver-major`; `typescript` for versions `[">=6.1.0"]`; `@types/node` for `version-update:semver-major`. A comment above each ignore says why (Global Constraints).
     - `github-actions` at `/`: weekly (Monday), `commit-message: { prefix: "ci(deps)" }`, one group `actions` (patterns `["*"]`).
@@ -1040,9 +1040,9 @@ test('setup script dry run prints the expected settings', () => {
     - one job with `if: github.event.pull_request.user.login == 'dependabot[bot]'`, runs `dependabot/fetch-metadata` (pinned), then `gh pr merge --auto --squash "$PR_URL"` only when `steps.meta.outputs.update-type` is `version-update:semver-patch` or `version-update:semver-minor`;
     - `--auto` waits for the ruleset's required checks, so nothing merges red.
 
-- [ ] **Step 5: CodeQL.** `.github/workflows/codeql.yml`: triggers `push` to `main`, `pull_request`, weekly `schedule`; top-level `permissions: contents: read`; job `analyze` with `permissions: security-events: write, contents: read, actions: read`, checkout, `github/codeql-action/init` (`languages: javascript-typescript`, `build-mode: none`), `github/codeql-action/analyze`. All pinned.
+- [x] **Step 5: CodeQL.** `.github/workflows/codeql.yml`: triggers `push` to `main`, `pull_request`, weekly `schedule`; top-level `permissions: contents: read`; job `analyze` with `permissions: security-events: write, contents: read, actions: read`, checkout, `github/codeql-action/init` (`languages: javascript-typescript`, `build-mode: none`), `github/codeql-action/analyze`. All pinned.
 
-- [ ] **Step 6: `scripts/setup-github-repo.sh`.** `set -euo pipefail`; `--dry-run` prints each command instead of running it; idempotent (safe to re-run). It applies:
+- [x] **Step 6: `scripts/setup-github-repo.sh`.** `set -euo pipefail`; `--dry-run` prints each command instead of running it; idempotent (safe to re-run). It applies:
   - `gh repo edit "$REPO" --enable-auto-merge --delete-branch-on-merge --enable-squash-merge --enable-merge-commit --enable-rebase-merge=false --add-topic vscode-extension,autocomplete,fim,llama-cpp,codestral`;
   - `gh api -X PUT repos/$REPO/actions/permissions/workflow -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true` (lets release-please open PRs);
   - `gh api -X PUT repos/$REPO/vulnerability-alerts` and `gh api -X PUT repos/$REPO/automated-security-fixes`;
@@ -1051,16 +1051,16 @@ test('setup script dry run prints the expected settings', () => {
     - `bypass_actors: [{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }]` (5 = repository admin, so the owner can still push and merge release PRs).
   - Run `bash -n scripts/setup-github-repo.sh`. If `shellcheck` is installed, run it too.
 
-- [ ] **Step 7: Validate workflows.** If Docker is available, run `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color` (or the latest `rhysd/actionlint` tag; record which). Expected: no errors. If Docker is unavailable, say so in the report.
+- [x] **Step 7: Validate workflows.** If Docker is available, run `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color` (or the latest `rhysd/actionlint` tag; record which). Expected: no errors. If Docker is unavailable, say so in the report.
 
-- [ ] **Step 8: Docs.**
+- [x] **Step 8: Docs.**
   - `AGENTS.md` section 7 **GitHub automation**: the four "why" lines above; the workflow list (`ci.yml`: `check` + `integration`; `release-please.yml`; `dependabot-automerge.yml`; `codeql.yml`); the release-PR/CI-token note from Step 3; how to cut a release (merge the open release-please PR); what needs a human (creating the `RELEASE_PLEASE_TOKEN` secret, Marketplace/Open VSX tokens in Phase 5, approving major dependency updates).
   - `docs/ROADMAP.md`: Phase 0–1 status "implemented; v0.1.0 ships after Publish"; under "Deferred manual checks": the Task 12 Step 4 smoke test and installing the released .vsix with `code --install-extension`.
   - `README.md`: a CI status badge for `ci.yml` under the title.
 
-- [ ] **Step 9: Run the tests.** `npm run lint && npm run typecheck && npm run build && npm test`. Expected: PASS.
+- [x] **Step 9: Run the tests.** `npm run lint && npm run typecheck && npm run build && npm test`. Expected: PASS.
 
-- [ ] **Step 10: Commit** with message `ci: release-please, Dependabot, CodeQL and repo settings script`.
+- [x] **Step 10: Commit** with message `ci: release-please, Dependabot, CodeQL and repo settings script`.
 
 ---
 

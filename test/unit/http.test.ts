@@ -1,0 +1,75 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, test } from 'vitest';
+import { classifyError, HttpError, joinUrl, postJson } from '../../src/backends/http';
+
+describe('joinUrl', () => {
+  test('joins with exactly one slash', () => {
+    expect(joinUrl('http://h:8000/v1/', '/completions')).toBe('http://h:8000/v1/completions');
+    expect(joinUrl('http://h', 'infill')).toBe('http://h/infill');
+  });
+});
+
+describe('classifyError', () => {
+  test('abort', () => {
+    expect(classifyError(new DOMException('x', 'AbortError'))).toEqual({ kind: 'abort' });
+    expect(classifyError(new DOMException('x', 'TimeoutError'))).toEqual({ kind: 'abort' });
+  });
+  test('http', () => {
+    expect(classifyError(new HttpError(429, '', ''))).toEqual({ kind: 'http', status: 429 });
+  });
+  test('network', () => {
+    expect(classifyError(new TypeError('fetch failed'))).toEqual({ kind: 'network' });
+  });
+});
+
+describe('postJson', () => {
+  let server: Server | undefined;
+  afterEach(async () => {
+    server?.closeAllConnections();
+    await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
+    server = undefined;
+  });
+
+  async function listen(handler: Parameters<typeof createServer>[1]): Promise<string> {
+    server = createServer(handler);
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+
+  test('sends JSON and returns the response on 200', async () => {
+    let seen = { ct: '', body: '' };
+    const base = await listen((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        seen = { ct: String(req.headers['content-type']), body };
+        res.end('ok');
+      });
+    });
+    const r = await postJson(base, { a: 1 }, { signal: new AbortController().signal, timeoutMs: 2000 });
+    expect(await r.text()).toBe('ok');
+    expect(seen).toEqual({ ct: 'application/json', body: '{"a":1}' });
+  });
+
+  test('500 rejects with HttpError carrying status and truncated body', async () => {
+    const base = await listen((_req, res) => {
+      res.statusCode = 500;
+      res.end('x'.repeat(2000));
+    });
+    const err = await postJson(base, {}, { signal: new AbortController().signal, timeoutMs: 2000 }).catch((e) => e);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(500);
+    expect((err as HttpError).bodyText).toHaveLength(500);
+    expect((err as HttpError).url).toBe(base);
+  });
+
+  test('timeout rejects and classifies as abort', async () => {
+    const base = await listen(() => {
+      /* never answers */
+    });
+    const err = await postJson(base, {}, { signal: new AbortController().signal, timeoutMs: 50 }).catch((e) => e);
+    expect(err).toBeDefined();
+    expect(classifyError(err)).toEqual({ kind: 'abort' });
+  });
+});

@@ -534,7 +534,7 @@ test('HTTP 503 surfaces as HttpError', async () => {});
   - `isHostedFlavor(f: HostFlavor): boolean`, false for `llamacpp, vllm, sglang, lmstudio, ollama, strata`;
   - `class OpenAiCompatBackend implements FimBackend { constructor(config: BackendConfig, apiKey: ApiKeyProvider) }`.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   - `hostFlavor.test.ts`:
     - an explicit `hostFlavor` wins;
     - `api.deepseek.com` → `deepseek`;
@@ -560,17 +560,17 @@ test('hosted flavors cap stop list at 4', async () => { /* deepseek with 6 stops
 test('supportsNativeFim only for deepseek and ollama', () => {});
 ```
 
-- [ ] **Step 2: Run the tests.** Expected: FAIL.
+- [x] **Step 2: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 3: Implement both modules.**
+- [x] **Step 3: Implement both modules.**
   - Endpoint: `joinUrl(baseUrl, 'completions')` (the baseUrl contains `/v1`).
   - Sampling: `top_k` only when `!isHostedFlavor`.
   - Send `Authorization: Bearer` when a key exists, and merge `config.headers`.
   - `detectModel` uses `GET models` and returns `data[0].id`, or `undefined` if there is more than one model or any error.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit** with message `feat: OpenAI-compatible completions backend`.
+- [x] **Step 5: Commit** with message `feat: OpenAI-compatible completions backend`.
 
 ---
 

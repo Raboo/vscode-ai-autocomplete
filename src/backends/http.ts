@@ -40,8 +40,12 @@ export function joinUrl(base: string, path: string): string {
 
 export function classifyError(err: unknown): ErrorClass {
   const name = (err as { name?: unknown } | null)?.name;
-  if (name === 'AbortError' || name === 'TimeoutError') {
+  if (name === 'AbortError') {
     return { kind: 'abort' };
+  }
+  // A timeout means the backend is unresponsive, so it counts as a failure (not a user cancel).
+  if (name === 'TimeoutError') {
+    return { kind: 'network' };
   }
   if (err instanceof HttpError) {
     return { kind: 'http', status: err.status };

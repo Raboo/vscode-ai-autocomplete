@@ -13,7 +13,9 @@ describe('joinUrl', () => {
 describe('classifyError', () => {
   test('abort', () => {
     expect(classifyError(new DOMException('x', 'AbortError'))).toEqual({ kind: 'abort' });
-    expect(classifyError(new DOMException('x', 'TimeoutError'))).toEqual({ kind: 'abort' });
+  });
+  test('timeout is a network failure', () => {
+    expect(classifyError(new DOMException('x', 'TimeoutError'))).toEqual({ kind: 'network' });
   });
   test('http', () => {
     expect(classifyError(new HttpError(429, '', ''))).toEqual({ kind: 'http', status: 429 });
@@ -64,12 +66,22 @@ describe('postJson', () => {
     expect((err as HttpError).url).toBe(base);
   });
 
-  test('timeout rejects and classifies as abort', async () => {
+  test('timeout rejects and classifies as network', async () => {
     const base = await listen(() => {
       /* never answers */
     });
     const err = await postJson(base, {}, { signal: new AbortController().signal, timeoutMs: 50 }).catch((e) => e);
     expect(err).toBeDefined();
-    expect(classifyError(err)).toEqual({ kind: 'abort' });
+    expect(classifyError(err)).toEqual({ kind: 'network' });
+  });
+
+  test('caller abort rejects and classifies as abort', async () => {
+    const base = await listen(() => {
+      /* never answers */
+    });
+    const ac = new AbortController();
+    const p = postJson(base, {}, { signal: ac.signal, timeoutMs: 5000 }).catch((e) => e);
+    setTimeout(() => ac.abort(), 30);
+    expect(classifyError(await p)).toEqual({ kind: 'abort' });
   });
 });

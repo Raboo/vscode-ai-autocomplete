@@ -390,7 +390,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   - each header line has a `:`.
 - **Warnings:** a hosted type whose merged stop list is longer than 4 adds `only the first 4 stop sequences are sent`.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   ```ts
   // serverTypes.test.ts
   test('table matches the spec', () => { /* lmstudio → openai/lmstudio http://127.0.0.1:1234/v1 key 'no'; mistral → mistral, codestral-latest, key 'yes' */ });
@@ -410,10 +410,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   test('upsert on a non-array setting starts a new list', () => {});
   test('planRename moves the key and the user fim.backend, warns for a workspace one', () => {});
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** the three modules.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: backend form model and server types`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** the three modules.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: backend form model and server types`.
 
 ### Task 5: Connection test runner
 

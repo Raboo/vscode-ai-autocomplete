@@ -296,7 +296,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
 - **Mistral:** no network. It returns `{ models: [fimModel ?? 'codestral-latest'], contextWindows: {} }`.
 - **`detectModel` keeps its contract:** the single listed model, else `undefined`, never throwing. It is reimplemented on top of `listModels` for llama.cpp and OpenAI-compatible backends.
 
-- [ ] **Step 1: Write failing tests** with the existing `startMockHttp` helper.
+- [x] **Step 1: Write failing tests** with the existing `startMockHttp` helper.
   ```ts
   // http.test.ts
   test('getJson throws HttpError on 302 without following it', () => {});
@@ -313,10 +313,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   // mistral.test.ts
   test('listModels makes no request and returns the configured model', () => {});
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** `getJson` and the three `listModels` methods, then move `detectModel` onto `listModels`.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: backends list their models and context windows`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** `getJson` and the three `listModels` methods, then move `detectModel` onto `listModels`.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: backends list their models and context windows`.
 
 ### Task 4: Message protocol, server types and the form model
 

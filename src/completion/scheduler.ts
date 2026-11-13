@@ -108,6 +108,13 @@ export class InFlight {
     result.then(remove, remove);
   }
 
+  /** Aborts every running request (e.g. after a settings change); like abortAll, without a reason. */
+  abortEverything(): void {
+    const all = this.flights;
+    this.flights = [];
+    for (const f of all) f.ctl.abort();
+  }
+
   abortAll(uri: string): void {
     const mine = this.flights.filter((f) => f.uri === uri);
     this.flights = this.flights.filter((f) => f.uri !== uri);

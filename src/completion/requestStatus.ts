@@ -2,8 +2,10 @@ import type { BackoffState, ErrorBackoff } from '../backends/backoff';
 import { HttpError, type ErrorClass } from '../backends/http';
 import { REQUEST_TIMEOUT_MS } from './route';
 
-export type StatusState = 'idle' | 'loading' | 'error' | 'disabled' | 'snoozed';
-export interface StatusSink { set(state: StatusState, detail?: string): void }
+/** What a request leaves the status in. `disabled` and `snoozed` are derived from the settings by the status bar. */
+export type RequestState = 'idle' | 'loading' | 'error';
+export type StatusState = RequestState | 'disabled' | 'snoozed';
+export interface StatusSink { set(state: RequestState, detail?: string): void }
 
 /** How a finished request leaves the status; undefined (a cancel) keeps the previous outcome. */
 export type Outcome = { state: 'idle' } | { state: 'error'; detail: string };

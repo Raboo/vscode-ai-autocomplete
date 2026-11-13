@@ -104,6 +104,21 @@ describe("InFlight", () => {
     expect(f.find(U, "b", S)).toBeUndefined();
   });
 
+  test("abortEverything aborts every flight, without a reason, and forgets them", () => {
+    const f = new InFlight();
+    const a = new AbortController();
+    const b = new AbortController();
+    const spy = vi.spyOn(a, "abort");
+    f.add(U, "a", S, new Promise(() => {}), a);
+    f.add("file:///b.ts", "a", S, new Promise(() => {}), b);
+    f.abortEverything();
+    expect(a.signal.aborted).toBe(true);
+    expect(b.signal.aborted).toBe(true);
+    expect(spy).toHaveBeenCalledWith();
+    expect(f.find(U, "a", S)).toBeUndefined();
+    expect(f.find("file:///b.ts", "a", S)).toBeUndefined();
+  });
+
   test("abortAll aborts controllers for that uri only, without a reason", () => {
     const f = new InFlight();
     const a = new AbortController();

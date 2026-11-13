@@ -9,10 +9,11 @@ export function displayState(enabled: boolean, snoozedUntil: number, now: number
   return last;
 }
 
-/** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`). */
+/** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */
 export interface MenuEntry { label: string; id: string }
 
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
+const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MENU: MenuEntry[] = [
   { label: 'Toggle completions on/off', id: 'toggle' },
   { label: 'Snooze...', id: 'snooze' },
@@ -23,7 +24,9 @@ const MENU: MenuEntry[] = [
   { label: 'About', id: 'about' },
 ];
 
-/** The status bar menu for the shown state: while it is an error, "Retry now" comes first. */
+/** The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed. */
 export function menuEntries(shown: StatusState): MenuEntry[] {
-  return shown === 'error' ? [RETRY, ...MENU.filter((e) => e !== RETRY)] : [...MENU];
+  if (shown === 'error') return [RETRY, ...MENU.filter((e) => e !== RETRY)];
+  if (shown === 'snoozed') return [RESUME, ...MENU];
+  return [...MENU];
 }

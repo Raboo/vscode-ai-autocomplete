@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { StatusSink, StatusState } from '../completion/requestStatus';
+import type { RequestState, StatusSink, StatusState } from '../completion/requestStatus';
 import { displayState, type LastStatus } from './statusModel';
 
 const TEXT: Record<StatusState, string> = {
@@ -19,7 +19,8 @@ export interface StatusBarInputs {
 
 export class StatusBar implements StatusSink, vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
-  private last: LastStatus = { state: 'idle' };
+  /** The latest request outcome; disabled and snoozed are applied on top of it by refresh(). */
+  private last: { state: RequestState; detail?: string } = { state: 'idle' };
   private shown: LastStatus = { state: 'idle' };
   private locked = false;
   private accepted = 0;
@@ -44,7 +45,7 @@ export class StatusBar implements StatusSink, vscode.Disposable {
     return this.shown.state;
   }
 
-  set(state: StatusState, detail?: string): void {
+  set(state: RequestState, detail?: string): void {
     this.last = { state, detail };
     this.refresh();
   }

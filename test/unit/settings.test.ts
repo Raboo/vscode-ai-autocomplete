@@ -57,6 +57,47 @@ describe('parseSettings', () => {
     const r = parseSettings(src({ modelOverrides: { globalValue: { '(': {} } } }));
     expect(r.problems.some((p) => p.includes('('))).toBe(true);
   });
+  describe('modelOverrides validation', () => {
+    const parse = (body: unknown) => parseSettings(src({ modelOverrides: { globalValue: { coder: body } } }));
+    test('a valid override is kept as is', () => {
+      const body = { fimTemplate: 'qwen', stop: ['<|endoftext|>'], sampling: { temperature: 0, topP: 0.9, topK: 20, maxTokens: 64 }, extraBody: { min_p: 0.05 } };
+      const r = parse(body);
+      expect(r.settings.modelOverrides.coder).toEqual(body);
+      expect(r.problems).toEqual([]);
+    });
+    test('an unknown fimTemplate is dropped with a problem', () => {
+      for (const fimTemplate of ['qwen3', 'toString', 7]) {
+        const r = parse({ fimTemplate, stop: ['x'] });
+        expect(r.settings.modelOverrides.coder).toEqual({ stop: ['x'] });
+        expect(r.problems).toHaveLength(1);
+        expect(r.problems[0]).toMatch(/modelOverrides\["coder"\]\.fimTemplate/);
+      }
+    });
+    test('stop must be a list of strings, else it is dropped with a problem', () => {
+      for (const stop of ['\n', ['a', 1], { a: 'b' }]) {
+        const r = parse({ stop });
+        expect(r.settings.modelOverrides.coder).toEqual({});
+        expect(r.problems).toHaveLength(1);
+        expect(r.problems[0]).toMatch(/\.stop/);
+      }
+    });
+    test('sampling keeps only finite-number temperature, topP, topK and maxTokens', () => {
+      const r = parse({ sampling: { temperature: 0.2, topP: '0.9', topK: Number.NaN, maxTokens: 32, min_p: 0.1 } });
+      expect(r.settings.modelOverrides.coder).toEqual({ sampling: { temperature: 0.2, maxTokens: 32 } });
+      expect(r.problems).toHaveLength(3);
+      const notObject = parse({ sampling: [1] });
+      expect(notObject.settings.modelOverrides.coder).toEqual({});
+      expect(notObject.problems).toHaveLength(1);
+    });
+    test('extraBody must be an object, else it is dropped with a problem', () => {
+      for (const extraBody of ['x', [1], null]) {
+        const r = parse({ extraBody });
+        expect(r.settings.modelOverrides.coder).toEqual({});
+        expect(r.problems).toHaveLength(1);
+        expect(r.problems[0]).toMatch(/\.extraBody/);
+      }
+    });
+  });
   test('defaults', () => {
     const { settings, problems } = parseSettings(src({ backends: { globalValue: [B('a')] } }));
     expect(problems).toEqual([]);

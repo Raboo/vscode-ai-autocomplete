@@ -68,7 +68,8 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   const ring = new ExtraContextRing();
   const inflight = new InFlight();
   const excluded = (doc: vscode.TextDocument): boolean => settings.fim.disableInFiles.some((pattern) => vscode.languages.match({ pattern }, doc) > 0);
-  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || excluded(doc)));
+  // Extra context only comes from files completions are allowed in (the tracker also limits it to workspace files).
+  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || settings.fim.disableInLanguages.includes(doc.languageId) || excluded(doc)));
 
   const provider = new FimProvider({
     getSettings: () => settings,
@@ -122,12 +123,15 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
       get: snoozedUntil,
       set: async (until, persist) => {
         sessionSnooze = until;
-        if (persist) await context.globalState.update(SNOOZE_KEY, until);
+        // An in-memory snooze ("Until restart", "Resume now") also clears an older persisted one.
+        await context.globalState.update(SNOOZE_KEY, persist ? until : undefined);
       },
     },
   })) sub(d);
 
   const onSettingsChanged = (): void => {
+    // Running requests were planned with the old settings (backend, exclusions, localOnly).
+    inflight.abortEverything();
     const problems = rebuild();
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.

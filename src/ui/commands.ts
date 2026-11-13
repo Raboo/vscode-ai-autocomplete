@@ -9,7 +9,7 @@ export const SNOOZE_KEY = 'snoozedUntil';
 
 export interface Snooze {
   get(): number;
-  /** persist=false keeps the value in memory only (until restart). */
+  /** persist=false keeps the value in memory only (until restart) and removes any persisted snooze. */
   set(until: number, persist: boolean): Promise<void>;
 }
 
@@ -36,10 +36,16 @@ async function pickBackend(placeHolder: string): Promise<string | undefined> {
 export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   let accepted = 0;
   const reg = (id: string, fn: (...args: unknown[]) => unknown): vscode.Disposable => vscode.commands.registerCommand(`aiAutocomplete.${id}`, fn);
+  const resume = async (): Promise<void> => {
+    await d.snooze.set(0, false);
+    d.status.refresh();
+  };
   return [
     reg('menu', async () => {
       const pick = await vscode.window.showQuickPick(menuEntries(d.status.state()), { placeHolder: 'AI Autocomplete' });
-      if (pick) await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
+      if (!pick) return;
+      if (pick.id === 'resume') await resume();
+      else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),
     reg('retry', () => d.retry()),
     reg('toggle', async () => {
@@ -48,16 +54,19 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       d.status.refresh();
     }),
     reg('snooze', async () => {
-      const pick = await vscode.window.showQuickPick(
+      const snoozed = d.snooze.get() > Date.now();
+      const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { ms: number | 'restart' | 'resume' }>(
         [
+          ...(snoozed ? [{ label: 'Resume now', ms: 'resume' as const }] : []),
           { label: '15 minutes', ms: 15 * 60_000 },
           { label: '1 hour', ms: 60 * 60_000 },
-          { label: 'Until restart', ms: undefined },
+          { label: 'Until restart', ms: 'restart' },
         ],
         { placeHolder: 'Snooze AI Autocomplete' },
       );
       if (!pick) return;
-      if (pick.ms === undefined) await d.snooze.set(Number.MAX_SAFE_INTEGER, false);
+      if (pick.ms === 'resume') return resume();
+      if (pick.ms === 'restart') await d.snooze.set(Number.MAX_SAFE_INTEGER, false);
       else await d.snooze.set(Date.now() + pick.ms, true);
       d.status.refresh();
     }),
@@ -70,8 +79,16 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('setApiKey', async () => {
       const id = await pickBackend('Set the API key for which backend?');
       if (!id) return;
-      const key = await vscode.window.showInputBox({ prompt: `API key for "${id}"`, password: true, ignoreFocusOut: true });
-      if (key === undefined || key === '') return;
+      const key = await vscode.window.showInputBox({ prompt: `API key for "${id}" (leave empty to delete the stored key)`, password: true, ignoreFocusOut: true });
+      if (key === undefined) return;
+      if (key === '') {
+        const yes: vscode.MessageItem = { title: 'Yes' };
+        const pick = await vscode.window.showWarningMessage(`Delete the stored API key for "${id}"?`, { modal: true }, yes, { title: 'No', isCloseAffordance: true });
+        if (pick !== yes) return;
+        await d.secrets.delete(id);
+        void vscode.window.showInformationMessage(`AI Autocomplete: API key deleted for "${id}".`);
+        return;
+      }
       await d.secrets.set(id, key);
       void vscode.window.showInformationMessage(`AI Autocomplete: API key saved for "${id}".`);
     }),

@@ -25,8 +25,9 @@ const PRESETS: Preset[] = [
 
 const GLOBAL_STOP = '\n\n\n';
 
+/** The global stop comes first: hosted OpenAI-compatible APIs accept only the first 4 stops. */
 function templateStops(t: FimTemplateId | undefined): string[] {
-  return t ? [...TEMPLATES[t].stop, GLOBAL_STOP] : [GLOBAL_STOP];
+  return t ? [GLOBAL_STOP, ...TEMPLATES[t].stop] : [GLOBAL_STOP];
 }
 
 export function resolvePreset(modelId: string, overrides: Record<string, ModelOverrideBody>): ResolvedPreset {

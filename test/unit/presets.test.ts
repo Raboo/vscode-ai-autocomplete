@@ -18,25 +18,25 @@ test('general Qwen gets no FIM template', () => {
 });
 test('codestral sampling omits topP', () => expect(resolvePreset('codestral-latest', {}).sampling).toEqual({ temperature: 0.2, maxTokens: 128 }));
 test('coder default sampling', () => expect(resolvePreset('qwen2.5-coder-3b', {}).sampling).toEqual({ temperature: 0.1, topP: 0.95, topK: 40, maxTokens: 128 }));
-test('stop = template stops plus triple newline; suffixFirst from template', () => {
+test('stop = triple newline first (hosted APIs keep only the first 4), then template stops; suffixFirst from template', () => {
   const p = resolvePreset('codestral-latest', {});
-  expect(p.stop).toEqual([...TEMPLATES.codestral.stop, '\n\n\n']);
+  expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES.codestral.stop]);
   expect(p.suffixFirst).toBe(true);
 });
 test('overrides merge in order; stops are appended uniquely', () => {
   const p = resolvePreset('qwen2.5-coder', { 'qwen': { sampling: { temperature: 0 } }, 'coder': { stop: ['\n\n\n', '<|endoftext|>'], extraBody: { min_p: 0.05 } } });
   expect(p.sampling.temperature).toBe(0); expect(p.stop.filter(s => s === '<|endoftext|>')).toHaveLength(1);
   expect(p.stop.filter(s => s === '\n\n\n')).toHaveLength(1);
-  expect(p.stop).toContain('\n\n\n'); expect(p.extraBody).toEqual({ min_p: 0.05 });
+  expect(p.stop[0]).toBe('\n\n\n'); expect(p.extraBody).toEqual({ min_p: 0.05 });
 });
 test('override can set a template on an unknown model', () => {
   const p = resolvePreset('my-ft', { '^my-ft$': { fimTemplate: 'qwen' } });
   expect(p.fimTemplate).toBe('qwen');
-  expect(p.stop).toEqual([...TEMPLATES.qwen.stop, '\n\n\n']);
+  expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES.qwen.stop]);
 });
 test('override template replaces template stops and suffixFirst', () => {
   const p = resolvePreset('qwen2.5-coder', { coder: { fimTemplate: 'codestral', stop: ['X'] } });
-  expect(p.stop).toEqual([...TEMPLATES.codestral.stop, '\n\n\n', 'X']);
+  expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES.codestral.stop, 'X']);
   expect(p.suffixFirst).toBe(true);
 });
 test('matching is case-insensitive', () => expect(resolvePreset('MY-FT', { 'my-ft': { fimTemplate: 'mellum' } }).fimTemplate).toBe('mellum'));

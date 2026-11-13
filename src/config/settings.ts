@@ -1,4 +1,5 @@
-import type { BackendConfig, BackendKind, FimMode, HostFlavor, ModelOverrideBody } from '../types';
+import { TEMPLATES } from '../models/templates';
+import type { BackendConfig, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Sampling } from '../types';
 
 export interface Settings {
   backends: BackendConfig[];
@@ -39,6 +40,7 @@ const KINDS: readonly BackendKind[] = ['llamacpp', 'openai', 'mistral'];
 const FIM_MODES: readonly FimMode[] = ['auto', 'native', 'template', 'chat'];
 const FLAVORS: readonly HostFlavor[] = ['llamacpp', 'vllm', 'sglang', 'lmstudio', 'ollama', 'strata', 'deepseek', 'fireworks', 'together', 'openrouter', 'mistral', 'generic'];
 const MULTILINE = ['auto', 'always', 'never'] as const;
+const SAMPLING_KEYS: readonly (keyof Sampling)[] = ['temperature', 'topP', 'topK', 'maxTokens'];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
@@ -72,6 +74,36 @@ function parseBackend(raw: unknown, i: number, seen: Set<string>): { backend?: B
   const nextEditModel = str(raw.nextEditModel);
   if (nextEditModel) backend.nextEditModel = nextEditModel;
   return { backend };
+}
+
+/** Keeps the valid parts of one modelOverrides entry; each dropped part adds a problem. */
+function parseOverride(pattern: string, body: Record<string, unknown>, problems: string[]): ModelOverrideBody {
+  const at = `aiAutocomplete.modelOverrides[${JSON.stringify(pattern)}]`;
+  const out: ModelOverrideBody = {};
+  const { fimTemplate, stop, sampling, extraBody } = body;
+  if (fimTemplate !== undefined) {
+    if (typeof fimTemplate === 'string' && Object.hasOwn(TEMPLATES, fimTemplate)) out.fimTemplate = fimTemplate as FimTemplateId;
+    else problems.push(`${at}.fimTemplate: unknown template ${JSON.stringify(fimTemplate)} (use one of ${Object.keys(TEMPLATES).join(', ')}), ignored`);
+  }
+  if (stop !== undefined) {
+    if (Array.isArray(stop) && stop.every((x) => typeof x === 'string')) out.stop = stop;
+    else problems.push(`${at}.stop: not a list of strings, ignored`);
+  }
+  if (sampling !== undefined) {
+    if (isObj(sampling)) {
+      const kept: Partial<Sampling> = {};
+      for (const [k, v] of Object.entries(sampling)) {
+        if ((SAMPLING_KEYS as readonly string[]).includes(k) && typeof v === 'number' && Number.isFinite(v)) kept[k as keyof Sampling] = v;
+        else problems.push(`${at}.sampling.${k}: only finite numbers for ${SAMPLING_KEYS.join(', ')} are used, ignored`);
+      }
+      out.sampling = kept;
+    } else problems.push(`${at}.sampling: not an object, ignored`);
+  }
+  if (extraBody !== undefined) {
+    if (isObj(extraBody)) out.extraBody = extraBody;
+    else problems.push(`${at}.extraBody: not an object, ignored`);
+  }
+  return out;
 }
 
 export function parseSettings(src: RawSettingsSource): { settings: Settings; problems: string[] } {
@@ -123,7 +155,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
         problems.push(`aiAutocomplete.modelOverrides: "${pattern}" is not a valid regular expression, ignored`);
         continue;
       }
-      if (isObj(body)) modelOverrides[pattern] = body as ModelOverrideBody;
+      if (isObj(body)) modelOverrides[pattern] = parseOverride(pattern, body, problems);
       else problems.push(`aiAutocomplete.modelOverrides: "${pattern}" is not an object, ignored`);
     }
   }

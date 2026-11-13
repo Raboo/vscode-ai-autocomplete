@@ -9,7 +9,7 @@ const P = (t?: FimTemplateId): ResolvedPreset => ({
   id: t ?? 'generic',
   fimTemplate: t,
   suffixFirst: t ? TEMPLATES[t].suffixFirst : false,
-  stop: t ? [...TEMPLATES[t].stop, '\n\n\n'] : ['\n\n\n'],
+  stop: t ? ['\n\n\n', ...TEMPLATES[t].stop] : ['\n\n\n'],
   sampling: { temperature: 0.1, topP: 0.95, topK: 40, maxTokens: 128 },
   extraBody: {},
 });

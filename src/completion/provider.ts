@@ -107,6 +107,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const linePrefix = line.slice(0, pos.character);
     const lineSuffix = line.slice(pos.character);
     const editor = vscode.window.activeTextEditor;
+    const invoked = ctx.triggerKind === vscode.InlineCompletionTriggerKind.Invoke;
     const g = gate({
       enabled: s.fim.enabled,
       snoozedUntil: this.d.snoozedUntil(),
@@ -119,10 +120,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       hasSelectedCompletionInfo: !!ctx.selectedCompletionInfo,
       lineSuffix,
       skipMidWord: s.fim.skipMidWord,
-      invoked: ctx.triggerKind === vscode.InlineCompletionTriggerKind.Invoke,
+      invoked,
     });
     if (!g.ok) {
-      if (g.reason === 'disabled' || g.reason === 'snoozed') this.d.status.set(g.reason);
+      // The status bar shows disabled/snoozed from the settings itself; status.set takes request outcomes only.
       this.d.log.debug(`fim skipped: ${g.reason}`);
       return [];
     }
@@ -149,7 +150,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: s.fim.prefixLines, suffixLines: s.fim.suffixLines, ...DEFAULT_WINDOW });
     const uri = doc.uri.toString();
     const spot: Spot = { doc, pos, lineSuffix, backendId: id };
-    const cached = this.d.cache.find(uri, win.prefix, win.suffix);
+    // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
+    const cached = invoked ? undefined : this.d.cache.find(uri, win.prefix, win.suffix);
     if (cached !== undefined) return this.items(cached, spot);
 
     const join = this.d.inflight.find(uri, win.prefix, win.suffix);

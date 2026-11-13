@@ -14,6 +14,12 @@ describe('displayState', () => {
     expect(displayState(true, 1000, 1000, last)).toBe(last);
     expect(displayState(true, 0, 5, { state: 'idle' })).toEqual({ state: 'idle' });
   });
+  test('re-enabled → last outcome shown', () => {
+    const outcome = { state: 'error', detail: 'local: HTTP 503' } as const;
+    expect(displayState(false, 0, 5, outcome)).toEqual({ state: 'disabled' });
+    expect(displayState(true, 0, 5, outcome)).toBe(outcome);
+    expect(displayState(true, 4, 5, { state: 'idle' })).toEqual({ state: 'idle' });
+  });
   test('until-restart snooze stays snoozed', () => {
     expect(displayState(true, Number.MAX_SAFE_INTEGER, Date.now(), last).state).toBe('snoozed');
   });
@@ -24,6 +30,12 @@ describe('menuEntries', () => {
   test('lists Retry now first while the status is error', () => {
     expect(menuEntries('error')[0]).toEqual({ label: 'Retry now', id: 'retry' });
     expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);
+  });
+  test('lists Resume now first while snoozed', () => {
+    expect(menuEntries('snoozed')[0]).toEqual({ label: 'Resume now', id: 'resume' });
+    expect(ids('snoozed').slice(1)).toEqual(ids('idle'));
+    expect(ids('idle')).not.toContain('resume');
+    expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
     expect(ids('idle')).toEqual(['toggle', 'snooze', 'selectBackend', 'setApiKey', 'retry', 'showLog', 'about']);

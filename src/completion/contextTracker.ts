@@ -28,7 +28,9 @@ export class ContextTracker implements vscode.Disposable {
   }
 
   private capture(doc: vscode.TextDocument, line: number): void {
-    if (doc.uri.scheme !== 'file' && doc.uri.scheme !== 'untitled') return;
+    // Only unsaved files and files inside a workspace folder: a file opened from elsewhere is not project context.
+    const inWorkspace = doc.uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(doc.uri) !== undefined;
+    if (doc.uri.scheme !== 'untitled' && !inWorkspace) return;
     if (this.isExcluded(doc)) return;
     const lines = doc.getText().split(/\r?\n/);
     this.ring.add(vscode.workspace.asRelativePath(doc.uri, false), lines, line);

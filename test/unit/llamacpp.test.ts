@@ -134,6 +134,18 @@ describe('LlamaCppBackend', () => {
     ).toBeUndefined();
   });
 
+  test('detectModel does not follow a redirect to another host', async () => {
+    const other = await startMockHttp(() => ({ json: { model_alias: 'elsewhere' } }));
+    try {
+      m = await startMockHttp(() => ({ status: 308, headers: { location: `${other.url}/props` } }));
+      expect(await new LlamaCppBackend(cfg(m.url), async () => undefined).detectModel(new AbortController().signal)).toBeUndefined();
+      expect(m.requests).toHaveLength(1);
+      expect(other.requests).toHaveLength(0);
+    } finally {
+      await other.close();
+    }
+  });
+
   test('supportsNativeFim is true', () => {
     expect(new LlamaCppBackend(cfg('http://x'), async () => undefined).supportsNativeFim()).toBe(true);
   });

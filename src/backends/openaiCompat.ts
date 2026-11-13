@@ -29,6 +29,7 @@ export class OpenAiCompatBackend implements FimBackend {
     try {
       const res = await fetch(joinUrl(this.config.baseUrl, 'models'), {
         headers: await this.headers(),
+        redirect: 'manual', // a redirect (3xx) is not ok: requests never leave the configured host
         signal: AbortSignal.any([signal, AbortSignal.timeout(DETECT_TIMEOUT_MS)]),
       });
       if (!res.ok) {

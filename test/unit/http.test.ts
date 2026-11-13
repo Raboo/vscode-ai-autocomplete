@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
 import { classifyError, HttpError, joinUrl, postJson } from '../../src/backends/http';
+import { startMockHttp } from './helpers/mockHttp';
 
 describe('joinUrl', () => {
   test('joins with exactly one slash', () => {
@@ -64,6 +65,22 @@ describe('postJson', () => {
     expect((err as HttpError).status).toBe(500);
     expect((err as HttpError).bodyText).toHaveLength(500);
     expect((err as HttpError).url).toBe(base);
+  });
+
+  test('a redirect is not followed: it rejects with HttpError and the other host gets nothing', async () => {
+    const other = await startMockHttp(() => ({ json: {} }));
+    try {
+      const base = await listen((_req, res) => {
+        res.writeHead(308, { location: `${other.url}/infill` });
+        res.end();
+      });
+      const err = await postJson(`${base}/infill`, { input_prefix: 'code' }, { signal: new AbortController().signal, timeoutMs: 2000 }).catch((e) => e);
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).status).toBe(308);
+      expect(other.requests).toHaveLength(0);
+    } finally {
+      await other.close();
+    }
   });
 
   test('timeout rejects and classifies as network', async () => {

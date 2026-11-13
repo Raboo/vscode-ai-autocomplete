@@ -113,16 +113,22 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     },
   })) sub(d);
 
+  const onSettingsChanged = (): void => {
+    const problems = rebuild();
+    cache.clear();
+    // Chunks captured under the old settings may come from files that are now excluded.
+    ring.clear();
+    status.setLocalLock(settings.privacy.localOnly);
+    status.refresh();
+    warnOnce(problems);
+  };
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (!e.affectsConfiguration('aiAutocomplete')) return;
-      const problems = rebuild();
-      cache.clear();
-      status.setLocalLock(settings.privacy.localOnly);
-      status.refresh();
-      warnOnce(problems);
+      if (e.affectsConfiguration('aiAutocomplete')) onSettingsChanged();
     }),
   );
+  // An added folder of a multi-root workspace may bring its own privacy.localOnly or fim.disableInFiles.
+  sub(vscode.workspace.onDidChangeWorkspaceFolders(onSettingsChanged));
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);

@@ -97,6 +97,11 @@ export class ExtraContextRing {
     this.chunkLines = o.chunkLines ?? 64;
   }
 
+  /** Forgets every chunk, e.g. after the settings that decide which files may be captured changed. */
+  clear(): void {
+    this.chunks = [];
+  }
+
   add(path: string, lines: string[], centerLine: number): void {
     if (lines.length === 0) return;
     const size = Math.min(this.chunkLines, lines.length);

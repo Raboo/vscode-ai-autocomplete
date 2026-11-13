@@ -21,12 +21,16 @@ export interface PostOptions {
 
 export type ErrorClass = { kind: 'abort' } | { kind: 'http'; status: number } | { kind: 'network' };
 
-/** POSTs JSON. Non-2xx responses throw an HttpError (body text truncated to 500 chars). */
+/**
+ * POSTs JSON. Non-2xx responses throw an HttpError (body text truncated to 500 chars). Redirects are not
+ * followed (a 3xx is an HttpError), so code never goes to a host other than the configured one.
+ */
 export async function postJson(url: string, body: unknown, o: PostOptions): Promise<Response> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { ...o.headers, 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    redirect: 'manual',
     signal: AbortSignal.any([o.signal, AbortSignal.timeout(o.timeoutMs)]),
   });
   if (!res.ok) {

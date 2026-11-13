@@ -187,7 +187,7 @@
             "**/*.key"
           ],
           "scope": "resource",
-          "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled."
+          "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled. Workspace and folder settings add patterns to this list; they cannot remove the ones from your user settings (or the defaults)."
         },
         "aiAutocomplete.fim.skipMidWord": {
           "type": "boolean",
@@ -199,7 +199,7 @@
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address. A workspace can turn this on but not off."
+          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address. A workspace, or any folder of a multi-root workspace, can turn this on but not off."
         },
         "aiAutocomplete.modelOverrides": {
           "type": "object",

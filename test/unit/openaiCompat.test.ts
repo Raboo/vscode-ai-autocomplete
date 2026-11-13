@@ -141,6 +141,16 @@ describe('OpenAiCompatBackend', () => {
       expect(m.requests[0].url).toBe('/v1/models');
       expect(m.requests[0].headers.authorization).toBe('Bearer sk');
     });
+    test('does not follow a redirect to another host', async () => {
+      const other = await startMockHttp(() => ({ json: { data: [{ id: 'elsewhere' }] } }));
+      try {
+        m = await startMockHttp(() => ({ status: 307, headers: { location: `${other.url}/v1/models` } }));
+        expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBeUndefined();
+        expect(other.requests).toHaveLength(0);
+      } finally {
+        await other.close();
+      }
+    });
     test('undefined for multiple models, empty, non-ok, or unreachable', async () => {
       m = await startMockHttp(() => ({ json: { data: [{ id: 'a' }, { id: 'b' }] } }));
       expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBeUndefined();

@@ -23,6 +23,7 @@ export class LlamaCppBackend implements FimBackend {
     try {
       const res = await fetch(joinUrl(this.config.baseUrl, '/props'), {
         headers: await this.authHeaders(),
+        redirect: 'manual', // a redirect (3xx) is not ok: requests never leave the configured host
         signal: AbortSignal.any([signal, AbortSignal.timeout(DETECT_TIMEOUT_MS)]),
       });
       if (!res.ok) {

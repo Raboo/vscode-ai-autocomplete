@@ -11,8 +11,29 @@ export interface Settings {
   debug: { logPrompts: boolean };
 }
 
-export interface Inspected<T> { defaultValue?: T; globalValue?: T; workspaceValue?: T; workspaceFolderValue?: T }
+export interface Inspected<T> {
+  defaultValue?: T;
+  globalValue?: T;
+  workspaceValue?: T;
+  workspaceFolderValue?: T;
+  /** The value set in each folder of a multi-root workspace (folders that set none are left out). */
+  folderValues?: T[];
+}
 export interface RawSettingsSource { inspect<T>(key: string): Inspected<T> | undefined }
+
+/**
+ * Adds each workspace folder's value to the window-level configuration. In a multi-root workspace, folder
+ * settings are only visible to a configuration read with that folder as its scope.
+ */
+export function withFolderValues(root: RawSettingsSource, folders: RawSettingsSource[]): RawSettingsSource {
+  return {
+    inspect: <T>(key: string) => {
+      const i = root.inspect<T>(key);
+      const folderValues = folders.map((f) => f.inspect<T>(key)?.workspaceFolderValue).filter((v): v is T => v !== undefined);
+      return folderValues.length === 0 ? i : { ...i, folderValues };
+    },
+  };
+}
 
 const KINDS: readonly BackendKind[] = ['llamacpp', 'openai', 'mistral'];
 const FIM_MODES: readonly FimMode[] = ['auto', 'native', 'template', 'chat'];
@@ -65,10 +86,20 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue ?? i?.defaultValue ?? fallback;
   };
 
-  // Restrict-only: any level set to true wins, so a workspace can turn it on but never off.
+  // Restrict-only: any level (or any workspace folder) set to true wins, so a workspace can turn it on but never off.
   const restrictOnly = (key: string): boolean => {
     const i = src.inspect<boolean>(key);
-    return [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue].some((v) => v === true);
+    return [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])].some((v) => v === true);
+  };
+  // Restrict-only list: the user's list (else the default) plus whatever a workspace or folder adds; a workspace cannot remove entries.
+  const unionStrs = (key: string, d: string[]): string[] => {
+    const i = src.inspect<unknown>(key);
+    const base = [i?.globalValue, i?.defaultValue, d].find(Array.isArray) as unknown[];
+    const out = new Set<string>();
+    for (const list of [base, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])]) {
+      if (Array.isArray(list)) for (const x of list) if (typeof x === 'string') out.add(x);
+    }
+    return [...out];
   };
 
   const rawBackends = machine<unknown>('backends', []);
@@ -127,7 +158,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       suffixLines: num('fim.suffixLines', 60),
       extraContext: resource('fim.extraContext', true),
       disableInLanguages: strs('fim.disableInLanguages', ['plaintext']),
-      disableInFiles: strs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
+      disableInFiles: unionStrs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
       skipMidWord: resource('fim.skipMidWord', true),
     },
     privacy: { localOnly: restrictOnly('privacy.localOnly') },

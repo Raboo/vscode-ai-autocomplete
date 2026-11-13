@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseSettings, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -79,6 +79,32 @@ describe('parseSettings', () => {
     ['unset', {}, false],
   ] as [string, Inspected<boolean>, boolean][])('privacy.localOnly can only be tightened by a workspace: %s', (_n, v, expected) => {
     expect(parseSettings(src({ 'privacy.localOnly': v })).settings.privacy.localOnly).toBe(expected);
+  });
+  test('privacy.localOnly is on when any workspace folder turns it on', () => {
+    expect(parseSettings(src({ 'privacy.localOnly': { globalValue: false, folderValues: [false, true] } })).settings.privacy.localOnly).toBe(true);
+    expect(parseSettings(src({ 'privacy.localOnly': { globalValue: false, folderValues: [false, false] } })).settings.privacy.localOnly).toBe(false);
+  });
+  test('withFolderValues reads every folder of a multi-root workspace', () => {
+    // Shaped like vscode.WorkspaceConfiguration: the window-level one has no workspaceFolderValue,
+    // a folder-scoped one has that folder's value.
+    const cfg = (values: Record<string, Inspected<unknown>>) => ({ inspect: <T>(key: string) => values[key] as Inspected<T> | undefined });
+    const root = cfg({ 'privacy.localOnly': { defaultValue: false }, 'fim.disableInFiles': { defaultValue: ['**/.env'] }, 'fim.maxTokens': { defaultValue: 128 } });
+    const folderA = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: false }, 'fim.disableInFiles': { defaultValue: ['**/.env'] } });
+    const folderB = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: true }, 'fim.disableInFiles': { defaultValue: ['**/.env'], workspaceFolderValue: ['**/secrets/**'] } });
+    const { settings } = parseSettings(withFolderValues(root, [folderA, folderB]));
+    expect(settings.privacy.localOnly).toBe(true);
+    expect(settings.fim.disableInFiles).toEqual(['**/.env', '**/secrets/**']);
+    expect(settings.fim.maxTokens).toBe(128);
+    expect(withFolderValues(root, [folderA, folderB]).inspect('privacy.localOnly')).toEqual({ defaultValue: false, folderValues: [false, true] });
+    expect(withFolderValues(root, []).inspect('privacy.localOnly')).toEqual({ defaultValue: false });
+  });
+  test('fim.disableInFiles: a workspace can add patterns but not remove the user or default ones', () => {
+    const files = (v: Inspected<unknown>) => parseSettings(src({ 'fim.disableInFiles': { defaultValue: ['**/.env', '**/*.key'], ...v } })).settings.fim.disableInFiles;
+    expect(files({ workspaceValue: [] })).toEqual(['**/.env', '**/*.key']);
+    expect(files({ workspaceValue: ['**/secret.txt'] })).toEqual(['**/.env', '**/*.key', '**/secret.txt']);
+    expect(files({ globalValue: [] })).toEqual([]);
+    expect(files({ globalValue: ['**/a'], workspaceValue: ['**/b', '**/a'], workspaceFolderValue: ['**/c'], folderValues: [['**/d'], ['**/b']] })).toEqual(['**/a', '**/b', '**/c', '**/d']);
+    expect(files({ globalValue: 'not a list', workspaceValue: ['**/b', 3] })).toEqual(['**/.env', '**/*.key', '**/b']);
   });
   test('no backends gives undefined backendId and no problem', () => {
     const r = parseSettings(src({}));

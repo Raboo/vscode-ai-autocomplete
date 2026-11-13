@@ -12,6 +12,7 @@ export interface MockResponse {
   status?: number;
   sse?: string[];
   json?: unknown;
+  headers?: Record<string, string>;
 }
 
 export async function startMockHttp(
@@ -42,7 +43,7 @@ export async function startMockHttp(
         res.writeHead(status, { 'content-type': 'application/json' });
         res.end(JSON.stringify(r.json));
       } else {
-        res.writeHead(status);
+        res.writeHead(status, r.headers);
         res.end();
       }
     });

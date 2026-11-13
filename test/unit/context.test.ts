@@ -132,6 +132,15 @@ describe('ExtraContextRing', () => {
     expect(r.pick(ex('z', 0, 0), 10).map((c) => c.path)).toEqual(['small']);
   });
 
+  test('clear drops every chunk', () => {
+    const r = new ExtraContextRing();
+    for (const p of ['a', 'b']) r.add(p, lines, 200);
+    r.clear();
+    expect(r.pick(ex('z', 0, 0), 1e6)).toEqual([]);
+    r.add('c', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['c']);
+  });
+
   test('pick output is stable across calls (cache-friendly order)', () => {
     const r = new ExtraContextRing();
     for (const p of ['a', 'b', 'c']) r.add(p, lines, 200);

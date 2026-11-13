@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "commonjs",
+    "rootDir": ".",
+    "outDir": "out",
+    "sourceMap": true,
+    "types": ["node", "mocha", "vscode"]
+  },
+  "include": ["test/integration"]
+}

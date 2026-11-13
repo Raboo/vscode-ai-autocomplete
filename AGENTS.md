@@ -33,6 +33,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `npm run typecheck`: `tsc --noEmit`.
 - `npm run lint`: ESLint over the repo.
 - `npm test`: unit tests with vitest.
+- `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server; CI runs it under `xvfb-run`.
 - `npm run package`: build a `.vsix` with `vsce package --no-dependencies`.
 - `npm run vscode:prepublish`: production (minified) build, run by vsce.
 

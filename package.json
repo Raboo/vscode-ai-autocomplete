@@ -272,18 +272,23 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:integration": "npm run build && tsc -p tsconfig.integration.json && vscode-test",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "node esbuild.mjs --production"
   },
   "devDependencies": {
-    "typescript": "~6.0.3",
-    "esbuild": "^0.28.2",
-    "vitest": "^5.1.0",
-    "eslint": "^10.14.0",
     "@eslint/js": "^10.0.1",
-    "typescript-eslint": "^8.72.2",
-    "@vscode/vsce": "^4.1.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22",
     "@types/vscode": "~1.100.0",
-    "@types/node": "^22"
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
+    "mocha": "^11.8.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
   }
 }

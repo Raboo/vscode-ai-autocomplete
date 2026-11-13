@@ -1,0 +1,67 @@
+import type { ErrorBackoff } from '../backends/backoff';
+import { HttpError, type ErrorClass } from '../backends/http';
+import { REQUEST_TIMEOUT_MS } from './route';
+
+export type StatusState = 'idle' | 'loading' | 'error' | 'disabled' | 'snoozed';
+export interface StatusSink { set(state: StatusState, detail?: string): void }
+
+/** How a finished request leaves the status; undefined (a cancel) keeps the previous outcome. */
+export type Outcome = { state: 'idle' } | { state: 'error'; detail: string };
+
+/**
+ * Status bookkeeping for FIM requests. Counts requests that showed `loading`; the last one to finish
+ * shows the latest real outcome, so the status never stays at `loading` and a cancelled older request
+ * never overwrites a newer one that is still running.
+ */
+export class RequestStatus {
+  private active = 0;
+  private latest: Outcome = { state: 'idle' };
+
+  constructor(private readonly sink: StatusSink) {}
+
+  begin(): void {
+    this.active++;
+    this.sink.set('loading');
+  }
+
+  end(outcome: Outcome | undefined): void {
+    if (outcome) this.latest = outcome;
+    this.active = Math.max(0, this.active - 1);
+    if (this.active > 0) return;
+    if (this.latest.state === 'error') this.sink.set('error', this.latest.detail);
+    else this.sink.set('idle');
+  }
+}
+
+/** Short, text-free description of a failed request for the status bar and the log. */
+export function describeFailure(err: unknown, cls: ErrorClass): string {
+  if (cls.kind === 'http') return `HTTP ${cls.status}`;
+  if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return `timed out after ${REQUEST_TIMEOUT_MS / 1000} s`;
+  const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+  const msg = err instanceof Error ? err.message : String(err);
+  return typeof code === 'string' ? `${msg} (${code})` : msg;
+}
+
+/**
+ * Records a failure in the backend's backoff. Returns the status detail, plus a warn line only when the
+ * backoff state changed (one log line per transition, not one per keystroke). The server's error body is
+ * added only when `logBody` (debug.logPrompts) is on: some servers echo the request, i.e. the prompt.
+ */
+export function recordBackendFailure(
+  backoff: ErrorBackoff,
+  backendId: string,
+  err: unknown,
+  cls: ErrorClass,
+  logBody: boolean,
+  now = Date.now(),
+): { detail: string; warn?: string } {
+  const before = backoff.state().kind;
+  backoff.recordFailure(cls);
+  const after = backoff.state();
+  const detail = `${backendId}: ${describeFailure(err, cls)}`;
+  if (after.kind === before) return { detail };
+  const next =
+    after.kind === 'fatal' ? 'requests stopped until the settings change' : after.kind === 'backoff' ? `retrying in ${Math.ceil((after.until - now) / 1000)} s` : 'retrying';
+  const body = logBody && err instanceof HttpError && err.bodyText ? ` ${JSON.stringify(err.bodyText.slice(0, 200))}` : '';
+  return { detail, warn: `${detail}${body}; ${next}` };
+}

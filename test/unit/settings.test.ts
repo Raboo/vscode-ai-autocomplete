@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { FIM_LIMITS, parseBackendEntry, parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -152,5 +152,47 @@ describe('parseSettings', () => {
     expect(r.settings.backends).toEqual([]);
     expect(r.settings.fim.backendId).toBeUndefined();
     expect(r.problems).toEqual([]);
+  });
+});
+
+describe('backend fim', () => {
+  const withFim = (fim: unknown) => parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fim }] } }));
+  test('backend fim keeps valid keys', () => {
+    const fim = { template: 'seed-coder', temperature: 0.05, prefixLines: 300, extraContext: false, multiline: 'never', stop: ['</s>'], extraBody: { a: 1 }, debounceMs: 120, timeoutMs: 9000, contextTokens: 8000 };
+    const { settings, problems } = withFim(fim);
+    expect(settings.backends[0].fim).toEqual(fim);
+    expect(problems).toEqual([]);
+  });
+  test('backend fim drops invalid keys and reports each', () => {
+    const { settings, problems } = withFim({ temperature: '0.2', topP: 0, topK: 1.5, maxTokens: 5000, template: 'nope', multiline: 'x', stop: [1], extraBody: [], bogus: 1 });
+    expect(settings.backends).toHaveLength(1);
+    expect(settings.backends[0].fim).toBeUndefined();
+    expect(problems).toHaveLength(9);
+    for (const k of ['temperature', 'topP', 'topK', 'maxTokens', 'template', 'multiline', 'stop', 'extraBody', 'bogus']) {
+      expect(problems.filter((p) => p.startsWith(`aiAutocomplete.backends[0] ("lm").fim.${k}: `) && p.endsWith(', ignored'))).toHaveLength(1);
+    }
+  });
+  test('a non-object fim is one problem', () => {
+    const { settings, problems } = withFim('x');
+    expect(settings.backends[0].fim).toBeUndefined();
+    expect(problems).toEqual(['aiAutocomplete.backends[0] ("lm").fim: not an object, ignored']);
+  });
+  test('range edges', () => {
+    const { settings, problems } = withFim({ temperature: 2.01, topP: 0, contextTokens: 255, timeoutMs: 499 });
+    expect(settings.backends[0].fim).toBeUndefined();
+    expect(problems).toHaveLength(4);
+    expect(withFim({ temperature: 0 }).settings.backends[0].fim).toEqual({ temperature: 0 });
+    expect(withFim({ temperature: 2 }).settings.backends[0].fim).toEqual({ temperature: 2 });
+    expect(withFim({ topP: 1 }).settings.backends[0].fim).toEqual({ topP: 1 });
+    expect(withFim({ contextTokens: 256 }).settings.backends[0].fim).toEqual({ contextTokens: 256 });
+    expect(withFim({ timeoutMs: 500 }).settings.backends[0].fim).toEqual({ timeoutMs: 500 });
+    expect(FIM_LIMITS.topP).toEqual({ min: 0, max: 1, integer: false, exclusiveMin: true });
+  });
+  test('parseBackendEntry is the parser parseSettings uses', () => {
+    const problems: string[] = [];
+    expect(parseBackendEntry({ id: 'x', kind: 'openai', baseUrl: 'http://h/v1', fim: { topK: 20 } }, 0, new Set(), problems)?.fim).toEqual({ topK: 20 });
+    expect(problems).toEqual([]);
+    expect(parseBackendEntry(5, 1, new Set(), problems)).toBeUndefined();
+    expect(problems).toEqual(['aiAutocomplete.backends[1]: not an object, ignored']);
   });
 });

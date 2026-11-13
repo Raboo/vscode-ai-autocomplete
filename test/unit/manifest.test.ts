@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { FIM_LIMITS } from '../../src/config/settings';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 test('identity', () => {
   expect(pkg.publisher).toBe('raboo'); expect(pkg.name).toBe('ai-autocomplete');
@@ -16,4 +17,14 @@ test('commands are categorised and accepted is hidden from the palette', () => {
   expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'menu', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
   expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
   expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
+});
+test('backends schema fim limits match FIM_LIMITS', () => {
+  const props = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.fim.properties;
+  for (const [key, lim] of Object.entries(FIM_LIMITS)) {
+    const p = props[key];
+    expect(p, key).toBeDefined();
+    if (lim.exclusiveMin) { expect(p.exclusiveMinimum, key).toBe(lim.min); expect(p.minimum, key).toBeUndefined(); } else expect(p.minimum, key).toBe(lim.min);
+    expect(p.maximum, key).toBe(lim.max);
+    expect(p.type === 'integer', key).toBe(lim.integer);
+  }
 });

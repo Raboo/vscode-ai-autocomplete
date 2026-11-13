@@ -105,6 +105,106 @@
                   "type": "string"
                 },
                 "description": "Extra HTTP headers."
+              },
+              "fim": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Completion settings for this backend; each key overrides the matching global setting.",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "enum": [
+                      "qwen",
+                      "codestral",
+                      "deepseek",
+                      "starcoder",
+                      "codellama",
+                      "codegemma",
+                      "granite-code",
+                      "granite4",
+                      "seed-coder",
+                      "mellum"
+                    ],
+                    "description": "FIM prompt template to use instead of the one detected from the model name."
+                  },
+                  "contextTokens": {
+                    "type": "integer",
+                    "minimum": 256,
+                    "maximum": 131072,
+                    "description": "Total context budget in tokens, split between prefix, suffix and extra context."
+                  },
+                  "prefixLines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Maximum lines of code before the cursor."
+                  },
+                  "suffixLines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000,
+                    "description": "Maximum lines of code after the cursor."
+                  },
+                  "extraContext": {
+                    "type": "boolean",
+                    "description": "Include snippets from other open files."
+                  },
+                  "multiline": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "always",
+                      "never"
+                    ],
+                    "description": "Whether completions may span several lines."
+                  },
+                  "maxTokens": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4096,
+                    "description": "Maximum tokens to generate."
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 2,
+                    "description": "Sampling temperature."
+                  },
+                  "topP": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1,
+                    "description": "Nucleus sampling probability."
+                  },
+                  "topK": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Top-K sampling; 0 disables it."
+                  },
+                  "debounceMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2000,
+                    "description": "Delay in milliseconds before requesting a completion after typing."
+                  },
+                  "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": 60000,
+                    "description": "Request timeout in milliseconds."
+                  },
+                  "stop": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Extra stop sequences."
+                  },
+                  "extraBody": {
+                    "type": "object",
+                    "description": "Extra JSON fields merged into the request body."
+                  }
+                }
               }
             }
           }

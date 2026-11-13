@@ -749,7 +749,7 @@ Note on the last case: the rest of the line is `);` and the completion ends with
     add(uri: string, prefix: string, suffix: string, result: Promise<string | undefined>, ctl: AbortController): void; abortAll(uri: string): void }
   ```
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   - `cache.test.ts`:
     - `exact match`;
     - `typed-through` (cached `P`→`'foo()'`, find `P+'fo'` → `'o()'`);
@@ -769,13 +769,13 @@ Note on the last case: the rest of the line is `);` and the completion ends with
     - `InFlight.find returns a request whose prefix is a prefix of the new one with same suffix`;
     - `abortAll aborts controllers for that uri only`.
 
-- [ ] **Step 2: Run the tests.** Expected: FAIL.
+- [x] **Step 2: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 3: Implement both modules.** Leading edge: if `now - lastCall > delayMs()`, resolve true immediately; otherwise wait `delayMs()`, and any newer `wait` call supersedes older ones (which resolve false).
+- [x] **Step 3: Implement both modules.** Leading edge: if `now - lastCall > delayMs()`, resolve true immediately; otherwise wait `delayMs()`, and any newer `wait` call supersedes older ones (which resolve false).
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit** with message `feat: suggestion cache, adaptive debounce, in-flight reuse`.
+- [x] **Step 5: Commit** with message `feat: suggestion cache, adaptive debounce, in-flight reuse`.
 
 ---
 

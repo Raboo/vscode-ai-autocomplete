@@ -3,6 +3,13 @@ import type { ContextFile, FimTemplateId } from '../types';
 export interface TemplateInput { prefix: string; suffix: string; filePath: string; repoName: string; extra: ContextFile[] }
 export interface FimTemplate { id: FimTemplateId; suffixFirst: boolean; stop: string[]; render(i: TemplateInput): string }
 
+/** Codestral repo-level prefix: extra files as `+++++ path` blocks, then the current file's header (only when extras exist) and its prefix. */
+export function codestralPrefix(i: TemplateInput): string {
+  const files = i.extra.map(f => `+++++ ${f.path}\n${f.text}\n\n`).join('');
+  const current = i.extra.length === 0 ? '' : `+++++ ${i.filePath}\n`;
+  return `${files}${current}${i.prefix}`;
+}
+
 export const TEMPLATES: Record<FimTemplateId, FimTemplate> = {
   qwen: {
     id: 'qwen',
@@ -19,11 +26,7 @@ export const TEMPLATES: Record<FimTemplateId, FimTemplate> = {
     id: 'codestral',
     suffixFirst: true,
     stop: ['[PREFIX]', '[SUFFIX]', '</s>', '\n+++++ '],
-    render: i => {
-      const files = i.extra.map(f => `+++++ ${f.path}\n${f.text}\n\n`).join('');
-      const current = i.extra.length === 0 ? '' : `+++++ ${i.filePath}\n`;
-      return `[SUFFIX]${i.suffix}[PREFIX]${files}${current}${i.prefix}`;
-    },
+    render: i => `[SUFFIX]${i.suffix}[PREFIX]${codestralPrefix(i)}`,
   },
   deepseek: {
     id: 'deepseek',

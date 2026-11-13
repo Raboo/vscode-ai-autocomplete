@@ -693,7 +693,7 @@ test('pick output is stable across calls (cache-friendly order)', () => {});
   export function toInsertion(completion: string, lineSuffix: string): { insertText: string; replaceToEndOfLine: boolean }
   ```
 
-- [ ] **Step 1: Write failing `filters.test.ts`.** One test per rule, applied in this order on the accumulated, `\r\n`-normalised text:
+- [x] **Step 1: Write failing `filters.test.ts`.** One test per rule, applied in this order on the accumulated, `\r\n`-normalised text:
   1. `cuts at the earliest stop string` (`stop: ['<|endoftext|>']`, chunks `'ab<|end'`, `'oftext|>cd'` → text `'ab'`, push returns true);
   2. `single-line mode cuts at the first newline after content` (`'foo()\nbar'` → `'foo()'`);
   3. `maxLines` (20 lines in, maxLines 16 → 16 lines);
@@ -706,7 +706,7 @@ test('pick output is stable across calls (cache-friendly order)', () => {});
     - `auto`: a `linePrefix` inside a line comment (`//`, `#` for python/shell/yaml/ruby) → false;
     - `auto`: otherwise → true.
 
-- [ ] **Step 2: Write failing `postprocess.test.ts`.**
+- [x] **Step 2: Write failing `postprocess.test.ts`.**
 
 ```ts
 test('blank → undefined', () => expect(postprocess('  \n ', ctx())).toBeUndefined());
@@ -722,13 +722,13 @@ test('toInsertion closing-chars rest of line', () => expect(toInsertion('x[0])',
 
 Note on the last case: the rest of the line is `);` and the completion ends with `)`, not `);`. So `endsWith(restOfLine.trimEnd())` is false and the line is kept. The rule is exactly that: `replaceToEndOfLine = lineSuffix.trim() !== '' && insertText.trimEnd().endsWith(lineSuffix.trim())`.
 
-- [ ] **Step 3: Run the tests.** Expected: FAIL.
+- [x] **Step 3: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 4: Implement both modules.** Postprocess steps run in the order the tests list. "Retypes the suffix" means: `t = raw.trim()`, `t.length >= 4` and `suffix.trimStart().startsWith(t)`.
+- [x] **Step 4: Implement both modules.** Postprocess steps run in the order the tests list. "Retypes the suffix" means: `t = raw.trim()`, `t.length >= 4` and `suffix.trimStart().startsWith(t)`.
 
-- [ ] **Step 5: Run the tests.** Expected: PASS. Add attribution for anything adapted.
+- [x] **Step 5: Run the tests.** Expected: PASS. Add attribution for anything adapted.
 
-- [ ] **Step 6: Commit** with message `feat: streaming filters and completion postprocessing`.
+- [x] **Step 6: Commit** with message `feat: streaming filters and completion postprocessing`.
 
 ---
 

@@ -1072,6 +1072,7 @@ These steps create public state on GitHub. **Ask the user once, listing all of t
 2. `git push -u origin main`.
 3. `bash scripts/setup-github-repo.sh Raboo/vscode-ai-autocomplete` (after the push, so the default branch exists).
 4. Watch CI: `gh run watch -R Raboo/vscode-ai-autocomplete $(gh run list -R Raboo/vscode-ai-autocomplete -w ci.yml -L 1 --json databaseId --jq '.[0].databaseId')`. Expected: `check` and `integration` pass. Fix forward on failure (the ruleset admin bypass allows direct pushes).
+4b. **Manual smoke test before releasing** (final-review ruling; the spec's Verification section requires a manual end-to-end check per phase). The user installs the `.vsix` artifact from the CI run (`gh run download`) and runs the "Deferred manual checks" in `docs/ROADMAP.md`: a real `llama-server --fim-qwen-1.5b-default` in TS and Python files, a Codestral key with the endpoint fallback, and `localOnly` blocking Codestral. Continue only after the user confirms.
 5. release-please opens a release PR for `0.1.0`. Merge it: `gh pr merge <n> --squash --admin -R Raboo/vscode-ai-autocomplete` (CI does not run on it without `RELEASE_PLEASE_TOKEN`).
 6. Verify: `gh release view v0.1.0 -R Raboo/vscode-ai-autocomplete --json assets --jq '.assets[].name'` lists `ai-autocomplete-0.1.0.vsix`.
 7. Pull the release commit locally (`git pull`), tick the Publish steps here, and update `docs/ROADMAP.md` (Phase 0–1: "released as v0.1.0") in a `docs:` commit pushed to `main`.

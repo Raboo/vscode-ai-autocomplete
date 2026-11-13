@@ -522,7 +522,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
 - `edit.keyMode` comes from the server type, and `edit.keyStored` comes from `keysStored`.
 - `edit.errors` comes from `validateForm`. `edit.warnings` comes from the form rules, plus `model not detected yet: Test or reload the list to detect it` when the model is empty and nothing has been detected.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   ```ts
   test('cards: in use, key stored, detected model, lock and template warning', () => {});
   test('dot precedence', () => {});
@@ -532,10 +532,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   });
   test('cards follow raw order and skip invalid entries', () => {});
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** `pageState.ts`.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: backends page state`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** `pageState.ts`.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: backends page state`.
 
 ### Task 7: Webview page, build and packaging
 

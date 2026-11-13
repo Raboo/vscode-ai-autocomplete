@@ -134,7 +134,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   ```
   `Settings['fim']['multiline']` uses `Multiline`.
 
-- [ ] **Step 1: Write the failing tests** in `settings.test.ts`. Problem strings use the format `aiAutocomplete.backends[0] ("lm").fim.<key>: <why>, ignored`.
+- [x] **Step 1: Write the failing tests** in `settings.test.ts`. Problem strings use the format `aiAutocomplete.backends[0] ("lm").fim.<key>: <why>, ignored`.
   ```ts
   test('backend fim keeps valid keys', () => {
     // fim: { template: 'seed-coder', temperature: 0.05, prefixLines: 300, extraContext: false, multiline: 'never', stop: ['</s>'], extraBody: { a: 1 }, debounceMs: 120, timeoutMs: 9000, contextTokens: 8000 }
@@ -158,16 +158,16 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
     // and type 'integer' exactly when integer: true
   });
   ```
-- [ ] **Step 2: Run the tests** with `npx vitest run test/unit/settings.test.ts test/unit/manifest.test.ts`. Expected: FAIL (`FIM_LIMITS` not exported; no `fim` schema).
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run the tests** with `npx vitest run test/unit/settings.test.ts test/unit/manifest.test.ts`. Expected: FAIL (`FIM_LIMITS` not exported; no `fim` schema).
+- [x] **Step 3: Implement.**
   - Refactor `parseBackend` into the exported `parseBackendEntry`, which takes the `problems` array, and add `fim` validation. A key that is valid but `undefined` is simply absent.
   - Add the `fim` object to the backend item schema in `package.json`:
     - `additionalProperties: false`;
     - every key above, each with a one-line `description`;
     - `template` with `enum` of the template ids;
     - `multiline` with `enum`.
-- [ ] **Step 4: Run the full check** with `npm run lint && npm run typecheck && npm run build && npm test`. Expected: all pass.
-- [ ] **Step 5: Commit.** `feat: per-backend fim settings with validated ranges`.
+- [x] **Step 4: Run the full check** with `npm run lint && npm run typecheck && npm run build && npm test`. Expected: all pass.
+- [x] **Step 5: Commit.** `feat: per-backend fim settings with validated ranges`.
 
 ### Task 2: Effective values shared by completions and the page
 

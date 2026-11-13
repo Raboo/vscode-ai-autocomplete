@@ -642,7 +642,7 @@ test('template route is rejected', async () => { /* throws Error /native only/ *
   export class ContextTracker implements vscode.Disposable { constructor(ring: ExtraContextRing, isExcluded: (doc: vscode.TextDocument) => boolean) }
   ```
 
-- [ ] **Step 1: Write failing `context.test.ts`.**
+- [x] **Step 1: Write failing `context.test.ts`.**
 
 ```ts
 test('takes N lines before and after the cursor', () => { /* 500-line doc, cursor line 250 col 3, prefixLines 200, suffixLines 60 → prefix starts at line 50 col 0, suffix ends at line 310 */ });
@@ -655,22 +655,22 @@ test('pick skips chunks overlapping the current window and respects budget', () 
 test('pick output is stable across calls (cache-friendly order)', () => {});
 ```
 
-- [ ] **Step 2: Run the tests.** Expected: FAIL.
+- [x] **Step 2: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 3: Implement `context.ts`.**
+- [x] **Step 3: Implement `context.ts`.**
   - A chunk is `chunkLines` lines centred on `centerLine`, clamped to the document.
   - "Overlapping" means the same path and at least 50% line overlap.
   - `pick` returns chunks oldest-first, keeping order so the start of llama.cpp's prompt stays cache-friendly. Each chunk becomes `{ path: \`${path}\`, text }`.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Implement `ContextTracker`.**
+- [x] **Step 5: Implement `ContextTracker`.**
   - Events: `onDidChangeActiveTextEditor`, `onDidSaveTextDocument`, and `onDidChangeTextEditorSelection` debounced to 1000 ms.
   - Each event calls `ring.add(workspace-relative path, lines, cursor line)`.
   - Skip documents whose scheme isn't `file`/`untitled`, and documents where `isExcluded` is true.
   - Integration coverage comes in Task 13.
 
-- [ ] **Step 6: Commit** with message `feat: FIM context window and extra-context ring`.
+- [x] **Step 6: Commit** with message `feat: FIM context window and extra-context ring`.
 
 ---
 

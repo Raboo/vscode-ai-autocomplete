@@ -84,6 +84,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('about', async () => {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(d.context.extensionUri, 'NOTICE'));
       await vscode.window.showTextDocument(doc, { preview: true });
+      await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
     }),
     reg('accepted', () => {
       accepted++;

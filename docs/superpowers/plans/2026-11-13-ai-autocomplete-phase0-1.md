@@ -486,9 +486,9 @@ test('invalid override regex is skipped', () => expect(() => resolvePreset('x', 
   export function startMockHttp(handler: (req: { url: string; body: any }) => { status?: number; sse?: string[]; json?: unknown }): Promise<{ url: string; requests: { url: string; body: any }[]; close(): Promise<void> }>
   ```
 
-- [ ] **Step 1: Write the `mockHttp` helper**, using `node:http` on port 0. When `sse` is set, it sends each string as `data: <s>\n\n` with `content-type: text/event-stream`.
+- [x] **Step 1: Write the `mockHttp` helper**, using `node:http` on port 0. When `sse` is set, it sends each string as `data: <s>\n\n` with `content-type: text/event-stream`.
 
-- [ ] **Step 2: Write failing `llamacpp.test.ts`.**
+- [x] **Step 2: Write failing `llamacpp.test.ts`.**
 
 ```ts
 test('native route posts /infill with llama.cpp fields and streams content', async () => {
@@ -507,17 +507,17 @@ test('supportsNativeFim is true', () => {});
 test('HTTP 503 surfaces as HttpError', async () => {});
 ```
 
-- [ ] **Step 3: Run the tests.** Expected: FAIL.
+- [x] **Step 3: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 4: Implement `types.ts` and `LlamaCppBackend`.**
+- [x] **Step 4: Implement `types.ts` and `LlamaCppBackend`.**
   - Field mapping: `topK` → `top_k`, `topP` → `top_p`, `maxTokens` → `n_predict`. Omit undefined fields. Include `model` only if set.
   - Spread `extraBody` last.
   - Stream parsing: yield `content` while `stop !== true`.
   - `detectModel` uses `GET /props` with a 2 s timeout and returns `undefined` on any error.
 
-- [ ] **Step 5: Run the tests.** Expected: PASS.
+- [x] **Step 5: Run the tests.** Expected: PASS.
 
-- [ ] **Step 6: Commit** with message `feat: llama.cpp FIM backend (/infill, /completion)`.
+- [x] **Step 6: Commit** with message `feat: llama.cpp FIM backend (/infill, /completion)`.
 
 ---
 

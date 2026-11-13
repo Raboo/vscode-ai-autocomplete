@@ -1,3 +1,5 @@
+import type { BackendConfig } from '../types';
+
 const MAX_BODY_TEXT = 500;
 
 export class HttpError extends Error {
@@ -51,4 +53,9 @@ export function classifyError(err: unknown): ErrorClass {
     return { kind: 'http', status: err.status };
   }
   return { kind: 'network' };
+}
+
+/** Request headers for a backend: config headers plus a bearer token when a key is set. */
+export function authHeaders(config: BackendConfig, key: string | undefined): Record<string, string> {
+  return { ...config.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) };
 }

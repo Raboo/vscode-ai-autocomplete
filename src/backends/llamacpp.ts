@@ -1,5 +1,5 @@
 import type { BackendConfig } from '../types';
-import { joinUrl, postJson } from './http';
+import { authHeaders, joinUrl, postJson } from './http';
 import { parseSse } from './sse';
 import type { ApiKeyProvider, FimBackend, FimRequest } from './types';
 
@@ -16,8 +16,7 @@ export class LlamaCppBackend implements FimBackend {
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
-    const key = await this.apiKey();
-    return { ...this.config.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) };
+    return authHeaders(this.config, await this.apiKey());
   }
 
   async detectModel(signal: AbortSignal): Promise<string | undefined> {

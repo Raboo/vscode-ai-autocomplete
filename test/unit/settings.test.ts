@@ -72,6 +72,14 @@ describe('parseSettings', () => {
     expect(settings.modelOverrides).toEqual({});
     expect(settings.debug.logPrompts).toBe(false);
   });
+  test.each([
+    ['global true, workspace false', { globalValue: true, workspaceValue: false }, true],
+    ['global true, folder false', { globalValue: true, workspaceFolderValue: false }, true],
+    ['workspace true only', { workspaceValue: true }, true],
+    ['unset', {}, false],
+  ] as [string, Inspected<boolean>, boolean][])('privacy.localOnly can only be tightened by a workspace: %s', (_n, v, expected) => {
+    expect(parseSettings(src({ 'privacy.localOnly': v })).settings.privacy.localOnly).toBe(expected);
+  });
   test('no backends gives undefined backendId and no problem', () => {
     const r = parseSettings(src({}));
     expect(r.settings.backends).toEqual([]);

@@ -199,7 +199,7 @@
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address."
+          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address. A workspace can turn this on but not off."
         },
         "aiAutocomplete.modelOverrides": {
           "type": "object",

@@ -65,6 +65,12 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue ?? i?.defaultValue ?? fallback;
   };
 
+  // Restrict-only: any level set to true wins, so a workspace can turn it on but never off.
+  const restrictOnly = (key: string): boolean => {
+    const i = src.inspect<boolean>(key);
+    return [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue].some((v) => v === true);
+  };
+
   const rawBackends = machine<unknown>('backends', []);
   const backends: BackendConfig[] = [];
   if (Array.isArray(rawBackends)) {
@@ -124,7 +130,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       disableInFiles: strs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
       skipMidWord: resource('fim.skipMidWord', true),
     },
-    privacy: { localOnly: resource('privacy.localOnly', false) },
+    privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,
     debug: { logPrompts: machine('debug.logPrompts', false) },
   };

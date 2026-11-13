@@ -25,7 +25,17 @@ function countOccurrences(haystack: string, needle: string): number {
   return n;
 }
 
-export function postprocess(raw: string, c: PostCtx): string | undefined {
+const toLf = (s: string): string => s.replace(/\r\n/g, '\n');
+
+/** Accepts raw document text (CRLF allowed); the result uses `\n` line breaks. */
+export function postprocess(rawInput: string, ctxInput: PostCtx): string | undefined {
+  const raw = toLf(rawInput);
+  const c: PostCtx = {
+    linePrefix: toLf(ctxInput.linePrefix),
+    lineSuffix: toLf(ctxInput.lineSuffix),
+    prevLine: toLf(ctxInput.prevLine),
+    suffix: toLf(ctxInput.suffix),
+  };
   if (raw.trim() === '') return undefined;
 
   const text = stripCodeFences(raw).trimEnd();

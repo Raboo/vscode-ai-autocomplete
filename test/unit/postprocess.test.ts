@@ -25,6 +25,14 @@ describe('postprocess', () => {
     expect(postprocess(`x${unit}${unit}${unit}`, ctx())).toBeUndefined();
     expect(postprocess(`x${unit}${unit}`, ctx())).toBe(`x${unit}${unit}`);
   });
+  test('drops a multi-line retype of a CRLF suffix', () =>
+    expect(
+      postprocess('return x;\r\n}', ctx({ suffix: '\r\n  return x;\r\n}' })),
+    ).toBeUndefined());
+  test('drops a CRLF repeat of the previous line', () =>
+    expect(postprocess('const a = 1;\r\n', ctx({ prevLine: 'const a = 1;\r\n' }))).toBeUndefined());
+  test('returns \\n line breaks for CRLF input', () =>
+    expect(postprocess('a\r\nb\r\n', ctx())).toBe('a\nb'));
   test('passes normal text through', () => expect(postprocess('foo(a, b)', ctx())).toBe('foo(a, b)'));
 });
 

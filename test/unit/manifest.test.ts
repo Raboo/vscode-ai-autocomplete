@@ -11,3 +11,9 @@ test('NOTICE credits the original author', () => {
   expect(readFileSync('NOTICE', 'utf8')).toContain('Originally created by Elias Abacioglu');
 });
 test('bundle exists after build', () => { expect(readFileSync('dist/extension.js', 'utf8')).toContain('activate'); });
+test('commands are categorised and accepted is hidden from the palette', () => {
+  const cmds = pkg.contributes.commands as { command: string; category: string }[];
+  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'menu', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
+  expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
+  expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
+});

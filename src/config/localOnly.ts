@@ -50,3 +50,31 @@ export async function isLocalEndpoint(baseUrl: string, lookup: Lookup = defaultL
     return false;
   }
 }
+
+/** Caches an async per-baseUrl check for ttlMs (the answer may need a DNS lookup). */
+export function memoizeIsLocal(fn: (baseUrl: string) => Promise<boolean>, ttlMs: number, now: () => number = Date.now): ((baseUrl: string) => Promise<boolean>) & { clear(): void } {
+  const memo = new Map<string, { at: number; value: Promise<boolean> }>();
+  const call = (baseUrl: string): Promise<boolean> => {
+    const hit = memo.get(baseUrl);
+    if (hit && now() - hit.at < ttlMs) return hit.value;
+    const value = fn(baseUrl);
+    memo.set(baseUrl, { at: now(), value });
+    return value;
+  };
+  call.clear = (): void => memo.clear();
+  return call;
+}
+
+/** Synchronous, DNS-free guess: localhost, *.localhost or a private IP literal. */
+export function isObviouslyLocal(baseUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  if (host.endsWith('.')) host = host.slice(0, -1);
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  return (isIPv4(host) || isIPv6(host)) && isPrivateAddress(host);
+}

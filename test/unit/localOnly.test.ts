@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { isLocalEndpoint, isPrivateAddress } from '../../src/config/localOnly';
+import { isLocalEndpoint, isObviouslyLocal, isPrivateAddress } from '../../src/config/localOnly';
 
 describe('isPrivateAddress', () => {
   test.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.5', '169.254.1.1', '100.64.0.1', '::1', 'fd12::1', 'fe80::1', '::ffff:192.168.0.2'])('%s private', (ip) => expect(isPrivateAddress(ip)).toBe(true));
@@ -23,4 +23,20 @@ describe('isLocalEndpoint', () => {
   test('dns failure is not local', async () => expect(await isLocalEndpoint('http://nope.invalid', async () => { throw new Error('ENOTFOUND'); })).toBe(false));
   test('invalid url is not local', async () => expect(await isLocalEndpoint('not a url', async () => ['127.0.0.1'])).toBe(false));
   test('codestral is not local', async () => expect(await isLocalEndpoint('https://codestral.mistral.ai', async () => ['104.18.1.1'])).toBe(false));
+});
+
+describe('isObviouslyLocal', () => {
+  test.each([
+    ['http://localhost:8012', true],
+    ['http://foo.localhost', true],
+    ['http://127.0.0.1:8012', true],
+    ['http://192.168.1.5', true],
+    ['http://[::1]:80', true],
+    ['https://example.com', false],
+    ['http://8.8.8.8', false],
+    ['http://my-box.lan', false],
+    ['not a url', false],
+  ])('%s -> %s', (url, want) => {
+    expect(isObviouslyLocal(url)).toBe(want);
+  });
 });

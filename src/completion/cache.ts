@@ -11,6 +11,10 @@ export class SuggestionCache {
 
   constructor(private readonly max = 50) {}
 
+  clear(): void {
+    this.entries = [];
+  }
+
   add(uri: string, prefix: string, suffix: string, text: string): void {
     this.entries = this.entries.filter(
       (e) => !(e.uri === uri && e.prefix === prefix && e.suffix === suffix),

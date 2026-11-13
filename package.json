@@ -214,6 +214,56 @@
           "markdownDescription": "Write prompt and completion text to the output channel. Off by default because it contains your code. Timings, status codes and sizes are always logged at debug level."
         }
       }
+    },
+    "commands": [
+      {
+        "command": "aiAutocomplete.menu",
+        "title": "Show Menu",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.toggle",
+        "title": "Toggle Completions",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.snooze",
+        "title": "Snooze Completions",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.selectBackend",
+        "title": "Select Backend",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.setApiKey",
+        "title": "Set API Key",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.showLog",
+        "title": "Show Log",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.about",
+        "title": "About",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.accepted",
+        "title": "Completion Accepted (internal)",
+        "category": "AI Autocomplete"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "aiAutocomplete.accepted",
+          "when": "false"
+        }
+      ]
     }
   },
   "scripts": {

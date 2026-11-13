@@ -587,7 +587,7 @@ test('supportsNativeFim only for deepseek and ollama', () => {});
   - `class MistralBackend implements FimBackend`;
   - `createBackend(cfg: BackendConfig, apiKey: ApiKeyProvider): FimBackend`, which switches on `cfg.kind`.
 
-- [ ] **Step 1: Write failing `mistral.test.ts`.**
+- [x] **Step 1: Write failing `mistral.test.ts`.**
 
 ```ts
 test('posts /v1/fim/completions without top_p, with codestral multi-file prefix', async () => {
@@ -605,9 +605,9 @@ test('401 on codestral host retries api host once and remembers it', async () =>
 test('template route is rejected', async () => { /* throws Error /native only/ */ });
 ```
 
-- [ ] **Step 2: Run the tests.** Expected: FAIL.
+- [x] **Step 2: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 3: Implement `MistralBackend`.**
+- [x] **Step 3: Implement `MistralBackend`.**
   - Constructor: `constructor(config, apiKey, opts?: { resolveBase?: (base: string) => string })`. The test seam maps the real hostnames to mock URLs.
   - The default `baseUrl`, if empty, is `https://codestral.mistral.ai`.
   - Endpoint fallback runs only when the host is `codestral.mistral.ai` or `api.mistral.ai`: on a 401/403, retry once on the other host. The winning host is kept in memory for this instance.
@@ -615,9 +615,9 @@ test('template route is rejected', async () => { /* throws Error /native only/ *
   - `detectModel` returns `cfg.fimModel ?? 'codestral-latest'`.
   - Add the Kilo MIT entry to `THIRD_PARTY_NOTICES.md` if code was adapted.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit** with message `feat: Mistral Codestral FIM backend with endpoint fallback`.
+- [x] **Step 5: Commit** with message `feat: Mistral Codestral FIM backend with endpoint fallback`.
 
 ---
 

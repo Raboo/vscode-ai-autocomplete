@@ -322,7 +322,7 @@ test('codestral is not local', async () => expect(await isLocalEndpoint('https:/
                               state(): { kind: 'ok' } | { kind: 'backoff'; until: number } | { kind: 'fatal'; status: number }; reset(): void }
   ```
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   - `sse.test.ts` (feed a `ReadableStream` built from string chunks):
     - `splits events across chunk boundaries` (`'data: {"a"'` + `':1}\n\n'` gives `['{"a":1}']`);
     - `handles CRLF`;
@@ -336,7 +336,8 @@ test('codestral is not local', async () => expect(await isLocalEndpoint('https:/
     - `classifyError(new HttpError(429,'',''))` gives `{kind:'http',status:429}`;
     - `classifyError(new TypeError('fetch failed'))` gives `{kind:'network'}`;
     - a `postJson` against a `node:http` server returning 500 rejects with `HttpError` status 500;
-    - a `postJson` with `timeoutMs: 50` against a server that never answers rejects, and `classifyError` gives `abort`.
+    - a `postJson` with `timeoutMs: 50` against a server that never answers rejects, and `classifyError` gives `network` (a timeout is a backend failure; ruling during execution);
+    - a `postJson` whose caller `AbortController` is aborted rejects, and `classifyError` gives `abort`.
   - `backoff.test.ts` (fake `now`):
 
 ```ts
@@ -348,21 +349,21 @@ test('abort never counts', () => { b.recordFailure({kind:'abort'}); expect(b.sta
 test('canRequest true again after until passes', () => {});
 ```
 
-- [ ] **Step 2: Run the tests.** Expected: FAIL.
+- [x] **Step 2: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 3: Implement the three modules.**
+- [x] **Step 3: Implement the three modules.**
   - `postJson`:
     - uses global `fetch` with `AbortSignal.any([o.signal, AbortSignal.timeout(o.timeoutMs)])`;
     - sets the header `content-type: application/json`.
   - `classifyError`:
-    - `name === 'AbortError' || name === 'TimeoutError'` gives `abort`;
+    - `name === 'AbortError'` gives `abort` (user cancellation); `name === 'TimeoutError'` gives `network`, so a hung backend backs off;
     - an `HttpError` gives `http`;
     - anything else gives `network`.
   - Backoff values: base 2000 ms, factor 2, cap 120000 ms; after 5 consecutive failures the circuit opens for 300000 ms.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit** with message `feat: http/sse helpers and error backoff`.
+- [x] **Step 5: Commit** with message `feat: http/sse helpers and error backoff`.
 
 ---
 

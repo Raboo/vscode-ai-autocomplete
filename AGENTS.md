@@ -13,7 +13,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - No telemetry, ever. Nothing leaves the machine except requests to the user-configured backend.
 - Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from `globalValue` only; workspace values are ignored.
 - Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`. Everything else is pure and unit-testable.
-- Prompt and completion text are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes may always be logged at debug level.
+- Prompt and completion text are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
 - A file that copies or closely adapts upstream code starts with `// Portions adapted from <project> <path> @ <commit> (<license>). Copyright <holder>.`, and `THIRD_PARTY_NOTICES.md` gets an entry for that project (full MIT text for MIT projects).
 - Never touch the GitHub repo `Raboo/ai-autocomplete`.
 - Interactive sessions ask the user before creating repos, pushing, changing repo settings or releasing, and wait for a yes.
@@ -32,10 +32,11 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `npm run watch`: rebuild on change.
 - `npm run typecheck`: `tsc --noEmit`.
 - `npm run lint`: ESLint over the repo.
-- `npm test`: unit tests with vitest.
+- `npm test`: unit tests with vitest. Run `npm run build` first: a manifest test reads `dist/extension.js`.
 - `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server; CI runs it under `xvfb-run`.
 - `npm run package`: build a `.vsix` with `vsce package --no-dependencies`.
 - `npm run vscode:prepublish`: production (minified) build, run by vsce.
+- `bash scripts/setup-github-repo.sh --dry-run`: print the GitHub repo settings the automation needs (never run it without `--dry-run` unless the user approved; see section 7).
 
 ## Layout
 
@@ -59,4 +60,25 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 
 ## GitHub automation
 
-See Task 14 of the Phase 0–1 plan; this section is completed there.
+Why each piece exists:
+
+- release-please turns Conventional Commits on `main` into a release PR that bumps `package.json` and writes `CHANGELOG.md`; merging it creates the tag and GitHub Release, and a follow-up job attaches the `.vsix`. Releases need no hand-edited files.
+- Dependabot keeps devDependencies and pinned action SHAs current. Patch/minor updates auto-merge once CI is green; major updates wait for a human or an AI session.
+- CodeQL scans the TypeScript on every PR and weekly.
+- `scripts/setup-github-repo.sh` records the repo settings these depend on (merge options, workflow permissions, security alerts, the `main` ruleset requiring `check` and `integration`), so they are reproducible and reviewable rather than clicked by hand.
+
+Workflows (`.github/workflows/`):
+
+- `ci.yml`: jobs `check` (lint, typecheck, build, test, package) and `integration` (VS Code under `xvfb-run`). Job ids must stay `check` and `integration`, with no `name:`, because the ruleset requires those names.
+- `release-please.yml`: job `release-please` opens or updates the release PR; job `vsix` runs on release and uploads `ai-autocomplete-X.Y.Z.vsix` to the release.
+- `dependabot-automerge.yml`: enables auto-merge (squash) for Dependabot patch and minor PRs.
+- `codeql.yml`: job `analyze`.
+- Every job has `timeout-minutes`; keep it when adding jobs.
+
+Release PRs opened with the default `GITHUB_TOKEN` do not trigger CI, so `check` and `integration` never report on them. Either add a `RELEASE_PLEASE_TOKEN` secret (fine-grained PAT: contents and pull requests write on this repo) or merge release PRs with the admin bypass (`gh pr merge --admin --squash`).
+
+Cut a release: merge the open release-please PR. The first one proposes `0.1.0`.
+
+Needs a human: creating the `RELEASE_PLEASE_TOKEN` secret, Marketplace and Open VSX tokens (Phase 5), approving major dependency updates.
+
+Open item: the CI `integration` job had not yet run on GitHub when this was written. If it fails with Chromium sandbox errors on ubuntu-24.04, add a CI-only `--no-sandbox` launch arg in `.vscode-test.mjs`, or a `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` step before it.

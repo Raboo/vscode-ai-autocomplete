@@ -386,7 +386,7 @@ test('canRequest true again after until passes', () => {});
   export function resolvePreset(modelId: string, overrides: Record<string, ModelOverrideBody>): ResolvedPreset
   ```
 
-- [ ] **Step 1: Write failing `templates.test.ts`.** There is one `render` and `stop` assertion per template with input `{prefix:'P', suffix:'S', filePath:'a.ts', repoName:'r', extra:[]}`; the exact strings are below (copy them verbatim). Add one repo-level case for qwen and codestral with `extra: [{path:'b.ts', text:'B'}]`.
+- [x] **Step 1: Write failing `templates.test.ts`.** There is one `render` and `stop` assertion per template with input `{prefix:'P', suffix:'S', filePath:'a.ts', repoName:'r', extra:[]}`; the exact strings are below (copy them verbatim). Add one repo-level case for qwen and codestral with `extra: [{path:'b.ts', text:'B'}]`.
 
 | id | render (no extra) | stop | suffixFirst |
 |---|---|---|---|
@@ -407,7 +407,7 @@ How repo-level context (extra files) is rendered:
 - **mellum**: `<filename>b.ts\nB\n` before `<fim_suffix>`. Check this against the Mellum-4b-base model card while implementing and adjust if the card differs.
 - **All other templates** ignore `extra`.
 
-- [ ] **Step 2: Write failing `presets.test.ts`.**
+- [x] **Step 2: Write failing `presets.test.ts`.**
 
 ```ts
 test.each([
@@ -429,9 +429,9 @@ test('override can set a template on an unknown model', () => expect(resolvePres
 test('invalid override regex is skipped', () => expect(() => resolvePreset('x', { '(': {} })).not.toThrow());
 ```
 
-- [ ] **Step 3: Run the tests.** Expected: FAIL.
+- [x] **Step 3: Run the tests.** Expected: FAIL.
 
-- [ ] **Step 4: Implement both modules.**
+- [x] **Step 4: Implement both modules.**
   - Presets are checked in this order; the first match wins (regexes are case-insensitive):
 
     | Preset | Regex |
@@ -458,9 +458,9 @@ test('invalid override regex is skipped', () => expect(() => resolvePreset('x', 
     - `extraBody` is shallow-merged;
     - `fimTemplate` replaces the template, and recomputes the template stops and `suffixFirst`.
 
-- [ ] **Step 5: Run the tests.** Expected: PASS. Add the Continue entry to `THIRD_PARTY_NOTICES.md` if template code was adapted.
+- [x] **Step 5: Run the tests.** Expected: PASS. Add the Continue entry to `THIRD_PARTY_NOTICES.md` if template code was adapted.
 
-- [ ] **Step 6: Commit** with message `feat: FIM templates and model presets`.
+- [x] **Step 6: Commit** with message `feat: FIM templates and model presets`.
 
 ---
 

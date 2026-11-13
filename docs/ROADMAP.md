@@ -15,3 +15,5 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 
 - Task 12 Step 4 smoke test (real editor, real backend).
 - Install the released `.vsix` with `code --install-extension ai-autocomplete-0.1.0.vsix` and check completions work.
+- Start llama-server after VS Code (status shows "cannot reach backend; retrying in N s"), then check **AI Autocomplete: Retry Now** brings completions back at once.
+- With a Mistral backend and a wrong API key (status `HTTP 401`), check that **AI Autocomplete: Set API Key** with the right key brings completions back without touching the settings.

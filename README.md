@@ -30,6 +30,8 @@ Open your user settings (**Preferences: Open User Settings (JSON)**) and add:
 
 Start typing and suggestions appear as ghost text; press `Tab` to accept one. To ask for a suggestion yourself, press `Alt+\` (`Option+\` on macOS), VS Code's shortcut for **Trigger Inline Suggestion**.
 
+If the server is not running yet, the status bar shows an error and the extension retries on its own after a while. Run **AI Autocomplete: Retry Now** (also in the status bar menu) to retry at once.
+
 Backends go in your user settings only; see [Privacy](#privacy) for why.
 
 ### Other backends
@@ -56,6 +58,12 @@ Then run **AI Autocomplete: Set API Key** from the Command Palette, pick `codest
 
 Set `fimModel` to the model name the server lists. It must be a coder model with a fill-in-the-middle template: Qwen2.5-Coder, Codestral, DeepSeek-Coder, StarCoder, Code Llama, CodeGemma, Granite, Seed-Coder or Mellum. vLLM listens on port 8000 by default, so its `baseUrl` is usually `http://127.0.0.1:8000/v1`.
 
+The extension recognises LM Studio and Ollama only by their default ports (1234 and 11434). For any other self-hosted server, such as vLLM on port 8000, add `"hostFlavor": "vllm"` (or `"lmstudio"`, `"ollama"`) to the backend. Without it the server is treated as a hosted API: `top_k` is not sent and only the first 4 stop sequences are sent.
+
+```jsonc
+{ "id": "vllm", "kind": "openai", "baseUrl": "http://127.0.0.1:8000/v1", "hostFlavor": "vllm", "fimModel": "Qwen/Qwen2.5-Coder-7B" }
+```
+
 You can list several backends and switch between them with **AI Autocomplete: Select Backend**.
 
 ### Keep requests on your machine
@@ -73,11 +81,13 @@ Strata and the Qwen3.8 models it serves are chat-only, so this release cannot co
 ## Privacy
 
 - No telemetry. The extension sends nothing except completion requests to the backend you configure.
-- Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend.
+- Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
+- Requests never follow HTTP redirects, so a server cannot forward your code to another host.
+- With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
 - Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
-- A workspace can turn `aiAutocomplete.privacy.localOnly` on, but not off.
-- Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem` and `*.key`) get no completions and are never sent.
+- A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
+- Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem` and `*.key`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text is written to the log only when `aiAutocomplete.debug.logPrompts` is on.
 - Known limitation: the local-only check resolves the backend's hostname before the request, and the request then does its own lookup. It guards against a misconfigured `baseUrl`, not against a hostile DNS server that answers differently the second time. Use an IP address in `baseUrl` if that matters to you.
 

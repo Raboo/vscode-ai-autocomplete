@@ -27,7 +27,195 @@
     "ui",
     "workspace"
   ],
-  "contributes": {},
+  "contributes": {
+    "configuration": {
+      "title": "AI Autocomplete",
+      "properties": {
+        "aiAutocomplete.backends": {
+          "type": "array",
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "Completion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "baseUrl"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "description": "Unique id: lowercase letters, digits and dashes."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "llamacpp",
+                  "openai",
+                  "mistral"
+                ],
+                "description": "API protocol the backend speaks."
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "Base URL, http or https."
+              },
+              "hostFlavor": {
+                "type": "string",
+                "enum": [
+                  "llamacpp",
+                  "vllm",
+                  "sglang",
+                  "lmstudio",
+                  "ollama",
+                  "strata",
+                  "deepseek",
+                  "fireworks",
+                  "together",
+                  "openrouter",
+                  "mistral",
+                  "generic"
+                ],
+                "description": "Server software, used to pick server-specific request options."
+              },
+              "fimModel": {
+                "type": "string",
+                "description": "Model name for fill-in-the-middle completions."
+              },
+              "nextEditModel": {
+                "type": "string",
+                "description": "Model name for next-edit suggestions."
+              },
+              "fimMode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "native",
+                  "template",
+                  "chat"
+                ],
+                "default": "auto",
+                "description": "How fill-in-the-middle prompts are built."
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Extra HTTP headers."
+              }
+            }
+          }
+        },
+        "aiAutocomplete.fim.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Enable inline fill-in-the-middle completions."
+        },
+        "aiAutocomplete.fim.backend": {
+          "type": "string",
+          "scope": "resource",
+          "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend. May be set per workspace."
+        },
+        "aiAutocomplete.fim.debounceMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null,
+          "scope": "resource",
+          "markdownDescription": "Delay in milliseconds before requesting a completion after typing. `null` picks a default based on whether the backend is local."
+        },
+        "aiAutocomplete.fim.multiline": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto",
+          "scope": "resource",
+          "markdownDescription": "Whether completions may span multiple lines. `auto` decides from the cursor position."
+        },
+        "aiAutocomplete.fim.maxTokens": {
+          "type": "number",
+          "default": 128,
+          "scope": "resource",
+          "markdownDescription": "Maximum number of tokens to generate per completion."
+        },
+        "aiAutocomplete.fim.prefixLines": {
+          "type": "number",
+          "default": 200,
+          "scope": "resource",
+          "markdownDescription": "Number of lines before the cursor sent as context."
+        },
+        "aiAutocomplete.fim.suffixLines": {
+          "type": "number",
+          "default": 60,
+          "scope": "resource",
+          "markdownDescription": "Number of lines after the cursor sent as context."
+        },
+        "aiAutocomplete.fim.extraContext": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Include snippets from other open and recently edited files as extra context."
+        },
+        "aiAutocomplete.fim.disableInLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "plaintext"
+          ],
+          "scope": "resource",
+          "markdownDescription": "Language ids in which completions are disabled."
+        },
+        "aiAutocomplete.fim.disableInFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key"
+          ],
+          "scope": "resource",
+          "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled."
+        },
+        "aiAutocomplete.fim.skipMidWord": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Do not trigger a completion when the cursor is in the middle of a word."
+        },
+        "aiAutocomplete.privacy.localOnly": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address."
+        },
+        "aiAutocomplete.modelOverrides": {
+          "type": "object",
+          "default": {},
+          "scope": "machine",
+          "markdownDescription": "Per-model overrides. Keys are regular expressions matched against the model name; values may set `fimTemplate`, `stop`, `sampling` and `extraBody`. Machine-scoped.\n\n```json\n{ \"qwen.*coder\": { \"fimTemplate\": \"qwen\", \"stop\": [\"<|endoftext|>\"] } }\n```"
+        },
+        "aiAutocomplete.debug.logPrompts": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Write prompt and completion text to the output channel. Off by default because it contains your code. Timings, status codes and sizes are always logged at debug level."
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",

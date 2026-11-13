@@ -157,4 +157,22 @@ describe('LlamaCppBackend', () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(503);
   });
+
+  test('listModels reads alias and n_ctx', async () => {
+    m = await startMockHttp(() => ({ json: { model_alias: 'q', default_generation_settings: { n_ctx: 8192 } } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => 'k');
+    expect(await b.listModels(new AbortController().signal)).toEqual({ models: ['q'], contextWindows: { q: 8192 } });
+    expect(m.requests[0].url).toBe('/props');
+    expect(m.requests[0].headers.authorization).toBe('Bearer k');
+  });
+  test('listModels falls back to top-level n_ctx and model_path', async () => {
+    m = await startMockHttp(() => ({ json: { model_path: '/m/Qwen.gguf', n_ctx: 4096 } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    expect(await b.listModels(new AbortController().signal)).toEqual({ models: ['Qwen'], contextWindows: { Qwen: 4096 } });
+  });
+  test('listModels throws HttpError on 401', async () => {
+    m = await startMockHttp(() => ({ status: 401, json: { error: 'no' } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    await expect(b.listModels(new AbortController().signal)).rejects.toBeInstanceOf(HttpError);
+  });
 });

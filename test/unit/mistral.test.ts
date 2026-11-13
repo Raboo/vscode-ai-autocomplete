@@ -119,6 +119,13 @@ describe('MistralBackend request', () => {
     expect(m.requests).toHaveLength(0);
   });
 
+  test('listModels makes no request and returns the configured model', async () => {
+    const m = await mock(() => ({ json: {} }));
+    const ac = new AbortController();
+    expect(await new MistralBackend(cfg(m.url, { fimModel: 'x' }), key).listModels(ac.signal)).toEqual({ models: ['x'], contextWindows: {} });
+    expect(await new MistralBackend(cfg(m.url), key).listModels(ac.signal)).toEqual({ models: ['codestral-latest'], contextWindows: {} });
+    expect(m.requests).toHaveLength(0);
+  });
   test('supportsNativeFim and detectModel', async () => {
     const ac = new AbortController();
     expect(new MistralBackend(cfg(''), key).supportsNativeFim()).toBe(true);

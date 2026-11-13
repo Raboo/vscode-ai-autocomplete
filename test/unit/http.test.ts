@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { classifyError, HttpError, joinUrl, postJson } from '../../src/backends/http';
+import { classifyError, getJson, HttpError, joinUrl, postJson } from '../../src/backends/http';
 import { startMockHttp } from './helpers/mockHttp';
 
 describe('joinUrl', () => {
@@ -100,5 +100,31 @@ describe('postJson', () => {
     const p = postJson(base, {}, { signal: ac.signal, timeoutMs: 5000 }).catch((e) => e);
     setTimeout(() => ac.abort(), 30);
     expect(classifyError(await p)).toEqual({ kind: 'abort' });
+  });
+});
+
+describe('getJson', () => {
+  test('returns parsed JSON and sends headers', async () => {
+    const m = await startMockHttp(() => ({ json: { a: 1 } }));
+    try {
+      const out = await getJson(`${m.url}/x`, { headers: { authorization: 'Bearer k' }, signal: new AbortController().signal, timeoutMs: 2000 });
+      expect(out).toEqual({ a: 1 });
+      expect(m.requests[0].headers.authorization).toBe('Bearer k');
+    } finally {
+      await m.close();
+    }
+  });
+  test('getJson throws HttpError on 302 without following it', async () => {
+    const other = await startMockHttp(() => ({ json: {} }));
+    const m = await startMockHttp(() => ({ status: 302, headers: { location: `${other.url}/y` } }));
+    try {
+      const err = await getJson(`${m.url}/x`, { signal: new AbortController().signal, timeoutMs: 2000 }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).status).toBe(302);
+      expect(other.requests).toHaveLength(0);
+    } finally {
+      await m.close();
+      await other.close();
+    }
   });
 });

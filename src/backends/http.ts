@@ -19,6 +19,12 @@ export interface PostOptions {
   timeoutMs: number;
 }
 
+export interface GetOptions {
+  headers?: Record<string, string>;
+  signal: AbortSignal;
+  timeoutMs: number;
+}
+
 export type ErrorClass = { kind: 'abort' } | { kind: 'http'; status: number } | { kind: 'network' };
 
 /**
@@ -38,6 +44,21 @@ export async function postJson(url: string, body: unknown, o: PostOptions): Prom
     throw new HttpError(res.status, text.slice(0, MAX_BODY_TEXT), url);
   }
   return res;
+}
+
+/** GETs JSON. Same error contract as postJson: non-2xx (including an unfollowed 3xx) throws an HttpError. */
+export async function getJson(url: string, o: GetOptions): Promise<unknown> {
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: o.headers,
+    redirect: 'manual',
+    signal: AbortSignal.any([o.signal, AbortSignal.timeout(o.timeoutMs)]),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new HttpError(res.status, text.slice(0, MAX_BODY_TEXT), url);
+  }
+  return res.json();
 }
 
 export function joinUrl(base: string, path: string): string {

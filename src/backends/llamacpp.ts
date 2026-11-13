@@ -1,9 +1,7 @@
 import type { BackendConfig } from '../types';
-import { authHeaders, joinUrl, postJson } from './http';
+import { authHeaders, getJson, joinUrl, postJson } from './http';
 import { parseSse } from './sse';
-import type { ApiKeyProvider, FimBackend, FimRequest } from './types';
-
-const DETECT_TIMEOUT_MS = 2000;
+import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
 
 export class LlamaCppBackend implements FimBackend {
   constructor(
@@ -19,25 +17,32 @@ export class LlamaCppBackend implements FimBackend {
     return authHeaders(this.config, await this.apiKey());
   }
 
+  async listModels(signal: AbortSignal, timeoutMs = LIST_MODELS_TIMEOUT_MS): Promise<ServerInfo> {
+    const props = (await getJson(joinUrl(this.config.baseUrl, '/props'), {
+      headers: await this.authHeaders(),
+      signal,
+      timeoutMs,
+    })) as { model_alias?: unknown; model_path?: unknown; n_ctx?: unknown; default_generation_settings?: { n_ctx?: unknown } } | null;
+    let model: string | undefined;
+    if (typeof props?.model_alias === 'string' && props.model_alias) {
+      model = props.model_alias;
+    } else if (typeof props?.model_path === 'string' && props.model_path) {
+      const base = props.model_path.split(/[\\/]/).pop() ?? '';
+      model = base.replace(/\.gguf$/i, '') || undefined;
+    }
+    if (!model) {
+      return { models: [], contextWindows: {} };
+    }
+    const nCtx = props?.default_generation_settings?.n_ctx ?? props?.n_ctx;
+    return {
+      models: [model],
+      contextWindows: typeof nCtx === 'number' && Number.isFinite(nCtx) ? { [model]: nCtx } : {},
+    };
+  }
+
   async detectModel(signal: AbortSignal): Promise<string | undefined> {
     try {
-      const res = await fetch(joinUrl(this.config.baseUrl, '/props'), {
-        headers: await this.authHeaders(),
-        redirect: 'manual', // a redirect (3xx) is not ok: requests never leave the configured host
-        signal: AbortSignal.any([signal, AbortSignal.timeout(DETECT_TIMEOUT_MS)]),
-      });
-      if (!res.ok) {
-        return undefined;
-      }
-      const props = (await res.json()) as { model_alias?: unknown; model_path?: unknown };
-      if (typeof props.model_alias === 'string' && props.model_alias) {
-        return props.model_alias;
-      }
-      if (typeof props.model_path === 'string' && props.model_path) {
-        const base = props.model_path.split(/[\\/]/).pop() ?? '';
-        return base.replace(/\.gguf$/i, '') || undefined;
-      }
-      return undefined;
+      return (await this.listModels(signal)).models[0];
     } catch {
       return undefined;
     }

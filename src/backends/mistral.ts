@@ -2,7 +2,7 @@ import { codestralPrefix } from '../models/templates';
 import type { BackendConfig } from '../types';
 import { authHeaders, HttpError, joinUrl, postJson } from './http';
 import { parseSse } from './sse';
-import type { ApiKeyProvider, FimBackend, FimRequest } from './types';
+import type { ApiKeyProvider, FimBackend, FimRequest, ServerInfo } from './types';
 
 const CODESTRAL_HOST = 'codestral.mistral.ai';
 const API_HOST = 'api.mistral.ai';
@@ -56,8 +56,12 @@ export class MistralBackend implements FimBackend {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- interface signature; no network probe for a hosted API
-  async detectModel(_signal: AbortSignal): Promise<string | undefined> {
-    return this.config.fimModel ?? DEFAULT_MODEL;
+  async listModels(_signal: AbortSignal, _timeoutMs?: number): Promise<ServerInfo> {
+    return { models: [this.config.fimModel ?? DEFAULT_MODEL], contextWindows: {} };
+  }
+
+  async detectModel(signal: AbortSignal): Promise<string | undefined> {
+    return (await this.listModels(signal)).models[0];
   }
 
   private post(base: string, body: unknown, headers: Record<string, string>, req: FimRequest): Promise<Response> {

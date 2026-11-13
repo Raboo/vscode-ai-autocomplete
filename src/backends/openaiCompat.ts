@@ -1,10 +1,9 @@
 import type { BackendConfig, HostFlavor } from '../types';
 import { inferHostFlavor, isHostedFlavor } from './hostFlavor';
-import { authHeaders, joinUrl, postJson } from './http';
+import { authHeaders, getJson, joinUrl, postJson } from './http';
 import { parseSse } from './sse';
-import type { ApiKeyProvider, FimBackend, FimRequest } from './types';
+import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
 
-const DETECT_TIMEOUT_MS = 2000;
 const HOSTED_MAX_STOPS = 4;
 
 export class OpenAiCompatBackend implements FimBackend {
@@ -25,22 +24,43 @@ export class OpenAiCompatBackend implements FimBackend {
     return authHeaders(this.config, await this.apiKey());
   }
 
+  async listModels(signal: AbortSignal, timeoutMs = LIST_MODELS_TIMEOUT_MS): Promise<ServerInfo> {
+    const headers = await this.headers();
+    const models: string[] = [];
+    const contextWindows: Record<string, number> = {};
+    const entries = (body: unknown): { id?: unknown; [k: string]: unknown }[] => {
+      const data = (body as { data?: unknown } | null)?.data;
+      return Array.isArray(data) ? (data as { id?: unknown }[]).filter((e) => e && typeof e === 'object') : [];
+    };
+    const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+    for (const e of entries(await getJson(joinUrl(this.config.baseUrl, 'models'), { headers, signal, timeoutMs }))) {
+      if (typeof e.id === 'string' && e.id) {
+        models.push(e.id);
+        if (num(e.max_model_len)) {
+          contextWindows[e.id] = e.max_model_len;
+        }
+      }
+    }
+    if (this.flavor === 'lmstudio') {
+      try {
+        const url = `${new URL(this.config.baseUrl).origin}/api/v0/models`;
+        for (const e of entries(await getJson(url, { headers, signal, timeoutMs }))) {
+          if (typeof e.id === 'string' && e.id && num(e.loaded_context_length)) {
+            contextWindows[e.id] = e.loaded_context_length;
+          }
+        }
+      } catch {
+        // best effort: LM Studio's native API is optional
+      }
+    }
+    return { models, contextWindows };
+  }
+
   async detectModel(signal: AbortSignal): Promise<string | undefined> {
     try {
-      const res = await fetch(joinUrl(this.config.baseUrl, 'models'), {
-        headers: await this.headers(),
-        redirect: 'manual', // a redirect (3xx) is not ok: requests never leave the configured host
-        signal: AbortSignal.any([signal, AbortSignal.timeout(DETECT_TIMEOUT_MS)]),
-      });
-      if (!res.ok) {
-        return undefined;
-      }
-      const { data } = (await res.json()) as { data?: { id?: unknown }[] };
-      if (!Array.isArray(data) || data.length !== 1) {
-        return undefined;
-      }
-      const id = data[0]?.id;
-      return typeof id === 'string' && id ? id : undefined;
+      const { models } = await this.listModels(signal);
+      return models.length === 1 ? models[0] : undefined;
     } catch {
       return undefined;
     }

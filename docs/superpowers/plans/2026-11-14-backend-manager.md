@@ -226,7 +226,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
 
 `resolvePreset` may grow a field listing the keys a model override set. The implementer chooses how sources are tracked.
 
-- [ ] **Step 1: Write failing `effective.test.ts`.**
+- [x] **Step 1: Write failing `effective.test.ts`.**
   ```ts
   test('defaults for a qwen coder model', () => {
     // backend {} , model 'qwen2.5-coder-1.5b', default settings →
@@ -258,15 +258,15 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   ```ts
   test('timeout detail names the actual timeout', () => expect(describeFailure(timeoutErr, { kind: 'network' }, 9000)).toBe('timed out after 9 s'));
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/effective.test.ts test/unit/route.test.ts test/unit/requestStatus.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement `effective.ts` and the changed signatures.** Then switch the provider over:
+- [x] **Step 2: Run** `npx vitest run test/unit/effective.test.ts test/unit/route.test.ts test/unit/requestStatus.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement `effective.ts` and the changed signatures.** Then switch the provider over:
   - `provider.ts` calls `resolveFim(backend.config, model, s)` once per request, after model detection.
   - The window is built from `prefixLines`/`suffixLines` plus `contextCaps(contextTokens)`. `ring.pick` gets `extraChars`, used only when `values.extraContext` is true.
   - `recordBackendFailure` gets `j.req.timeoutMs`.
   - Remove `DEFAULT_WINDOW`, `EXTRA_CONTEXT_CHARS` and `REQUEST_TIMEOUT_MS`; `context.test.ts` uses explicit caps.
   - `extension.ts` creates each backend's `Debouncer` with `fixedMs: resolveFim(cfg, undefined, settings).values.debounceMs`.
-- [ ] **Step 4: Run the full check** (`npm run lint && npm run typecheck && npm run build && npm test`), then `npm run test:integration`. Expected: all pass; the existing integration tests are unchanged.
-- [ ] **Step 5: Commit.** `feat: completions use per-backend context, sampling and timing values`.
+- [x] **Step 4: Run the full check** (`npm run lint && npm run typecheck && npm run build && npm test`), then `npm run test:integration`. Expected: all pass; the existing integration tests are unchanged.
+- [x] **Step 5: Commit.** `feat: completions use per-backend context, sampling and timing values`.
 
 ### Task 3: Server info: model lists and context windows
 

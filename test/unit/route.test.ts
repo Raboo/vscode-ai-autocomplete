@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildFimRequest, planInsertion, planRoute } from '../../src/completion/route';
+import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from '../../src/completion/route';
 import type { ResolvedPreset } from '../../src/models/presets';
 import { TEMPLATES, type TemplateInput } from '../../src/models/templates';
 import type { BackendKind, FimTemplateId } from '../../src/types';
@@ -111,5 +111,21 @@ describe('buildFimRequest', () => {
   test('an unknown model is left out of the request', () => {
     const req = buildFimRequest({ route: 'native', preset: P(), model: undefined, multiline: true, maxTokens: 128, input, signal });
     expect('model' in req).toBe(false);
+  });
+});
+
+describe('explainUnsupported', () => {
+  test('a model that could not be detected is reported as such, with an error status', () => {
+    expect(explainUnsupported('vllm', undefined)).toEqual({
+      onceKey: 'detect:vllm',
+      log: 'backend "vllm": could not detect its model (server unreachable or several models listed); set fimModel',
+      status: 'vllm: model not detected',
+    });
+  });
+  test('a detected model without a route keeps the v0.2 message and sets no status', () => {
+    expect(explainUnsupported('strata', 'Qwen3.8-Flash')).toEqual({
+      onceKey: 'route:strata:Qwen3.8-Flash',
+      log: 'model Qwen3.8-Flash has no FIM route; chat FIM arrives in v0.2',
+    });
   });
 });

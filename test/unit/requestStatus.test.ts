@@ -61,6 +61,31 @@ describe('RequestStatus', () => {
     r.end(undefined);
     expect(last(s)).toEqual(['error', 'a: HTTP 500']);
   });
+
+  test('report: an outcome without a request is shown on every call', () => {
+    const s = sink();
+    const r = new RequestStatus(s);
+    r.report({ state: 'error', detail: 'local: model not detected' });
+    r.report({ state: 'error', detail: 'local: model not detected' });
+    expect(s.calls).toEqual([
+      ['error', 'local: model not detected'],
+      ['error', 'local: model not detected'],
+    ]);
+  });
+
+  test('report while a request runs: loading stays, and a later cancel restores the reported outcome', () => {
+    const s = sink();
+    const r = new RequestStatus(s);
+    r.begin();
+    r.report({ state: 'error', detail: 'local: model not detected' });
+    expect(last(s)).toEqual(['loading', undefined]);
+    r.end(undefined);
+    expect(last(s)).toEqual(['error', 'local: model not detected']);
+    // a later successful request clears it
+    r.begin();
+    r.end({ state: 'idle' });
+    expect(last(s)).toEqual(['idle', undefined]);
+  });
 });
 
 describe('recordBackendFailure', () => {
@@ -69,8 +94,8 @@ describe('recordBackendFailure', () => {
   test('warns once per backoff transition, not per failure', () => {
     const b = new ErrorBackoff(at(0));
     const first = recordBackendFailure(b, 'local', new TypeError('fetch failed'), { kind: 'network' }, false, 0);
-    expect(first.detail).toBe('local: fetch failed');
-    expect(first.warn).toBe('local: fetch failed; retrying in 2 s');
+    expect(first.detail).toBe('local: cannot reach backend');
+    expect(first.warn).toBe('local: cannot reach backend; retrying in 2 s');
     // a second request failing while already backing off (e.g. another file) changes nothing
     const second = recordBackendFailure(b, 'local', new TypeError('fetch failed'), { kind: 'network' }, false, 0);
     expect(second.warn).toBeUndefined();
@@ -106,9 +131,22 @@ describe('recordBackendFailure', () => {
 describe('describeFailure', () => {
   test('http status', () => expect(describeFailure(new HttpError(503, '', 'u'), { kind: 'http', status: 503 })).toBe('HTTP 503'));
   test('timeout', () => expect(describeFailure(new DOMException('t', 'TimeoutError'), { kind: 'network' })).toBe('timed out after 5 s'));
-  test('connection refused shows the cause code', () => {
-    const err = new TypeError('fetch failed', { cause: Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }) });
-    expect(describeFailure(err, { kind: 'network' })).toBe('fetch failed (ECONNREFUSED)');
+  test('connection refused shows the system error code, not the message', () => {
+    const err = new TypeError('fetch failed', { cause: Object.assign(new Error('connect 127.0.0.1:8012'), { code: 'ECONNREFUSED' }) });
+    expect(describeFailure(err, { kind: 'network' })).toBe('cannot reach backend (ECONNREFUSED)');
+    expect(describeFailure(new TypeError('fetch failed'), { kind: 'network' })).toBe('cannot reach backend');
   });
-  test('non-Error values', () => expect(describeFailure('boom', { kind: 'network' })).toBe('boom'));
+  test('a malformed stream never leaks server output', () => {
+    // Node's JSON.parse quotes the start of the bad input in its message
+    const err = new SyntaxError('Unexpected token \'d\', "def secret"... is not valid JSON');
+    const d = describeFailure(err, { kind: 'network' });
+    expect(d).toBe('malformed response from server');
+    expect(d).not.toContain('secret');
+  });
+  test('unknown errors use fixed text', () => {
+    expect(describeFailure(new Error('server said: def secret()'), { kind: 'network' })).toBe('request failed');
+    expect(describeFailure('boom', { kind: 'network' })).toBe('request failed');
+    // a cause code that is not a plain system code is ignored
+    expect(describeFailure(new TypeError('x', { cause: { code: 'def secret' } }), { kind: 'network' })).toBe('cannot reach backend');
+  });
 });

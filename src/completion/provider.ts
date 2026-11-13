@@ -12,7 +12,7 @@ import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, type Outcome, type StatusSink } from './requestStatus';
-import { buildFimRequest, planInsertion, planRoute } from './route';
+import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
 const EXTRA_CONTEXT_CHARS = 6000;
@@ -154,8 +154,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const preset = resolvePreset(model ?? '', s.modelOverrides);
     const route = planRoute(backend.config.kind, backend.supportsNativeFim(), preset, backend.config.fimMode);
     if (route === 'unsupported') {
-      const name = model ?? 'unknown';
-      this.once(`route:${id}:${name}`, () => this.d.log.warn(`model ${name} has no FIM route; chat FIM arrives in v0.2`));
+      // Only a detected model id is remembered, so an undetected one is probed again on the next request.
+      const why = explainUnsupported(id, model);
+      this.once(why.onceKey, () => this.d.log.warn(why.log));
+      if (why.status) this.requests.report({ state: 'error', detail: why.status });
       return [];
     }
 
@@ -237,6 +239,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const { detail, warn } = recordBackendFailure(j.backoff, id, err, cls, j.logPrompts);
     if (warn) this.d.log.warn(warn);
     else this.d.log.debug(detail);
+    // Error messages can quote server output, so the raw one is logged only with logPrompts.
+    if (j.logPrompts && err instanceof Error) this.d.log.debug(`${id}: raw error: ${err.message}`);
     this.failing.add(id);
     this.models.delete(j.backend); // the server may have restarted with another model
     return { state: 'error', detail };

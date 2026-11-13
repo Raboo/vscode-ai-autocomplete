@@ -27,19 +27,36 @@ export class RequestStatus {
   end(outcome: Outcome | undefined): void {
     if (outcome) this.latest = outcome;
     this.active = Math.max(0, this.active - 1);
+    this.show();
+  }
+
+  /** An outcome reached without sending a request (e.g. the model was not detected): shown now unless a request is running. */
+  report(outcome: Outcome): void {
+    this.latest = outcome;
+    this.show();
+  }
+
+  private show(): void {
     if (this.active > 0) return;
     if (this.latest.state === 'error') this.sink.set('error', this.latest.detail);
     else this.sink.set('idle');
   }
 }
 
-/** Short, text-free description of a failed request for the status bar and the log. */
+const SYSTEM_CODE = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * Fixed-text description of a failed request for the status bar and the log. Never includes an error
+ * message: those can quote server output (e.g. JSON.parse on a bad SSE line quotes the line).
+ */
 export function describeFailure(err: unknown, cls: ErrorClass): string {
   if (cls.kind === 'http') return `HTTP ${cls.status}`;
   if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return `timed out after ${REQUEST_TIMEOUT_MS / 1000} s`;
+  if (err instanceof SyntaxError) return 'malformed response from server';
   const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
-  const msg = err instanceof Error ? err.message : String(err);
-  return typeof code === 'string' ? `${msg} (${code})` : msg;
+  const sysCode = typeof code === 'string' && SYSTEM_CODE.test(code) ? code : undefined;
+  if (err instanceof TypeError || sysCode) return sysCode ? `cannot reach backend (${sysCode})` : 'cannot reach backend';
+  return 'request failed';
 }
 
 /**

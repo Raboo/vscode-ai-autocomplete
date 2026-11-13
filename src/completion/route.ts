@@ -31,6 +31,21 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, preset: Re
   }
 }
 
+/**
+ * What to log (once per `onceKey`) and show when a model has no route. An undetected model is a detection
+ * problem, not a model problem, so it gets its own message and an error status.
+ */
+export function explainUnsupported(backendId: string, model: string | undefined): { onceKey: string; log: string; status?: string } {
+  if (model === undefined) {
+    return {
+      onceKey: `detect:${backendId}`,
+      log: `backend "${backendId}": could not detect its model (server unreachable or several models listed); set fimModel`,
+      status: `${backendId}: model not detected`,
+    };
+  }
+  return { onceKey: `route:${backendId}:${model}`, log: `model ${model} has no FIM route; chat FIM arrives in v0.2` };
+}
+
 /** Converts line breaks to the document's EOL. */
 export function planInsertion(text: string, eol: '\n' | '\r\n'): string {
   return text.replace(/\r?\n/g, eol);

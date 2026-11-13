@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { buildFimWindow, DEFAULT_WINDOW, ExtraContextRing } from '../../src/completion/context';
+import { buildFimWindow, ExtraContextRing } from '../../src/completion/context';
 
 const doc = (n: number, w = 10) => Array.from({ length: n }, (_, i) => String(i).padStart(w, '0'));
-const OPTS = { prefixLines: 200, suffixLines: 60, ...DEFAULT_WINDOW };
+const OPTS = { prefixLines: 200, suffixLines: 60, maxPrefixChars: 8000, maxSuffixChars: 2500 };
 const ex = (path: string, startLine: number, endLine: number) => ({ path, startLine, endLine });
 
 describe('buildFimWindow', () => {

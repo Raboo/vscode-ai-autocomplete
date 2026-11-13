@@ -8,8 +8,8 @@ export interface ResolvedPreset {
   stop: string[];
   sampling: Sampling;
   extraBody: Record<string, unknown>;
-  /** `sampling.maxTokens` from a matching modelOverrides entry; it replaces `fim.maxTokens` (built-in values never do). */
-  maxTokensOverride?: number;
+  /** What matching modelOverrides entries set, so callers can tell override values from preset ones. */
+  overridden: { fimTemplate: boolean; sampling: (keyof Sampling)[]; stop: boolean; extraBody: boolean };
 }
 
 interface Preset { id: string; re: RegExp; fimTemplate?: FimTemplateId; sampling: Sampling }
@@ -39,7 +39,8 @@ function templateStops(t: FimTemplateId | undefined): string[] {
   return t ? [GLOBAL_STOP, ...TEMPLATES[t].stop] : [GLOBAL_STOP];
 }
 
-export function resolvePreset(modelId: string, overrides: Record<string, ModelOverrideBody>): ResolvedPreset {
+/** `forceTemplate` (a backend's own template) wins over the preset and any override template; override stops are kept. */
+export function resolvePreset(modelId: string, overrides: Record<string, ModelOverrideBody>, forceTemplate?: FimTemplateId): ResolvedPreset {
   const preset = PRESETS.find(p => p.re.test(modelId)) ?? PRESETS[PRESETS.length - 1];
   const out: ResolvedPreset = {
     id: preset.id,
@@ -48,7 +49,9 @@ export function resolvePreset(modelId: string, overrides: Record<string, ModelOv
     stop: templateStops(preset.fimTemplate),
     sampling: { ...preset.sampling },
     extraBody: {},
+    overridden: { fimTemplate: false, sampling: [], stop: false, extraBody: false },
   };
+  const overrideStops: string[] = [];
   for (const [key, body] of Object.entries(overrides)) {
     let re: RegExp;
     try { re = new RegExp(key, 'i'); } catch { continue; }
@@ -57,11 +60,28 @@ export function resolvePreset(modelId: string, overrides: Record<string, ModelOv
       out.fimTemplate = body.fimTemplate;
       out.suffixFirst = TEMPLATES[body.fimTemplate].suffixFirst;
       out.stop = templateStops(body.fimTemplate);
+      out.overridden.fimTemplate = true;
     }
-    if (body.sampling) out.sampling = { ...out.sampling, ...body.sampling };
-    if (body.sampling?.maxTokens !== undefined) out.maxTokensOverride = body.sampling.maxTokens;
-    if (body.stop) out.stop = [...new Set([...out.stop, ...body.stop])];
-    if (body.extraBody) out.extraBody = { ...out.extraBody, ...body.extraBody };
+    if (body.sampling) {
+      out.sampling = { ...out.sampling, ...body.sampling };
+      for (const k of Object.keys(body.sampling) as (keyof Sampling)[]) {
+        if (body.sampling[k] !== undefined && !out.overridden.sampling.includes(k)) out.overridden.sampling.push(k);
+      }
+    }
+    if (body.stop) {
+      out.stop = [...new Set([...out.stop, ...body.stop])];
+      overrideStops.push(...body.stop);
+      out.overridden.stop = true;
+    }
+    if (body.extraBody) {
+      out.extraBody = { ...out.extraBody, ...body.extraBody };
+      out.overridden.extraBody = true;
+    }
+  }
+  if (forceTemplate) {
+    out.fimTemplate = forceTemplate;
+    out.suffixFirst = TEMPLATES[forceTemplate].suffixFirst;
+    out.stop = [...new Set([...templateStops(forceTemplate), ...overrideStops])];
   }
   return out;
 }

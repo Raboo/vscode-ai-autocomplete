@@ -1,13 +1,12 @@
 import type { FimRequest } from '../backends/types';
-import type { ResolvedPreset } from '../models/presets';
+import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
-import type { BackendKind, FimMode } from '../types';
+import type { BackendKind, FimMode, FimTemplateId } from '../types';
 
 export type FimRoute = 'native' | 'template';
 
 const SINGLE_LINE_MAX_TOKENS = 48;
 const TIME_MAX_PREDICT_MS = 500;
-export const REQUEST_TIMEOUT_MS = 5000;
 
 /**
  * Picks how a FIM prompt is sent:
@@ -16,8 +15,8 @@ export const REQUEST_TIMEOUT_MS = 5000;
  * llama.cpp /infill lays tokens out prefix-first, so suffix-first models go through a template on /completion.
  * The chat hole-filler route arrives in v0.2.
  */
-export function planRoute(kind: BackendKind, supportsNative: boolean, preset: ResolvedPreset, mode: FimMode): FimRoute | 'unsupported' {
-  const templateOk = preset.fimTemplate !== undefined && kind !== 'mistral';
+export function planRoute(kind: BackendKind, supportsNative: boolean, fim: { fimTemplate?: FimTemplateId; suffixFirst: boolean }, mode: FimMode): FimRoute | 'unsupported' {
+  const templateOk = fim.fimTemplate !== undefined && kind !== 'mistral';
   switch (mode) {
     case 'chat':
       return 'unsupported';
@@ -26,7 +25,7 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, preset: Re
     case 'template':
       return templateOk ? 'template' : 'unsupported';
     case 'auto':
-      if (supportsNative && !(kind === 'llamacpp' && preset.suffixFirst)) return 'native';
+      if (supportsNative && !(kind === 'llamacpp' && fim.suffixFirst)) return 'native';
       return templateOk ? 'template' : 'unsupported';
   }
 }
@@ -53,34 +52,30 @@ export function planInsertion(text: string, eol: '\n' | '\r\n'): string {
 
 export interface FimRequestPlan {
   route: FimRoute;
-  preset: ResolvedPreset;
+  fim: FimValues;
   model: string | undefined;
   multiline: boolean;
-  /** `fim.maxTokens` from settings; a per-model override (`preset.maxTokensOverride`) replaces it. */
-  maxTokens: number;
   input: TemplateInput;
   signal: AbortSignal;
 }
 
 export function buildFimRequest(p: FimRequestPlan): FimRequest {
-  const { preset, input } = p;
-  // A modelOverrides maxTokens is more specific than fim.maxTokens; built-in preset values never cap it.
-  const budget = preset.maxTokensOverride ?? p.maxTokens;
+  const { fim, input } = p;
   let payload: FimRequest['payload'];
   if (p.route === 'native') {
     payload = { route: 'native', ...input };
   } else {
-    if (!preset.fimTemplate) throw new Error(`preset "${preset.id}" has no FIM template`);
-    payload = { route: 'template', prompt: TEMPLATES[preset.fimTemplate].render(input) };
+    if (!fim.fimTemplate) throw new Error(`preset "${fim.presetId}" has no FIM template`);
+    payload = { route: 'template', prompt: TEMPLATES[fim.fimTemplate].render(input) };
   }
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
     payload,
-    stop: preset.stop,
-    sampling: { ...preset.sampling, maxTokens: p.multiline ? budget : Math.min(budget, SINGLE_LINE_MAX_TOKENS) },
+    stop: fim.stop,
+    sampling: { ...fim.sampling, maxTokens: p.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS) },
     timeMaxPredictMs: TIME_MAX_PREDICT_MS,
-    extraBody: preset.extraBody,
+    extraBody: fim.extraBody,
     signal: p.signal,
-    timeoutMs: REQUEST_TIMEOUT_MS,
+    timeoutMs: fim.timeoutMs,
   };
 }

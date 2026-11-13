@@ -5,6 +5,7 @@ import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
 import { ExtraContextRing } from './completion/context';
 import { ContextTracker } from './completion/contextTracker';
+import { resolveFim } from './completion/effective';
 import { FimProvider } from './completion/provider';
 import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
@@ -89,9 +90,11 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     debouncer: (id) => {
       let d = debouncers.get(id);
       if (!d) {
-        const url = backends.get(id)?.config.baseUrl;
+        const cfg = backends.get(id)?.config;
+        const url = cfg?.baseUrl;
+        const fixedMs = cfg ? resolveFim(cfg, undefined, settings).values.debounceMs : settings.fim.debounceMs;
         const initialMs = url && isObviouslyLocal(url) ? LOCAL_DEBOUNCE_MS : REMOTE_DEBOUNCE_MS;
-        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs: settings.fim.debounceMs });
+        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs });
         debouncers.set(id, d);
       }
       return d;

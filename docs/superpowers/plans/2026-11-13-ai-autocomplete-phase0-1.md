@@ -231,7 +231,7 @@ test('bundle exists after build', () => { expect(readFileSync('dist/extension.js
 - Produces (`secrets.ts`): `class Secrets { constructor(s: vscode.SecretStorage); get(id: string): Promise<string|undefined>; set(id: string, v: string): Promise<void>; delete(id: string): Promise<void> }`. The storage key is `aiAutocomplete.apiKey.<id>`.
 - Produces (`vscodeSettings.ts`): `readSettings(): { settings: Settings; problems: string[] }` (wraps `vscode.workspace.getConfiguration('aiAutocomplete')`).
 
-- [ ] **Step 1: Write failing tests `test/unit/settings.test.ts`.** Build a fake `RawSettingsSource` from a plain object.
+- [x] **Step 1: Write failing tests `test/unit/settings.test.ts`.** Build a fake `RawSettingsSource` from a plain object.
 
 ```ts
 test('machine-scoped backends ignore workspace values', () => {
@@ -252,7 +252,7 @@ test('defaults', () => { /* fim.enabled true, multiline 'auto', maxTokens 128, p
   disableInLanguages ['plaintext'], disableInFiles ['**/.env','**/.env.*','**/*.pem','**/*.key'], localOnly false, fimMode 'auto', headers {} */ });
 ```
 
-- [ ] **Step 2: Write failing tests `test/unit/localOnly.test.ts`.**
+- [x] **Step 2: Write failing tests `test/unit/localOnly.test.ts`.**
 
 ```ts
 test.each(['127.0.0.1','10.1.2.3','172.16.0.1','172.31.255.255','192.168.1.5','169.254.1.1','100.64.0.1','::1','fd12::1','fe80::1','::ffff:192.168.0.2'])('%s private', ip => expect(isPrivateAddress(ip)).toBe(true));
@@ -264,9 +264,9 @@ test('dns failure is not local', async () => expect(await isLocalEndpoint('http:
 test('codestral is not local', async () => expect(await isLocalEndpoint('https://codestral.mistral.ai', async () => ['104.18.1.1'])).toBe(false));
 ```
 
-- [ ] **Step 3: Run `npx vitest run test/unit/settings.test.ts test/unit/localOnly.test.ts`.** Expected: FAIL (modules missing).
+- [x] **Step 3: Run `npx vitest run test/unit/settings.test.ts test/unit/localOnly.test.ts`.** Expected: FAIL (modules missing).
 
-- [ ] **Step 4: Implement `src/types.ts`, `src/config/settings.ts` and `src/config/localOnly.ts`.**
+- [x] **Step 4: Implement `src/types.ts`, `src/config/settings.ts` and `src/config/localOnly.ts`.**
   - Machine keys (`backends`, `modelOverrides`, `debug.logPrompts`) use `globalValue ?? defaultValue`.
   - Other keys use `workspaceFolderValue ?? workspaceValue ?? globalValue ?? defaultValue`.
   - Backend validation:
@@ -281,9 +281,9 @@ test('codestral is not local', async () => expect(await isLocalEndpoint('https:/
     - a thrown error counts as not local.
   - Private ranges: v4 `127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10`; v6 `::1, fc00::/7, fe80::/10`, and v4-mapped `::ffff:a.b.c.d` checks the embedded v4 address.
 
-- [ ] **Step 5: Run the tests.** Expected: PASS.
+- [x] **Step 5: Run the tests.** Expected: PASS.
 
-- [ ] **Step 6: Implement `log.ts`, `secrets.ts` and `vscodeSettings.ts`, and add `contributes.configuration` to `package.json`.**
+- [x] **Step 6: Implement `log.ts`, `secrets.ts` and `vscodeSettings.ts`, and add `contributes.configuration` to `package.json`.**
   - Schema entries, exact keys, defaults as in Step 1, with these scopes:
     - `backends`, `modelOverrides`, `debug.logPrompts`: `"scope": "machine"`;
     - everything else: `"scope": "resource"`.
@@ -295,9 +295,9 @@ test('codestral is not local', async () => expect(await isLocalEndpoint('https:/
     - `fimModel`, `nextEditModel` are strings; `headers` is an object of strings.
   - Every setting gets a `markdownDescription`. The `backends` description includes llama.cpp and Codestral JSON examples.
 
-- [ ] **Step 7: Verify.** Run `npm run lint && npm run typecheck && npm test`. Expected: PASS.
+- [x] **Step 7: Verify.** Run `npm run lint && npm run typecheck && npm test`. Expected: PASS.
 
-- [ ] **Step 8: Commit** with message `feat: settings, secrets and local-only endpoint check`.
+- [x] **Step 8: Commit** with message `feat: settings, secrets and local-only endpoint check`.
 
 ---
 

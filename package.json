@@ -1,0 +1,51 @@
+{
+  "name": "ai-autocomplete",
+  "displayName": "AI Autocomplete",
+  "publisher": "raboo",
+  "version": "0.0.1",
+  "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Elias Abacioglu"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Raboo/vscode-ai-autocomplete"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
+  "contributes": {},
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "esbuild": "^0.28.2",
+    "vitest": "^5.1.0",
+    "eslint": "^10.14.0",
+    "@eslint/js": "^10.0.1",
+    "typescript-eslint": "^8.72.2",
+    "@vscode/vsce": "^4.1.1",
+    "@types/vscode": "~1.100.0",
+    "@types/node": "^22"
+  }
+}

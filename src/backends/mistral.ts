@@ -55,6 +55,7 @@ export class MistralBackend implements FimBackend {
     return true;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- interface signature; no network probe for a hosted API
   async detectModel(_signal: AbortSignal): Promise<string | undefined> {
     return this.config.fimModel ?? DEFAULT_MODEL;
   }

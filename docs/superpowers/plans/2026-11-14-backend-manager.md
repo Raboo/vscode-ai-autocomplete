@@ -475,7 +475,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
 
 **Logging:** each step is logged at debug level with its timing. The sample completion text is logged only when `settings.debug.logPrompts` is true.
 
-- [ ] **Step 1: Write failing tests** against fake `FimBackend` objects, with a fake clock through `now`.
+- [x] **Step 1: Write failing tests** against fake `FimBackend` objects, with a fake clock through `now`.
   ```ts
   test('happy path: reach, model, completion, context all ok', () => {});
   test('refuses a non-local URL under localOnly without any request', () => { /* listModels and streamFim never called */ });
@@ -488,10 +488,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   test('mistral reach uses a one-token FIM', () => {});
   test('explainFailure never includes server body text', () => {});
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** the runner.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: connection test runner`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** the runner.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: connection test runner`.
 
 ### Task 6: Page state
 

@@ -801,7 +801,7 @@ Note on the last case: the rest of the line is `);` and the completion ends with
   export class FimProvider implements vscode.InlineCompletionItemProvider { constructor(d: FimDeps) }
   ```
 
-- [ ] **Step 1: Write failing `gate.test.ts`.** There is one test per rejection reason:
+- [x] **Step 1: Write failing `gate.test.ts`.** There is one test per rejection reason:
   - `disabled`;
   - `snoozed`;
   - `scheme` (allowed: `file`, `untitled`, `vscode-notebook-cell`, `vscode-remote`);
@@ -812,7 +812,7 @@ Note on the last case: the rest of the line is `);` and the completion ends with
   - `mid-word`: `lineSuffix` starts with `[\p{L}\p{N}_]` and `!invoked` (with `invoked: true`, the mid-word rule is bypassed).
   - Plus an `ok` case.
 
-- [ ] **Step 2: Write failing `route.test.ts`.**
+- [x] **Step 2: Write failing `route.test.ts`.**
 
 ```ts
 test('llamacpp auto → native /infill for prefix-first models', () => expect(planRoute('llamacpp', true, P('qwen'), 'auto')).toBe('native'));
@@ -824,9 +824,9 @@ test('mode chat → unsupported in v0.1', () => {});
 test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n')).toBe('a\r\nb'));
 ```
 
-- [ ] **Step 3: Run the tests.** Expected: FAIL. Then implement `gate.ts` and `route.ts`, and run again. Expected: PASS.
+- [x] **Step 3: Run the tests.** Expected: FAIL. Then implement `gate.ts` and `route.ts`, and run again. Expected: PASS.
 
-- [ ] **Step 4: Implement `FimProvider.provideInlineCompletionItems(doc, pos, ctx, token)`.** It follows the steps below. All failures are caught; it never throws.
+- [x] **Step 4: Implement `FimProvider.provideInlineCompletionItems(doc, pos, ctx, token)`.** It follows the steps below. All failures are caught; it never throws.
   1. Read settings and run `gate`:
      - `fileExcluded` is computed with `vscode.languages.match({ pattern }, doc) > 0` for each glob in `disableInFiles`;
      - `selections` comes from `vscode.window.activeTextEditor`;
@@ -858,9 +858,9 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
       - Anything else → `backoff.recordFailure`, status `error` with the status code/message, and log at warn only when the backoff state changes.
   13. Item: `new InlineCompletionItem(insertText, new Range(pos, replaceToEndOfLine ? lineEnd : pos), { command: 'aiAutocomplete.accepted', title: '', arguments: [backendId] })`.
 
-- [ ] **Step 5: Verify.** Run `npm run lint && npm run typecheck && npm test`. Expected: PASS. The provider itself is exercised in Task 13.
+- [x] **Step 5: Verify.** Run `npm run lint && npm run typecheck && npm test`. Expected: PASS. The provider itself is exercised in Task 13.
 
-- [ ] **Step 6: Commit** with message `feat: FIM inline completion provider`.
+- [x] **Step 6: Commit** with message `feat: FIM inline completion provider`.
 
 ---
 

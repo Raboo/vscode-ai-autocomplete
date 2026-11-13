@@ -933,7 +933,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
 **Interfaces:**
 - Consumes: the `activate()` return value `{ status, secrets }`.
 
-- [ ] **Step 1: Set up the integration harness.**
+- [x] **Step 1: Set up the integration harness.**
   - `tsconfig.integration.json` compiles `test/integration` to `out/test` (CommonJS).
   - `.vscode-test.mjs`: `defineConfig({ files: 'out/test/integration/**/*.test.js', version: 'stable', mocha: { timeout: 20000 } })`.
   - Script `test:integration`: `npm run build && tsc -p tsconfig.integration.json && vscode-test`.
@@ -942,7 +942,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
     - `/infill` → SSE `{"content":"a + b;"}` then `{"content":"","stop":true}`;
     - it records request bodies.
 
-- [ ] **Step 2: Write failing `fim.test.ts`** (mocha `suite`/`test`).
+- [x] **Step 2: Write failing `fim.test.ts`** (mocha `suite`/`test`).
   - Each test sets `aiAutocomplete.backends` and `aiAutocomplete.fim.backend` with `ConfigurationTarget.Global`, opens an untitled `typescript` document with `function add(a: number, b: number) {\n  return `, and puts the cursor at the end.
   - Tests:
     1. `ghost text from llama.cpp /infill`: run `editor.action.inlineSuggest.trigger`, wait until the mock has received one request (poll up to 5 s), wait 300 ms, run `editor.action.inlineSuggest.commit`. Then:
@@ -956,13 +956,13 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
        - the document is unchanged after commit.
     4. `excluded file gets no request`: open a document named `.env` (`workspace.openTextDocument` on a temp file). After trigger, the mock received 0 requests.
 
-- [ ] **Step 3: Run `npm run test:integration`.** Expected: PASS. Fix the provider and wiring until it does.
+- [x] **Step 3: Run `npm run test:integration`.** Expected: PASS. Fix the provider and wiring until it does.
 
-- [ ] **Step 4: Update CI.** Add an `integration` job (no `name:`) to `ci.yml`: ubuntu, same pinned setup as `check`, then `xvfb-run -a npm run test:integration`.
+- [x] **Step 4: Update CI.** Add an `integration` job (no `name:`) to `ci.yml`: ubuntu, same pinned setup as `check`, then `xvfb-run -a npm run test:integration`.
 
-- [ ] **Step 5: (removed — releases are automated by release-please in Task 14.)**
+- [x] **Step 5: (removed — releases are automated by release-please in Task 14.)**
 
-- [ ] **Step 6: Write the docs.**
+- [x] **Step 6: Write the docs.**
   - **README "Getting started"**:
     - `brew install llama.cpp` (or releases);
     - `llama-server --fim-qwen-3b-default --port 8012`;
@@ -971,11 +971,11 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
     - the keyboard shortcut `Alt+\` to trigger manually.
   - Do not touch `CHANGELOG.md` or the version; release-please owns both (Task 14).
 
-- [ ] **Step 7: Final local check.** Run `npm run lint && npm run typecheck && npm test && npm run test:integration && npm run package`. Expected: all pass, and `ai-autocomplete-0.0.1.vsix` exists. Delete it afterwards. Installing the .vsix into the user's own VS Code and the manual smoke test are deferred to the user (listed in `docs/ROADMAP.md` by the controller).
+- [x] **Step 7: Final local check.** Run `npm run lint && npm run typecheck && npm test && npm run test:integration && npm run package`. Expected: all pass, and `ai-autocomplete-0.0.1.vsix` exists. Delete it afterwards. Installing the .vsix into the user's own VS Code and the manual smoke test are deferred to the user (listed in `docs/ROADMAP.md` by the controller).
 
-- [ ] **Step 8: Commit** with message `test: VS Code integration tests and getting-started docs`.
+- [x] **Step 8: Commit** with message `test: VS Code integration tests and getting-started docs`.
 
-- [ ] **Step 9: (removed — publishing happens in the Publish section after Task 14.)**
+- [x] **Step 9: (removed — publishing happens in the Publish section after Task 14.)**
 
 ---
 

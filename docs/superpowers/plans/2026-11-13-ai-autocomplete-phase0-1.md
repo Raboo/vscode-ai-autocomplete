@@ -876,7 +876,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
   - `class StatusBar implements StatusSink, vscode.Disposable { current(): string; setLocalLock(on: boolean): void; setStats(accepted: number): void }`;
   - `activate` returns `{ status: StatusBar; secrets: Secrets }` for integration tests.
 
-- [ ] **Step 1: Implement `StatusBar`.**
+- [x] **Step 1: Implement `StatusBar`.**
   - Text per state:
     - idle `$(sparkle) AI`
     - loading `$(loading~spin) AI`
@@ -886,7 +886,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
   - Prefix `$(lock) ` when `localOnly` is on.
   - Clicking it runs `aiAutocomplete.menu`.
 
-- [ ] **Step 2: Implement the commands** (all with category `AI Autocomplete` in `package.json`):
+- [x] **Step 2: Implement the commands** (all with category `AI Autocomplete` in `package.json`):
 
   | Command | Behaviour |
   |---|---|
@@ -899,7 +899,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
   | `aiAutocomplete.about` | Opens the `NOTICE` file from `context.extensionUri` in a read-only text editor |
   | `aiAutocomplete.accepted` | Internal; increments the acceptance counter shown in the tooltip; hidden from the palette via `menus.commandPalette` `when: false` |
 
-- [ ] **Step 3: Wire `activate`.**
+- [x] **Step 3: Wire `activate`.**
   1. Create the log channel with `createOutputChannel('AI Autocomplete', { log: true })`.
   2. Create `Secrets`; read settings and show `problems` once in a warning message with an "Open Settings" button.
   3. Build backends with `createBackend` and the secrets-backed key provider; rebuild them on `onDidChangeConfiguration('aiAutocomplete')`.
@@ -910,7 +910,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
   6. Register `FimProvider` with `vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider)`.
   7. When no backends are configured, show an info message with the "Open Settings" action, once per session.
 
-- [ ] **Step 4: Manual smoke test — deferred to the user.** Subagents skip this step (it installs llama.cpp and opens a GUI) and say so in their report; the controller lists it under "Deferred manual checks" in `docs/ROADMAP.md`. The steps, for the user:
+- [x] **Step 4: Manual smoke test — deferred to the user.** Subagents skip this step (it installs llama.cpp and opens a GUI) and say so in their report; the controller lists it under "Deferred manual checks" in `docs/ROADMAP.md`. The steps, for the user:
   1. `npm run build`, then launch the Extension Development Host (`code --extensionDevelopmentPath=$PWD`).
   2. Run `llama-server --fim-qwen-1.5b-default --port 8012` (needs `brew install llama.cpp`).
   3. Set user settings: `"aiAutocomplete.backends": [{"id":"local","kind":"llamacpp","baseUrl":"http://127.0.0.1:8012"}]`.
@@ -920,7 +920,7 @@ test('planInsertion converts to CRLF', () => expect(planInsertion('a\nb', '\r\n'
      - the "AI Autocomplete" log shows timings;
      - stopping llama-server shows the `$(error)` state, with no popups.
 
-- [ ] **Step 5: Verify and commit.** Run `npm run lint && npm run typecheck && npm test && npm run build`, then commit with message `feat: status bar, commands and activation`.
+- [x] **Step 5: Verify and commit.** Run `npm run lint && npm run typecheck && npm test && npm run build`, then commit with message `feat: status bar, commands and activation`.
 
 ---
 

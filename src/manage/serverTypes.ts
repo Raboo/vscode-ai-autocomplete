@@ -7,7 +7,7 @@ export interface ServerType {
 }
 
 export const SERVER_TYPES: readonly ServerType[] = [
-  { id: 'llamacpp', label: 'llama.cpp', kind: 'llamacpp', defaultUrl: 'http://127.0.0.1:8012', key: 'no' },
+  { id: 'llamacpp', label: 'llama.cpp', kind: 'llamacpp', defaultUrl: 'http://127.0.0.1:8012', key: 'optional' },
   { id: 'lmstudio', label: 'LM Studio', kind: 'openai', hostFlavor: 'lmstudio', defaultUrl: 'http://127.0.0.1:1234/v1', key: 'no' },
   { id: 'ollama', label: 'Ollama', kind: 'openai', hostFlavor: 'ollama', defaultUrl: 'http://127.0.0.1:11434/v1', key: 'no' },
   { id: 'vllm', label: 'vLLM', kind: 'openai', hostFlavor: 'vllm', defaultUrl: 'http://127.0.0.1:8000/v1', key: 'optional' },

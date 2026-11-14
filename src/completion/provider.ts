@@ -12,7 +12,7 @@ import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
-import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from './route';
+import { buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
 const MAX_LINES = 16;
@@ -78,6 +78,11 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   /** Shows idle again (after "Retry now" or an API key change); a request still running reports its own outcome. */
   clearError(): void {
     this.requests.report({ state: 'idle' });
+  }
+
+  /** Lets every once-only log line appear again, e.g. a route line for a model that was fixed and is broken again. */
+  forgetLogged(): void {
+    this.logged.clear();
   }
 
   /** The model detected for the backend's current instance, if any; read-only, never fetches. */
@@ -179,10 +184,11 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const model = await this.model(backend, signal);
     if (signal.aborted) return [];
     const fim = resolveFim(backend.config, model, s).values;
-    const route = planRoute(backend.config.kind, backend.supportsNativeFim(), fim, backend.config.fimMode);
+    const { kind, fimMode } = backend.config;
+    const route = planRoute(kind, backend.supportsNativeFim(), fim, fimMode);
     if (route === 'unsupported') {
       // Only a detected model id is remembered, so an undetected one is probed again on the next request.
-      const why = explainUnsupported(id, model, backend.config.fimMode);
+      const why = explainUnsupported(id, model, fimMode, whyNoRoute(kind, backend.supportsNativeFim(), fimMode));
       this.once(why.onceKey, () => this.d.log.warn(why.log));
       if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];

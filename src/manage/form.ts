@@ -4,11 +4,11 @@ import { resolveFim, type ValueSource } from '../completion/effective';
 import { planRoute } from '../completion/route';
 import { FIM_LIMITS, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
-import type { BackendConfig, BackendKind, HostFlavor } from '../types';
-import type { BackendForm, FieldView, FormField, ServerTypeId } from './protocol';
+import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
+import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
 import { SERVER_TYPES, serverTypeOf, suggestId } from './serverTypes';
 
-export interface FieldError { field: FormField | 'id' | 'baseUrl' | 'model'; message: string }
+export interface FieldError { field: ErrorField; message: string }
 
 type Limited = keyof typeof FIM_LIMITS;
 const FIELDS: readonly FormField[] = ['template', 'fimMode', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
@@ -29,6 +29,16 @@ const typed = (f: BackendForm, k: FormField): string | undefined => {
   const t = f.changed[k];
   return t === undefined || t.trim() === '' ? undefined : t;
 };
+
+/** The typed text of the form fields in `changed`; any other key (e.g. one a page message smuggled in) is dropped. */
+export function knownChanged(changed: Record<string, unknown>): BackendForm['changed'] {
+  const out: BackendForm['changed'] = {};
+  for (const k of FIELDS) {
+    const t = Object.hasOwn(changed, k) ? changed[k] : undefined;
+    if (typeof t === 'string') out[k] = t;
+  }
+  return out;
+}
 
 export function newForm(type: ServerTypeId, taken: readonly string[]): BackendForm {
   const t = typeInfo(type);
@@ -199,15 +209,16 @@ function baseConfig(f: BackendForm): BackendConfig {
 
 export function fieldViews(f: BackendForm, model: string | undefined, s: Settings, errors: FieldError[]): FieldView[] {
   const cfg = baseConfig(f);
-  const { values, sources, extraContextAllowed } = resolveFim({ ...cfg, fim: undefined }, model, s);
-  const hosted = isHostedFlavor(inferHostFlavor(cfg));
   const tpl = typed(f, 'template');
-  const template = tpl !== undefined && Object.hasOwn(TEMPLATES, tpl) ? (tpl as keyof typeof TEMPLATES) : values.fimTemplate;
-  const native = planRoute(cfg.kind, createBackend(cfg, async () => undefined).supportsNativeFim(),
-    { ...(template !== undefined ? { fimTemplate: template } : {}), suffixFirst: values.suffixFirst }, cfg.fimMode) === 'native';
+  const template = tpl !== undefined && Object.hasOwn(TEMPLATES, tpl) ? (tpl as FimTemplateId) : undefined;
+  // The Template field's own default ignores the typed template; every other default and the route apply it, as completions do.
+  const own = resolveFim({ ...cfg, fim: undefined }, model, s);
+  const { values, sources, extraContextAllowed } = template === undefined ? own : resolveFim({ ...cfg, fim: { template } }, model, s);
+  const hosted = isHostedFlavor(inferHostFlavor(cfg));
+  const native = planRoute(cfg.kind, createBackend(cfg, async () => undefined).supportsNativeFim(), values, cfg.fimMode) === 'native';
   const num = (n: number | undefined): string => (n === undefined ? '' : String(n));
   const defaults: Record<FormField, { text: string; source: ValueSource; hint?: string }> = {
-    template: { text: values.fimTemplate ?? '', source: sources.template },
+    template: { text: own.values.fimTemplate ?? '', source: own.sources.template },
     fimMode: { text: 'auto', source: 'builtin' },
     multiline: { text: values.multiline, source: sources.multiline },
     contextTokens: { text: num(values.contextTokens), source: sources.contextTokens },

@@ -2,15 +2,13 @@ import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { createBackend } from '../backends';
 import type { ApiKeyProvider } from '../backends/types';
-import { resolveFim } from '../completion/effective';
-import { planRoute } from '../completion/route';
 import type { Secrets } from '../config/secrets';
 import type { Settings } from '../config/settings';
 import type { Log } from '../log';
-import { explainFailure, runConnectionTest, type ConnectionTestResult } from '../manage/connectionTest';
-import { entryToForm, formToConfig, formToEntry, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm, type FieldError } from '../manage/form';
-import { buildPageState, type EditDraft } from '../manage/pageState';
-import type { BackendForm, FormField, HostMessage, PageMessage, PageState, ServerTypeId, TestStep } from '../manage/protocol';
+import { completionServed, explainFailure, runConnectionTest, type ConnectionTestResult } from '../manage/connectionTest';
+import { entryToForm, formToConfig, formToEntry, knownChanged, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm, type FieldError } from '../manage/form';
+import { buildPageState, modelTag, type EditDraft } from '../manage/pageState';
+import type { BackendForm, HostMessage, PageMessage, PageState, ServerTypeId, TestStep } from '../manage/protocol';
 import { SERVER_TYPES } from '../manage/serverTypes';
 import type { BackendConfig } from '../types';
 import { useBackend } from './commands';
@@ -22,7 +20,7 @@ export interface BackendsPanelDeps {
   getSettings(): Settings;
   isLocal(baseUrl: string): Promise<boolean>;
   detectedModel(id: string): string | undefined;
-  /** A connection test of the in-use backend passed. */
+  /** A connection test of the in-use backend got a completion from the server. */
   onTestPassed(id: string): void;
 }
 /** `add` opens a new backend in edit mode; `focus` opens that backend's card in edit mode. */
@@ -42,15 +40,13 @@ const userBackends = (): unknown => config().inspect('backends')?.globalValue;
 const entriesOf = (raw: unknown): Record<string, unknown>[] => (Array.isArray(raw) ? (raw as unknown[]).filter(isObj) : []);
 const idsOf = (raw: unknown): string[] => entriesOf(raw).map((e) => e.id).filter((id): id is string => typeof id === 'string');
 const typedKey = (k: unknown): string | undefined => (typeof k === 'string' && k.trim() !== '' ? k.trim() : undefined);
-const passed = (r: ConnectionTestResult): boolean => r.steps.length > 0 && r.steps.every((s) => s.state === 'ok');
 
 /** A form from a page message, copied field by field; undefined when it is malformed. */
 function asForm(v: unknown): BackendForm | undefined {
   if (!isObj(v) || typeof v.type !== 'string' || !TYPES.has(v.type) || typeof v.id !== 'string' || typeof v.baseUrl !== 'string'
     || typeof v.model !== 'string' || !isObj(v.changed)) return undefined;
-  const changed: BackendForm['changed'] = {};
-  for (const [k, t] of Object.entries(v.changed)) if (typeof t === 'string') changed[k as FormField] = t;
-  return { ...(typeof v.originalId === 'string' ? { originalId: v.originalId } : {}), type: v.type as ServerTypeId, id: v.id, baseUrl: v.baseUrl, model: v.model, changed };
+  return { ...(typeof v.originalId === 'string' ? { originalId: v.originalId } : {}), type: v.type as ServerTypeId, id: v.id, baseUrl: v.baseUrl, model: v.model,
+    changed: knownChanged(v.changed) };
 }
 
 function pageHtml(w: vscode.Webview, extensionUri: vscode.Uri): string {
@@ -359,11 +355,14 @@ export class BackendsPanel implements vscode.Disposable {
     return ctl.signal.aborted || this.disposed ? undefined : r;
   }
 
-  /** Keeps a finished test's result and detected model; a passing test of the in-use backend clears its backoff. */
+  /**
+   * Keeps a finished test's result and detected model. A test of the in-use backend that got a completion clears its backoff,
+   * even with a warning (a JIT load slower than the timeout, a context overflow): the server just answered.
+   */
   private finish(id: string, r: ConnectionTestResult, recordModel: boolean): void {
     this.tests.set(id, r.steps);
     if (recordModel && r.model !== undefined) this.detected.set(id, r.model);
-    if (passed(r) && id === this.d.getSettings().fim.backendId) this.d.onTestPassed(id);
+    if (completionServed(r) && id === this.d.getSettings().fim.backendId) this.d.onTestPassed(id);
     void this.post();
   }
 
@@ -385,16 +384,14 @@ export class BackendsPanel implements vscode.Disposable {
     const own = form.originalId;
     const backend = createBackend(cfg, async () => apiKey ?? (own !== undefined ? await this.d.secrets.get(own) : undefined));
     void (async () => {
-      let models: { id: string; ready: boolean }[] | undefined;
+      let models: { id: string; tag: string }[] | undefined;
       let error: string | undefined;
       if (s.privacy.localOnly && !(await this.d.isLocal(cfg.baseUrl))) error = LOCAL_ONLY;
       else {
         const started = Date.now();
         try {
           const info = await backend.listModels(ctl.signal, RELOAD_TIMEOUT_MS);
-          models = info.models.map((id) => ({
-            id, ready: planRoute(cfg.kind, backend.supportsNativeFim(), resolveFim(cfg, id, s).values, cfg.fimMode) !== 'unsupported',
-          }));
+          models = info.models.map((id) => ({ id, tag: modelTag(cfg, id, s) }));
         } catch (err) {
           const f = explainFailure(err);
           error = f.hint ? `${f.text}: ${f.hint}` : f.text;

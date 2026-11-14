@@ -200,6 +200,14 @@ describe('OpenAiCompatBackend', () => {
       const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
       expect(await b.listModels(signal())).toEqual({ models: ['a'], contextWindows: {} });
     });
+    test('lmstudio detectModel makes one request: it needs no context windows', async () => {
+      m = await startMockHttp(({ url }) =>
+        url === '/api/v0/models' ? { json: { data: [{ id: 'a', loaded_context_length: 16384 }] } } : { json: { data: [{ id: 'a' }] } },
+      );
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+      expect(await b.detectModel(signal())).toBe('a');
+      expect(m.requests.map((r) => r.url)).toEqual(['/v1/models']);
+    });
     test('detectModel: one model -> id, two -> undefined, 500 -> undefined', async () => {
       m = await startMockHttp(() => ({ json: { data: [{ id: 'one' }] } }));
       expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBe('one');

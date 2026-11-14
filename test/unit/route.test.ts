@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from '../../src/completion/route';
+import { buildFimRequest, explainUnsupported, noRouteText, planInsertion, planRoute, whyNoRoute } from '../../src/completion/route';
 import { resolveFim, type FimValues } from '../../src/completion/effective';
 import { parseSettings } from '../../src/config/settings';
 import { TEMPLATES, type TemplateInput } from '../../src/models/templates';
@@ -113,14 +113,14 @@ describe('buildFimRequest', () => {
 
 describe('explainUnsupported', () => {
   test('a model that could not be detected is reported as such, with an error status', () => {
-    expect(explainUnsupported('vllm', undefined, 'auto')).toEqual({
+    expect(explainUnsupported('vllm', undefined, 'auto', 'template')).toEqual({
       onceKey: 'detect:vllm',
       log: 'backend "vllm": could not detect its model (server unreachable or several models listed); set fimModel',
       status: 'vllm: model not detected',
     });
   });
   test('explainUnsupported: unknown template → reworded log, status and action', () => {
-    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'auto')).toEqual({
+    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'auto', 'template')).toEqual({
       onceKey: 'route:strata:Qwen3.8-Flash',
       log: 'model "Qwen3.8-Flash" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends',
       status: 'strata: no completion template',
@@ -128,9 +128,37 @@ describe('explainUnsupported', () => {
     });
   });
   test('explainUnsupported: chat mode keeps the v0.2 message', () => {
-    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'chat')).toEqual({
+    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'chat', 'chat')).toEqual({
       onceKey: 'route:strata:Qwen3.8-Flash',
       log: 'backend "strata": fimMode "chat" arrives in v0.2',
     });
+  });
+  test('explainUnsupported: a prompt mode the server cannot use names the mode, not the template', () => {
+    const action = { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'lm' }] };
+    expect(explainUnsupported('lm', 'qwen2.5-coder-7b', 'native', 'mode')).toEqual({
+      onceKey: 'route:lm:qwen2.5-coder-7b',
+      log: 'backend "lm": prompt mode (fimMode) "native" does not work with this server: set it to auto in AI Autocomplete: Manage Backends',
+      status: 'lm: prompt mode "native" does not work with this server',
+      action,
+    });
+    expect(explainUnsupported('lm', 'codestral-latest', 'template', 'mode')).toMatchObject({ status: 'lm: prompt mode "template" does not work with this server', action });
+  });
+});
+
+describe('whyNoRoute', () => {
+  test('native mode on a server without native FIM, and template mode on Mistral, are prompt-mode problems', () => {
+    expect(whyNoRoute('openai', false, 'native')).toBe('mode');
+    expect(whyNoRoute('mistral', true, 'template')).toBe('mode');
+  });
+  test('chat mode is chat; a missing template in auto or template mode is a template problem', () => {
+    for (const kind of KINDS) expect(whyNoRoute(kind, true, 'chat')).toBe('chat');
+    expect(whyNoRoute('openai', false, 'auto')).toBe('template');
+    expect(whyNoRoute('openai', true, 'template')).toBe('template');
+    expect(whyNoRoute('llamacpp', true, 'template')).toBe('template');
+  });
+  test('noRouteText: the short text the page and the test show', () => {
+    expect(noRouteText('chat', 'chat')).toBe('chat FIM arrives in v0.2');
+    expect(noRouteText('mode', 'native')).toBe('prompt mode "native" does not work with this server');
+    expect(noRouteText('template', 'auto')).toBe('no completion template');
   });
 });

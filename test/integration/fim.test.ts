@@ -178,4 +178,24 @@ suite('FIM inline completion', () => {
       await lm.close();
     }
   });
+
+  test('choosing a template in the settings clears "no completion template" without a new request', async () => {
+    const lm = await startMockServer({ alias: 'zeta-2.1' });
+    try {
+      const entry = { id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` };
+      await configure({ backends: [entry], 'fim.backend': BACKEND_ID });
+      const editor = await openSource();
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('no completion template'), 5000), `status: ${api.status.current()}`);
+
+      // What Save on the Backends page writes for the Zeta fix.
+      await configure({ backends: [{ ...entry, fim: { template: 'seed-coder' } }] });
+
+      assert.ok(await waitFor(() => api.status.current() === 'idle', 2000), `status: ${api.status.current()}`);
+      const posts = lm.requests.filter((r) => r.method === 'POST');
+      assert.equal(posts.length, 0, `mock saw ${JSON.stringify(lm.requests)}`);
+    } finally {
+      await lm.close();
+    }
+  });
 });

@@ -5,7 +5,7 @@ import type { Settings } from '../config/settings';
 import { resolveFim } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
-import { buildFimRequest, planRoute } from '../completion/route';
+import { buildFimRequest, noRouteText, planRoute, whyNoRoute } from '../completion/route';
 import type { Log } from '../log';
 import type { TemplateInput } from '../models/templates';
 import type { TestStep } from './protocol';
@@ -52,18 +52,27 @@ export function explainFailure(err: unknown): { text: string; hint?: string } {
   return { text: 'request failed' };
 }
 
+/** The server answered the sample completion; a slow or empty answer still is one. Steps stop at the first failure, so reach passed too. */
+export function completionServed(r: ConnectionTestResult): boolean {
+  return r.steps.some((s) => s.id === 'completion' && s.state !== 'fail');
+}
+
 /** Runs the steps in order, calling onStep after each; never throws. */
 export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: TestStep) => void): Promise<ConnectionTestResult> {
   const now = i.now ?? Date.now;
   const steps: TestStep[] = [];
   const result: ConnectionTestResult = { steps };
-  const emit = (s: TestStep, started?: number): void => {
+  // `logText` is fixed text only: a step's own text can quote the sample completion.
+  const emit = (s: TestStep, started?: number, logText?: string): void => {
     const step = started === undefined ? s : { ...s, ms: now() - started };
-    i.log.debug(`connection test ${step.id}: ${step.state}${step.ms !== undefined ? ` in ${step.ms} ms` : ''}`);
+    i.log.debug(`connection test ${step.id}: ${step.state}${step.ms !== undefined ? ` in ${step.ms} ms` : ''}${logText ? `: ${logText}` : ''}`);
     steps.push(step);
     onStep(step);
   };
-  const fail = (id: TestStep['id'], err: unknown, started: number): void => emit({ id, state: 'fail', ...explainFailure(err) }, started);
+  const fail = (id: TestStep['id'], err: unknown, started: number): void => {
+    const f = explainFailure(err);
+    emit({ id, state: 'fail', ...f }, started, f.text);
+  };
 
   let stage: TestStep['id'] = 'reach';
   let stageStart = now();
@@ -71,7 +80,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const { backend, settings } = i;
     const cfg = backend.config;
     if (i.localOnly && !(await i.isLocal(cfg.baseUrl))) {
-      emit({ id: 'reach', state: 'fail', text: 'local only is on in this workspace' });
+      const text = 'local only is on in this workspace';
+      emit({ id: 'reach', state: 'fail', text }, undefined, text);
       return result;
     }
 
@@ -120,8 +130,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const values = resolveFim(cfg, model, settings).values;
     const route = planRoute(cfg.kind, backend.supportsNativeFim(), values, cfg.fimMode);
     if (route === 'unsupported') {
-      if (cfg.fimMode === 'chat') emit({ id: 'model', state: 'warn', text: 'chat FIM arrives in v0.2' }, stageStart);
-      else emit({ id: 'model', state: 'warn', text: `${model} has no completion template`, hint: `pick a coder model, or choose a template${/zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}` }, stageStart);
+      const why = whyNoRoute(cfg.kind, backend.supportsNativeFim(), cfg.fimMode);
+      if (why === 'template') emit({ id: 'model', state: 'warn', text: `${model} has no completion template`, hint: `pick a coder model, or choose a template${/zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}` }, stageStart);
+      else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;
     }
     emit({ id: 'model', state: 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template` }, stageStart);

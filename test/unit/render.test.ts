@@ -43,7 +43,7 @@ describe('backends page render', () => {
     const html = renderPage(state({
       cards: [card({ model: evil, test: [step], warning: evil }), card({ id: 'lm', typeLabel: evil, baseUrl: evil })],
       edit: edit({ form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: evil, model: evil, changed: { temperature: evil } },
-        models: [{ id: evil, ready: true }, { id: `${evil}2`, ready: false }], modelsError: evil, test: [step], warnings: [evil],
+        models: [{ id: evil, tag: 'ready' }, { id: `${evil}2`, tag: evil }], modelsError: evil, test: [step], warnings: [evil],
         errors: [{ field: 'id', message: evil }],
         fields: FIELDS.map((f) => field(f, f === 'temperature' ? { value: evil, isDefault: false, hint: evil, error: evil } : f === 'template' ? { options: [evil] } : {})) }),
     }), ui({ typedKey: evil }));
@@ -146,8 +146,8 @@ describe('backends page render', () => {
     expect(testing).toMatch(/<button[^>]*data-action="save"[^>]*\sdisabled/);
   });
 
-  test('model combo box lists the server models with ready or no completion template', () => {
-    const html = renderPage(state({ edit: edit({ models: [{ id: 'qwen2.5-coder', ready: true }, { id: 'zeta', ready: false }] }) }), ui());
+  test('model combo box lists the server models with their tags', () => {
+    const html = renderPage(state({ edit: edit({ models: [{ id: 'qwen2.5-coder', tag: 'ready' }, { id: 'zeta', tag: 'no completion template' }] }) }), ui());
     expect(html).toMatch(/<input[^>]*id="f-model"[^>]*list="f-model-list"/);
     expect(html).toContain('<option value="qwen2.5-coder" label="ready">');
     expect(html).toContain('<option value="zeta" label="no completion template">');

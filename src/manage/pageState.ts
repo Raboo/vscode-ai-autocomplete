@@ -1,14 +1,14 @@
 import { createBackend } from '../backends';
 import { resolveFim } from '../completion/effective';
-import { planRoute } from '../completion/route';
+import { noRouteText, planRoute, whyNoRoute, type NoRoute } from '../completion/route';
 import { parseBackendEntry, type Settings } from '../config/settings';
 import type { BackendConfig } from '../types';
-import { fieldViews, formWarnings, validateForm } from './form';
+import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
 import type { BackendForm, CardView, Dot, EditView, PageState, TestStep } from './protocol';
 import { SERVER_TYPES, serverTypeOf } from './serverTypes';
 
 export interface EditDraft {
-  cardId: string | null; form: BackendForm; models?: { id: string; ready: boolean }[]; modelsError?: string; testing: boolean; test?: TestStep[];
+  cardId: string | null; form: BackendForm; models?: { id: string; tag: string }[]; modelsError?: string; testing: boolean; test?: TestStep[];
 }
 export interface PageInputs {
   settings: Settings; rawBackends: unknown; inUseId?: string; keysStored: ReadonlySet<string>;
@@ -32,10 +32,22 @@ export function dotFor(steps: TestStep[] | undefined, offlineWarning: boolean, l
 
 const typeLabel = (id: string): string => SERVER_TYPES.find((t) => t.id === id)?.label ?? id;
 
-function templateWarning(cfg: BackendConfig, model: string | undefined, s: Settings): boolean {
-  if (!model) return false;
+/** Why the backend has no route for `model`, or undefined when it has one. */
+function noRoute(cfg: BackendConfig, model: string, s: Settings): NoRoute | undefined {
   const native = createBackend(cfg, async () => undefined).supportsNativeFim();
-  return planRoute(cfg.kind, native, resolveFim(cfg, model, s).values, cfg.fimMode) === 'unsupported';
+  return planRoute(cfg.kind, native, resolveFim(cfg, model, s).values, cfg.fimMode) === 'unsupported' ? whyNoRoute(cfg.kind, native, cfg.fimMode) : undefined;
+}
+
+/** The model list's tag for `model`: "ready", or why the backend has no route for it. */
+export function modelTag(cfg: BackendConfig, model: string, s: Settings): string {
+  const why = noRoute(cfg, model, s);
+  return why === undefined ? 'ready' : noRouteText(why, cfg.fimMode);
+}
+
+function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
+  const why = model ? noRoute(cfg, model, s) : undefined;
+  if (why === undefined) return undefined;
+  return why === 'template' ? 'No completion template for this model' : noRouteText(why, cfg.fimMode);
 }
 
 export function buildPageState(i: PageInputs): PageState {
@@ -56,8 +68,7 @@ export function buildPageState(i: PageInputs): PageState {
     const locked = isLocked(cfg.id);
     const detected = i.detected.get(cfg.id);
     const model = cfg.fimModel ?? detected;
-    const warning = locked ? 'not used here (local only)'
-      : templateWarning(cfg, model, settings) ? 'No completion template for this model' : undefined;
+    const warning = locked ? 'not used here (local only)' : routeWarning(cfg, model, settings);
     const test = i.tests.get(cfg.id);
     return {
       id: cfg.id, typeLabel: typeLabel(serverTypeOf(cfg)), baseUrl: cfg.baseUrl,
@@ -73,7 +84,7 @@ export function buildPageState(i: PageInputs): PageState {
     // Copy field by field: whatever else the incoming object carries must never reach the page.
     const form: BackendForm = {
       ...(d.form.originalId !== undefined ? { originalId: d.form.originalId } : {}),
-      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, changed: { ...d.form.changed },
+      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, changed: knownChanged(d.form.changed),
     };
     const own = form.originalId;
     const model = form.model !== '' ? form.model : own !== undefined ? i.detected.get(own) : undefined;
@@ -84,7 +95,7 @@ export function buildPageState(i: PageInputs): PageState {
     edit = {
       cardId: d.cardId, form, keyMode: SERVER_TYPES.find((t) => t.id === form.type)?.key ?? 'optional',
       keyStored: keyId !== undefined && i.keysStored.has(keyId), fields: fieldViews(form, model, settings, errors),
-      ...(d.models ? { models: d.models.map((m) => ({ id: m.id, ready: m.ready })) } : {}), ...(d.modelsError !== undefined ? { modelsError: d.modelsError } : {}),
+      ...(d.models ? { models: d.models.map((m) => ({ id: m.id, tag: m.tag })) } : {}), ...(d.modelsError !== undefined ? { modelsError: d.modelsError } : {}),
       errors: errors.map((e) => ({ field: e.field, message: e.message })), warnings, testing: d.testing, ...(d.test ? { test: d.test } : {}),
     };
   }

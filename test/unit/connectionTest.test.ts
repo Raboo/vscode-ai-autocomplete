@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { explainFailure, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
+import { completionServed, explainFailure, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
 import type { FimBackend, FimRequest, ServerInfo } from '../../src/backends/types';
 import { HttpError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
@@ -97,6 +97,18 @@ describe('runConnectionTest', () => {
     expect(chat.res.steps[1]).toMatchObject({ state: 'warn', text: 'chat FIM arrives in v0.2' });
   });
 
+  test('a prompt mode the server cannot use names the mode, not the template', async () => {
+    const hint = 'set the prompt mode to auto';
+    const native = fake({ native: false, config: { kind: 'openai', fimModel: 'qwen2.5-coder-7b', fimMode: 'native' } });
+    const n = await run(native);
+    expect(n.res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'prompt mode "native" does not work with this server', hint });
+    expect(native.streamFim).not.toHaveBeenCalled();
+    const mistral = fake({ config: { kind: 'mistral', fimModel: 'codestral-latest', fimMode: 'template' } });
+    const m = await run(mistral);
+    expect(m.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn']]);
+    expect(m.res.steps[1]).toMatchObject({ text: 'prompt mode "template" does not work with this server', hint });
+  });
+
   test('backend template seed-coder makes zeta pass', async () => {
     const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b', fim: { template: 'seed-coder' } } });
     const { res } = await run(f);
@@ -152,6 +164,20 @@ describe('runConnectionTest', () => {
     expect(JSON.stringify(on.debug.mock.calls)).toContain('a + b;');
   });
 
+  test('a fail step logs its fixed failure text at debug level, never the error message', async () => {
+    const mk = () => ({ ...nullLog, debug: vi.fn() });
+    const http = mk();
+    await run(fake({ chunks: new HttpError(500, 'SECRET-BODY', 'u') }), { log: http });
+    expect(JSON.stringify(http.debug.mock.calls)).toContain('connection test completion: fail in 0 ms: HTTP 500');
+    expect(JSON.stringify(http.debug.mock.calls)).not.toContain('SECRET');
+    const odd = mk();
+    const f = fake();
+    f.backend.supportsNativeFim = () => { throw new Error('SECRET-MESSAGE'); };
+    await run(f, { log: odd });
+    expect(JSON.stringify(odd.debug.mock.calls)).toContain('connection test model: fail in 0 ms: request failed');
+    expect(JSON.stringify(odd.debug.mock.calls)).not.toContain('SECRET');
+  });
+
   test('never throws: an unexpected exception becomes a fail step', async () => {
     const f = fake();
     f.backend.supportsNativeFim = () => { throw new Error('kaput'); };
@@ -161,6 +187,21 @@ describe('runConnectionTest', () => {
 
   test('SAMPLE', () => {
     expect(SAMPLE).toMatchObject({ prefix: 'function add(a: number, b: number): number {\n  return ', suffix: '\n}\n', filePath: 'sample.ts', repoName: 'sample', extra: [] });
+  });
+});
+
+describe('completionServed', () => {
+  const step = (id: TestStep['id'], state: TestStep['state']): TestStep => ({ id, state, text: '' });
+  test('true once the server answered the sample completion, even slowly or with a context warning', () => {
+    expect(completionServed({ steps: [step('reach', 'ok'), step('model', 'ok'), step('completion', 'ok'), step('context', 'ok')] })).toBe(true);
+    expect(completionServed({ steps: [step('reach', 'ok'), step('model', 'ok'), step('completion', 'warn')] })).toBe(true);
+    expect(completionServed({ steps: [step('reach', 'ok'), step('model', 'ok'), step('completion', 'ok'), step('context', 'warn')] })).toBe(true);
+  });
+  test('false when the completion failed or never ran', () => {
+    expect(completionServed({ steps: [step('reach', 'ok'), step('model', 'ok'), step('completion', 'fail')] })).toBe(false);
+    expect(completionServed({ steps: [step('reach', 'ok'), step('model', 'warn')] })).toBe(false);
+    expect(completionServed({ steps: [step('reach', 'fail')] })).toBe(false);
+    expect(completionServed({ steps: [] })).toBe(false);
   });
 });
 

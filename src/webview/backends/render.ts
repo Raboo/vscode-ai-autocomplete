@@ -1,7 +1,7 @@
 // Markup of the Backends page. Pure string building: no DOM types, so vitest runs it under node.
 // Every string taken from the state goes through escapeHtml, in text and in (always double-quoted) attributes.
 // The page CSP allows no inline styles or handlers: the markup uses classes, and main.ts delegates on data-action.
-import type { CardView, Dot, EditView, FieldView, FormField, PageState, TestStep } from '../../manage/protocol';
+import type { CardView, Dot, EditView, ErrorField, FieldView, FormField, PageState, TestStep } from '../../manage/protocol';
 
 export interface LocalUi { typedKey: string; advancedOpen: boolean }
 
@@ -115,7 +115,7 @@ function formField(v: FieldView): string {
 
 function connection(s: PageState, ed: EditView, ui: LocalUi): string {
   const f = ed.form;
-  const err = (field: string): string | undefined => ed.errors.find((x) => x.field === field)?.message;
+  const err = (field: ErrorField): string | undefined => ed.errors.find((x) => x.field === field)?.message;
   const invalid = (msg: string | undefined): string => (msg ? ' class="invalid" aria-invalid="true"' : '');
 
   const type = select('f-type', f.type, s.serverTypes.map((t) => ({ value: t.id, label: t.label })));
@@ -125,12 +125,11 @@ function connection(s: PageState, ed: EditView, ui: LocalUi): string {
   const urlErr = err('baseUrl');
   const urlNotes = notes('f-url', [{ kind: 'error', text: urlErr }]);
 
-  const modelErr = err('model');
   const models = ed.models ?? [];
   const modelHint = models.length > 0 ? `Leave empty to auto-detect. The server lists ${models.length} model${models.length === 1 ? '' : 's'}.`
     : 'Leave empty to auto-detect. Reload the list to see what the server offers.';
-  const modelNotes = notes('f-model', [{ kind: 'hint', text: modelHint }, { kind: 'error', text: ed.modelsError }, { kind: 'error', text: modelErr }]);
-  const datalist = `<datalist id="f-model-list">${models.map((m) => `<option value="${e(m.id)}" label="${m.ready ? 'ready' : 'no completion template'}"></option>`).join('')}</datalist>`;
+  const modelNotes = notes('f-model', [{ kind: 'hint', text: modelHint }, { kind: 'error', text: ed.modelsError }]);
+  const datalist = `<datalist id="f-model-list">${models.map((m) => `<option value="${e(m.id)}" label="${e(m.tag)}"></option>`).join('')}</datalist>`;
 
   const keyId = f.originalId ?? ed.cardId ?? undefined;
   let key: string;
@@ -151,7 +150,7 @@ function connection(s: PageState, ed: EditView, ui: LocalUi): string {
     + `<div class="field" data-field="url"><div class="label-row"><label for="f-url">URL</label></div>${textInput('f-url', f.baseUrl, ` inputmode="url"${invalid(urlErr)}${urlNotes.describedBy}`)}${urlNotes.html}</div>`
     + `<div class="field wide" data-field="model"><div class="label-row"><label for="f-model">Model</label>`
     + `${button('reloadModels', '↻ reload list', { id: 'a-reloadModels', cls: 'link' })}</div>`
-    + `${textInput('f-model', f.model, ` list="f-model-list" placeholder="auto-detect"${invalid(modelErr ?? ed.modelsError)}${modelNotes.describedBy}`)}${datalist}${modelNotes.html}</div>`
+    + `${textInput('f-model', f.model, ` list="f-model-list" placeholder="auto-detect"${invalid(ed.modelsError)}${modelNotes.describedBy}`)}${datalist}${modelNotes.html}</div>`
     + `<div class="field" data-field="key"><div class="label-row"><label for="f-key">API key</label>${removeKey}</div>${key}${keyNotes}</div>`
     + '</div>';
 }

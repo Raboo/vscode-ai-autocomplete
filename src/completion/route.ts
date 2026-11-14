@@ -31,6 +31,27 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, fim: { fim
   }
 }
 
+/** Why planRoute found no route: the chat mode (v0.2), a prompt mode this server cannot use, or a model without a FIM template. */
+export type NoRoute = 'chat' | 'mode' | 'template';
+
+/** Why planRoute returned 'unsupported' for these inputs. Mistral builds every prompt itself, so it has no template mode. */
+export function whyNoRoute(kind: BackendKind, supportsNative: boolean, mode: FimMode): NoRoute {
+  if (mode === 'chat') return 'chat';
+  return (mode === 'native' && !supportsNative) || (mode === 'template' && kind === 'mistral') ? 'mode' : 'template';
+}
+
+/** The short text the status bar, the Backends page and the connection test show for a model with no route. */
+export function noRouteText(why: NoRoute, mode: FimMode): string {
+  switch (why) {
+    case 'chat':
+      return 'chat FIM arrives in v0.2';
+    case 'mode':
+      return `prompt mode "${mode}" does not work with this server`;
+    case 'template':
+      return 'no completion template';
+  }
+}
+
 /**
  * What to log (once per `onceKey`) and show when a model has no route. An undetected model is a detection
  * problem, not a model problem, so it gets its own message and an error status.
@@ -39,6 +60,7 @@ export function explainUnsupported(
   backendId: string,
   model: string | undefined,
   mode: FimMode,
+  why: NoRoute,
 ): { onceKey: string; log: string; status?: string; action?: StatusAction } {
   if (model === undefined) {
     return {
@@ -48,12 +70,22 @@ export function explainUnsupported(
     };
   }
   const onceKey = `route:${backendId}:${model}`;
-  if (mode === 'chat') return { onceKey, log: `backend "${backendId}": fimMode "chat" arrives in v0.2` };
+  if (why === 'chat') return { onceKey, log: `backend "${backendId}": fimMode "chat" arrives in v0.2` };
+  // Both fixes are on the Backends page: the prompt mode, or the model or its template.
+  const action: StatusAction = { command: 'aiAutocomplete.manageBackends', args: [{ focus: backendId }] };
+  if (why === 'mode') {
+    return {
+      onceKey,
+      log: `backend "${backendId}": prompt mode (fimMode) "${mode}" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`,
+      status: `${backendId}: ${noRouteText(why, mode)}`,
+      action,
+    };
+  }
   return {
     onceKey,
     log: `model "${model}" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`,
-    status: `${backendId}: no completion template`,
-    action: { command: 'aiAutocomplete.manageBackends', args: [{ focus: backendId }] },
+    status: `${backendId}: ${noRouteText(why, mode)}`,
+    action,
   };
 }
 

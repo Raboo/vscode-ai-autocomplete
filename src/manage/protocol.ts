@@ -3,6 +3,8 @@
 export type ServerTypeId = 'llamacpp' | 'lmstudio' | 'ollama' | 'vllm' | 'sglang' | 'mistral' | 'deepseek' | 'fireworks' | 'together' | 'other';
 export type FormField = 'template' | 'fimMode' | 'multiline' | 'contextTokens' | 'prefixLines' | 'suffixLines' | 'extraContext'
   | 'temperature' | 'topP' | 'topK' | 'maxTokens' | 'debounceMs' | 'timeoutMs' | 'stop' | 'headers' | 'extraBody';
+/** The controls a validation error can point at. */
+export type ErrorField = FormField | 'id' | 'baseUrl';
 
 /** The form never carries an API key; the key travels separately in page→host messages only. */
 export interface BackendForm {
@@ -29,7 +31,8 @@ export interface CardView {
 }
 export interface EditView {
   cardId: string | null; form: BackendForm; keyMode: 'no' | 'optional' | 'yes'; keyStored: boolean; fields: FieldView[];
-  models?: { id: string; ready: boolean }[]; modelsError?: string; errors: { field: string; message: string }[]; warnings: string[];
+  /** `tag` is "ready", or why the backend has no route for that model. */
+  models?: { id: string; tag: string }[]; modelsError?: string; errors: { field: ErrorField; message: string }[]; warnings: string[];
   testing: boolean; test?: TestStep[];
 }
 export interface PageState { completionsOn: boolean; localOnly: boolean; cards: CardView[]; edit?: EditView; serverTypes: { id: ServerTypeId; label: string }[] }

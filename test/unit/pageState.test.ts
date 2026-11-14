@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
-import { buildPageState, dotFor, type PageInputs } from '../../src/manage/pageState';
+import { buildPageState, dotFor, modelTag, type PageInputs } from '../../src/manage/pageState';
+import type { BackendConfig } from '../../src/types';
 import type { BackendForm, TestStep } from '../../src/manage/protocol';
 
 const none: RawSettingsSource = { inspect: () => undefined };
@@ -34,6 +35,24 @@ describe('page state', () => {
     expect(s.serverTypes[0]).toEqual({ id: 'llamacpp', label: 'llama.cpp' });
   });
 
+  test('the card warning names the prompt mode when the mode, not the model, is the problem', () => {
+    const chat = buildPageState(inputs({ rawBackends: [{ ...lm, fimMode: 'chat' }] }));
+    expect(chat.cards[0]).toMatchObject({ warning: 'chat FIM arrives in v0.2', dot: 'yellow' });
+    const native = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'qwen2.5-coder-7b', fimMode: 'native' }] }));
+    expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });
+    const mistral = buildPageState(inputs({ rawBackends: [{ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimModel: 'codestral-latest', fimMode: 'template' }] }));
+    expect(mistral.cards[0]!.warning).toBe('prompt mode "template" does not work with this server');
+  });
+
+  test('modelTag: ready, or why the backend has no route for the model', () => {
+    const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, ...o });
+    expect(modelTag(cfg(), 'qwen2.5-coder-7b', base())).toBe('ready');
+    expect(modelTag(cfg(), 'zeta-2.1', base())).toBe('no completion template');
+    expect(modelTag(cfg({ fim: { template: 'seed-coder' } }), 'zeta-2.1', base())).toBe('ready');
+    expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('chat FIM arrives in v0.2');
+    expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
+  });
+
   test('dot precedence', () => {
     const warn: TestStep = { id: 'completion', state: 'warn', text: 'w' };
     const fail: TestStep = { id: 'model', state: 'fail', text: 'f' };
@@ -48,7 +67,7 @@ describe('page state', () => {
   test('edit view: defaults for an undetected model show the generic preset and the not-detected warning', () => {
     const s = buildPageState(inputs({ edit: { cardId: 'cpp', form: form({ type: 'llamacpp', id: 'cpp', originalId: 'cpp', baseUrl: 'http://127.0.0.1:8012' }), testing: false } }));
     expect(s.edit!.warnings).toContain('model not detected yet: Test or reload the list to detect it');
-    expect(s.edit!.keyMode).toBe('no');
+    expect(s.edit!.keyMode).toBe('optional');
     expect(s.edit!.errors).toEqual([]);
     expect(s.edit!.fields.find((f) => f.field === 'temperature')!.isDefault).toBe(true);
     const d = buildPageState(inputs({ detected: new Map([['cpp', 'q']]), edit: { cardId: 'cpp', form: form({ originalId: 'cpp', id: 'cpp', type: 'llamacpp', baseUrl: 'http://x' }), testing: false } }));
@@ -63,6 +82,13 @@ describe('page state', () => {
     const json = JSON.stringify(buildPageState(inputs({ keysStored: new Set(['lm']), edit: { cardId: 'lm', form: leaky, testing: false } })));
     expect(json).not.toContain('sk-secret');
     expect(json).not.toContain('apiKey');
+  });
+
+  test('only the form fields of `changed` reach the page', () => {
+    const odd = form({ originalId: 'lm', changed: { temperature: '0.5', apiKey: 'sk-secret', constructor: 'x' } as BackendForm['changed'] });
+    const s = buildPageState(inputs({ edit: { cardId: 'lm', form: odd, testing: false } }));
+    expect(s.edit!.form.changed).toEqual({ temperature: '0.5' });
+    expect(JSON.stringify(s)).not.toContain('sk-secret');
   });
 
   test('cards follow raw order and skip invalid entries', () => {

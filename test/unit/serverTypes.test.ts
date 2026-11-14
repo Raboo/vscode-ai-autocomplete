@@ -7,7 +7,8 @@ describe('server types', () => {
     const by = (id: string) => SERVER_TYPES.find((t) => t.id === id);
     expect(by('lmstudio')).toMatchObject({ kind: 'openai', hostFlavor: 'lmstudio', defaultUrl: 'http://127.0.0.1:1234/v1', key: 'no' });
     expect(by('mistral')).toMatchObject({ kind: 'mistral', defaultModel: 'codestral-latest', defaultUrl: 'https://codestral.mistral.ai', key: 'yes' });
-    expect(by('llamacpp')).toMatchObject({ kind: 'llamacpp', defaultUrl: 'http://127.0.0.1:8012', key: 'no' });
+    // llama-server takes --api-key, and the backend sends a stored key
+    expect(by('llamacpp')).toMatchObject({ kind: 'llamacpp', defaultUrl: 'http://127.0.0.1:8012', key: 'optional' });
     expect(by('vllm')?.key).toBe('optional');
     expect(by('deepseek')).toMatchObject({ defaultUrl: 'https://api.deepseek.com/beta', key: 'yes' });
     expect(by('other')).toMatchObject({ kind: 'openai', hostFlavor: 'generic', defaultUrl: '', key: 'optional' });

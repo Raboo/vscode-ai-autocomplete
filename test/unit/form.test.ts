@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { fieldViews, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
+import { TEMPLATES } from '../../src/models/templates';
 
 const none: RawSettingsSource = { inspect: () => undefined };
 const settings = (extraContext?: boolean): Settings => {
@@ -133,6 +134,21 @@ describe('form model', () => {
     expect(view(fieldViews(form({ type: 'lmstudio' }), q, settings(), []), 'template').disabledReason).toBeUndefined();
     expect(view(fieldViews(form({ type: 'mistral' }), 'codestral-latest', settings(), []), 'topP').disabledReason).toBe('not sent while temperature is set');
     expect(view(fieldViews(form({ type: 'lmstudio' }), q, settings(false), []), 'extraContext').disabledReason).toBe('off in your settings');
+  });
+
+  test('fieldViews applies a typed template to the route and the stop default, as completions do', () => {
+    const seedStops = TEMPLATES['seed-coder'].stop;
+    // llama.cpp: a suffix-first template routes through /completion, so the Template field stays enabled
+    const cpp = fieldViews(form({ type: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', changed: { template: 'seed-coder' } }), 'zeta-2.1', settings(), []);
+    expect(view(cpp, 'template')).toMatchObject({ value: 'seed-coder', isDefault: false, hint: 'Default: none (built-in preset for this model)' });
+    expect(view(cpp, 'template').disabledReason).toBeUndefined();
+    expect(view(cpp, 'stop')).toMatchObject({ value: ['\n\n\n', ...seedStops].join('\n'), isDefault: true });
+    // LM Studio: the stop default follows the typed template too
+    const lm = fieldViews(form({ changed: { template: 'seed-coder' } }), 'zeta-2.1', settings(), []);
+    for (const s of seedStops) expect(view(lm, 'stop').value).toContain(s);
+    // nothing typed: the model's own (generic) defaults
+    const plain = fieldViews(form(), 'zeta-2.1', settings(), []);
+    expect(view(plain, 'stop').value).toBe('\n\n\n');
   });
 
   test('formWarnings flags more than 4 stop sequences on a hosted type', () => {

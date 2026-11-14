@@ -113,11 +113,11 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     getSettings: () => settings,
     isLocal,
     detectedModel: (id) => provider.detectedModel(id),
-    // As "Retry now" does, for the backend that passed.
+    // As "Retry now" does, for the backend that answered the test completion.
     onTestPassed: (id) => {
       backoffs.get(id)?.reset();
       if (id === settings.fim.backendId) provider.clearError();
-      log.info(`backend "${id}": connection test passed, backoff cleared`);
+      log.info(`backend "${id}": connection test got a completion, backoff cleared`);
     },
   };
   const manageBackends = (o: OpenOptions): void => void BackendsPanel.show(panelDeps, o);
@@ -161,6 +161,9 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
+    // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
+    provider.clearError();
+    provider.forgetLogged();
     status.setLocalLock(settings.privacy.localOnly);
     status.refresh();
     warnOnce(problems);

@@ -25,6 +25,11 @@ export class OpenAiCompatBackend implements FimBackend {
   }
 
   async listModels(signal: AbortSignal, timeoutMs = LIST_MODELS_TIMEOUT_MS): Promise<ServerInfo> {
+    return this.fetchModels(signal, timeoutMs, true);
+  }
+
+  /** `withContext: false` skips LM Studio's second request, which only adds context windows. */
+  private async fetchModels(signal: AbortSignal, timeoutMs: number, withContext: boolean): Promise<ServerInfo> {
     const headers = await this.headers();
     const models: string[] = [];
     const contextWindows: Record<string, number> = {};
@@ -42,7 +47,7 @@ export class OpenAiCompatBackend implements FimBackend {
         }
       }
     }
-    if (this.flavor === 'lmstudio') {
+    if (withContext && this.flavor === 'lmstudio') {
       try {
         const url = `${new URL(this.config.baseUrl).origin}/api/v0/models`;
         for (const e of entries(await getJson(url, { headers, signal, timeoutMs }))) {
@@ -59,7 +64,8 @@ export class OpenAiCompatBackend implements FimBackend {
 
   async detectModel(signal: AbortSignal): Promise<string | undefined> {
     try {
-      const { models } = await this.listModels(signal);
+      // On the completion path: one request, no context windows.
+      const { models } = await this.fetchModels(signal, LIST_MODELS_TIMEOUT_MS, false);
       return models.length === 1 ? models[0] : undefined;
     } catch {
       return undefined;

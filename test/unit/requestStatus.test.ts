@@ -3,9 +3,10 @@ import { ErrorBackoff } from '../../src/backends/backoff';
 import { classifyError, HttpError } from '../../src/backends/http';
 import { describeFailure, RequestStatus, recordBackendFailure, retryHint, type StatusSink } from '../../src/completion/requestStatus';
 
-function sink(): StatusSink & { calls: [string, string | undefined][] } {
+function sink(): StatusSink & { calls: [string, string | undefined][]; actions: unknown[] } {
   const calls: [string, string | undefined][] = [];
-  return { calls, set: (state, detail) => void calls.push([state, detail]) };
+  const actions: unknown[] = [];
+  return { calls, actions, set: (state, detail, action) => void (calls.push([state, detail]), actions.push(action)) };
 }
 const last = (s: ReturnType<typeof sink>) => s.calls[s.calls.length - 1];
 
@@ -71,6 +72,18 @@ describe('RequestStatus', () => {
       ['error', 'local: model not detected'],
       ['error', 'local: model not detected'],
     ]);
+  });
+
+  test('RequestStatus forwards the action of an error outcome', () => {
+    const s = sink();
+    const r = new RequestStatus(s);
+    const action = { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'a' }] };
+    r.report({ state: 'error', detail: 'a: no completion template', action });
+    expect(last(s)).toEqual(['error', 'a: no completion template']);
+    expect(s.actions[s.actions.length - 1]).toEqual(action);
+    r.begin();
+    r.end({ state: 'idle' });
+    expect(s.actions[s.actions.length - 1]).toBeUndefined();
   });
 
   test('report while a request runs: loading stays, and a later cancel restores the reported outcome', () => {

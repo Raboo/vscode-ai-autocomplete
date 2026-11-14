@@ -160,4 +160,22 @@ suite('FIM inline completion', () => {
 
     assert.equal(mock.requests.length, 0, `mock saw ${JSON.stringify(mock.requests)}`);
   });
+
+  test('a model without template shows "no completion template" and sends no completion request', async () => {
+    const lm = await startMockServer({ alias: 'zeta-2.1' });
+    try {
+      await configure({
+        backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` }],
+        'fim.backend': BACKEND_ID,
+      });
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('no completion template'), 5000), `status: ${api.status.current()}`);
+      const completions = lm.requests.filter((r) => r.method === 'POST' && (r.path === '/v1/completions' || r.path === '/infill'));
+      assert.equal(completions.length, 0, `mock saw ${JSON.stringify(lm.requests)}`);
+    } finally {
+      await lm.close();
+    }
+  });
 });

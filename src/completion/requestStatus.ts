@@ -4,10 +4,12 @@ import { HttpError, type ErrorClass } from '../backends/http';
 /** What a request leaves the status in. `disabled` and `snoozed` are derived from the settings by the status bar. */
 export type RequestState = 'idle' | 'loading' | 'error';
 export type StatusState = RequestState | 'disabled' | 'snoozed';
-export interface StatusSink { set(state: RequestState, detail?: string): void }
+/** A command a shown error offers instead of the menu, e.g. opening the page that fixes it. */
+export interface StatusAction { command: string; args: unknown[] }
+export interface StatusSink { set(state: RequestState, detail?: string, action?: StatusAction): void }
 
 /** How a finished request leaves the status; undefined (a cancel) keeps the previous outcome. */
-export type Outcome = { state: 'idle' } | { state: 'error'; detail: string };
+export type Outcome = { state: 'idle' } | { state: 'error'; detail: string; action?: StatusAction };
 
 /**
  * Status bookkeeping for FIM requests. Counts requests that showed `loading`; the last one to finish
@@ -39,7 +41,7 @@ export class RequestStatus {
 
   private show(): void {
     if (this.active > 0) return;
-    if (this.latest.state === 'error') this.sink.set('error', this.latest.detail);
+    if (this.latest.state === 'error') this.sink.set('error', this.latest.detail, this.latest.action);
     else this.sink.set('idle');
   }
 }

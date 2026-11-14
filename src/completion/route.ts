@@ -1,3 +1,4 @@
+import type { StatusAction } from './requestStatus';
 import type { FimRequest } from '../backends/types';
 import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
@@ -34,7 +35,11 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, fim: { fim
  * What to log (once per `onceKey`) and show when a model has no route. An undetected model is a detection
  * problem, not a model problem, so it gets its own message and an error status.
  */
-export function explainUnsupported(backendId: string, model: string | undefined): { onceKey: string; log: string; status?: string } {
+export function explainUnsupported(
+  backendId: string,
+  model: string | undefined,
+  mode: FimMode,
+): { onceKey: string; log: string; status?: string; action?: StatusAction } {
   if (model === undefined) {
     return {
       onceKey: `detect:${backendId}`,
@@ -42,7 +47,14 @@ export function explainUnsupported(backendId: string, model: string | undefined)
       status: `${backendId}: model not detected`,
     };
   }
-  return { onceKey: `route:${backendId}:${model}`, log: `model ${model} has no FIM route; chat FIM arrives in v0.2` };
+  const onceKey = `route:${backendId}:${model}`;
+  if (mode === 'chat') return { onceKey, log: `backend "${backendId}": fimMode "chat" arrives in v0.2` };
+  return {
+    onceKey,
+    log: `model "${model}" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`,
+    status: `${backendId}: no completion template`,
+    action: { command: 'aiAutocomplete.manageBackends', args: [{ focus: backendId }] },
+  };
 }
 
 /** Converts line breaks to the document's EOL. */

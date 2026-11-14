@@ -113,16 +113,24 @@ describe('buildFimRequest', () => {
 
 describe('explainUnsupported', () => {
   test('a model that could not be detected is reported as such, with an error status', () => {
-    expect(explainUnsupported('vllm', undefined)).toEqual({
+    expect(explainUnsupported('vllm', undefined, 'auto')).toEqual({
       onceKey: 'detect:vllm',
       log: 'backend "vllm": could not detect its model (server unreachable or several models listed); set fimModel',
       status: 'vllm: model not detected',
     });
   });
-  test('a detected model without a route keeps the v0.2 message and sets no status', () => {
-    expect(explainUnsupported('strata', 'Qwen3.8-Flash')).toEqual({
+  test('explainUnsupported: unknown template → reworded log, status and action', () => {
+    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'auto')).toEqual({
       onceKey: 'route:strata:Qwen3.8-Flash',
-      log: 'model Qwen3.8-Flash has no FIM route; chat FIM arrives in v0.2',
+      log: 'model "Qwen3.8-Flash" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends',
+      status: 'strata: no completion template',
+      action: { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'strata' }] },
+    });
+  });
+  test('explainUnsupported: chat mode keeps the v0.2 message', () => {
+    expect(explainUnsupported('strata', 'Qwen3.8-Flash', 'chat')).toEqual({
+      onceKey: 'route:strata:Qwen3.8-Flash',
+      log: 'backend "strata": fimMode "chat" arrives in v0.2',
     });
   });
 });

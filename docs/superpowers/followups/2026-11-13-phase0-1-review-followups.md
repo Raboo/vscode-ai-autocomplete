@@ -86,3 +86,8 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - On llama.cpp, a model with no built-in template (for example Zeta) routes natively in `auto` mode, so the page disables the Template field; choosing seed-coder there means switching the prompt mode to `template` first.
 - The model list's tags go stale after a prompt-mode or template change until the list is reloaded.
 - When the model is not detected, the "model not detected" message wins over a prompt-mode problem.
+
+## From the v0.1.0 smoke test (2026-11-15)
+
+- The connection test sends a tiny sample prompt, so it can pass while real prompts fail. oMLX (an LM Studio engine) rejects larger prompts with a prefill memory guard when the model barely fits in RAM. A test step with a prompt near the backend's context size would catch this.
+- Kilo Code, Continue and other installed autocomplete extensions compete for the same ghost text. Detecting another active inline-completion provider and saying so on the Backends page would save a debugging round.

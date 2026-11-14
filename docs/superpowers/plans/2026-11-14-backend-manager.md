@@ -726,7 +726,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
 **Files:**
 - Modify: `README.md`, `AGENTS.md`, `docs/ROADMAP.md`, `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`, `docs/superpowers/followups/2026-11-13-phase0-1-review-followups.md`.
 
-- [ ] **Step 1: Update the docs.**
+- [x] **Step 1: Update the docs.**
   - **README:**
     - Getting started leads with **AI Autocomplete: Manage Backends**, and the settings.json examples stay as the alternative.
     - A short "Per-backend settings" section lists the fields and the precedence rule.
@@ -745,8 +745,8 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
       - the Settings-page link opens the page.
   - **Main spec:** the non-goal "a settings webview" now reads "a webview beyond the Backends page (see `2026-11-14-backend-manager-design.md`)".
   - **Follow-ups:** remove any entry this plan fixed. Add entries for anything the reviews park.
-- [ ] **Step 2: Run the full check.** Expected: PASS (the docs don't affect tests; `repoAutomation.test.ts` still passes).
-- [ ] **Step 3: Commit.** `docs: backends page in README, AGENTS and roadmap`.
+- [x] **Step 2: Run the full check.** Expected: PASS (the docs don't affect tests; `repoAutomation.test.ts` still passes).
+- [x] **Step 3: Commit.** `docs: backends page in README, AGENTS and roadmap`.
 
 ---
 

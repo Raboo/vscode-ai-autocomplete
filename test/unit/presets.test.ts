@@ -39,12 +39,17 @@ test('override template replaces template stops and suffixFirst', () => {
   expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES.codestral.stop, 'X']);
   expect(p.suffixFirst).toBe(true);
 });
-test('maxTokensOverride is set only when a matching override supplies sampling.maxTokens', () => {
-  expect(resolvePreset('qwen2.5-coder', {}).maxTokensOverride).toBeUndefined();
-  expect(resolvePreset('qwen2.5-coder', { coder: { sampling: { temperature: 0 } } }).maxTokensOverride).toBeUndefined();
-  expect(resolvePreset('qwen2.5-coder', { coder: { sampling: { maxTokens: 64 } } }).maxTokensOverride).toBe(64);
-  expect(resolvePreset('starcoder2-7b', { qwen: { sampling: { maxTokens: 64 } } }).maxTokensOverride).toBeUndefined();
-  expect(resolvePreset('qwen2.5-coder', { qwen: { sampling: { maxTokens: 64 } }, coder: { sampling: { maxTokens: 512 } } }).maxTokensOverride).toBe(512);
+test('overridden lists the keys matching overrides set', () => {
+  expect(resolvePreset('qwen2.5-coder', {}).overridden).toEqual({ fimTemplate: false, sampling: [], stop: false, extraBody: false });
+  expect(resolvePreset('qwen2.5-coder', { coder: { sampling: { temperature: 0, maxTokens: 64 } } }).overridden.sampling).toEqual(['temperature', 'maxTokens']);
+  expect(resolvePreset('starcoder2-7b', { qwen: { sampling: { maxTokens: 64 } } }).overridden.sampling).toEqual([]);
+  expect(resolvePreset('qwen2.5-coder', { coder: { fimTemplate: 'mellum', stop: ['X'], extraBody: { a: 1 } } }).overridden).toEqual({ fimTemplate: true, sampling: [], stop: true, extraBody: true });
+});
+test('forceTemplate beats preset and override templates and keeps override stops', () => {
+  const p = resolvePreset('qwen2.5-coder', { coder: { fimTemplate: 'mellum', stop: ['X'] } }, 'seed-coder');
+  expect(p.fimTemplate).toBe('seed-coder');
+  expect(p.suffixFirst).toBe(true);
+  expect(p.stop).toEqual(['\n\n\n', ...TEMPLATES['seed-coder'].stop, 'X']);
 });
 test('matching is case-insensitive', () => expect(resolvePreset('MY-FT', { 'my-ft': { fimTemplate: 'mellum' } }).fimTemplate).toBe('mellum'));
 test('invalid override regex is skipped', () => expect(() => resolvePreset('x', { '(': {} })).not.toThrow());

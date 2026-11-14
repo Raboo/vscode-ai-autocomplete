@@ -1,14 +1,15 @@
 import type { BackoffState, ErrorBackoff } from '../backends/backoff';
-import { HttpError, type ErrorClass } from '../backends/http';
-import { REQUEST_TIMEOUT_MS } from './route';
+import { HttpError, StreamError, type ErrorClass } from '../backends/http';
 
 /** What a request leaves the status in. `disabled` and `snoozed` are derived from the settings by the status bar. */
 export type RequestState = 'idle' | 'loading' | 'error';
 export type StatusState = RequestState | 'disabled' | 'snoozed';
-export interface StatusSink { set(state: RequestState, detail?: string): void }
+/** A command a shown error offers instead of the menu, e.g. opening the page that fixes it. */
+export interface StatusAction { command: string; args: unknown[] }
+export interface StatusSink { set(state: RequestState, detail?: string, action?: StatusAction): void }
 
 /** How a finished request leaves the status; undefined (a cancel) keeps the previous outcome. */
-export type Outcome = { state: 'idle' } | { state: 'error'; detail: string };
+export type Outcome = { state: 'idle' } | { state: 'error'; detail: string; action?: StatusAction };
 
 /**
  * Status bookkeeping for FIM requests. Counts requests that showed `loading`; the last one to finish
@@ -40,7 +41,7 @@ export class RequestStatus {
 
   private show(): void {
     if (this.active > 0) return;
-    if (this.latest.state === 'error') this.sink.set('error', this.latest.detail);
+    if (this.latest.state === 'error') this.sink.set('error', this.latest.detail, this.latest.action);
     else this.sink.set('idle');
   }
 }
@@ -51,10 +52,11 @@ const SYSTEM_CODE = /^[A-Z][A-Z0-9_]*$/;
  * Fixed-text description of a failed request for the status bar and the log. Never includes an error
  * message: those can quote server output (e.g. JSON.parse on a bad SSE line quotes the line).
  */
-export function describeFailure(err: unknown, cls: ErrorClass): string {
+export function describeFailure(err: unknown, cls: ErrorClass, timeoutMs: number): string {
   if (cls.kind === 'http') return `HTTP ${cls.status}`;
-  if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return `timed out after ${REQUEST_TIMEOUT_MS / 1000} s`;
+  if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return `timed out after ${timeoutMs / 1000} s`;
   if (err instanceof SyntaxError) return 'malformed response from server';
+  if (err instanceof StreamError) return 'server error';
   const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
   const sysCode = typeof code === 'string' && SYSTEM_CODE.test(code) ? code : undefined;
   if (err instanceof TypeError || sysCode) return sysCode ? `cannot reach backend (${sysCode})` : 'cannot reach backend';
@@ -77,12 +79,13 @@ export function recordBackendFailure(
   err: unknown,
   cls: ErrorClass,
   logBody: boolean,
+  timeoutMs: number,
   now = Date.now(),
 ): { detail: string; warn?: string } {
   const before = backoff.state().kind;
   backoff.recordFailure(cls);
   const after = backoff.state();
-  const detail = `${backendId}: ${describeFailure(err, cls)}`;
+  const detail = `${backendId}: ${describeFailure(err, cls, timeoutMs)}`;
   if (after.kind === before) return { detail };
   const next = after.kind === 'fatal' ? 'requests stopped until the API key or settings change, or "Retry now"' : (retryHint(after, now) ?? 'retrying');
   const body = logBody && err instanceof HttpError && err.bodyText ? ` ${JSON.stringify(err.bodyText.slice(0, 200))}` : '';

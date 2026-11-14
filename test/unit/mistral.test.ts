@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createBackend } from '../../src/backends/index';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError, MistralBackend } from '../../src/backends/mistral';
 import { OpenAiCompatBackend } from '../../src/backends/openaiCompat';
 import type { FimRequest } from '../../src/backends/types';
@@ -104,6 +104,13 @@ describe('MistralBackend request', () => {
     expect(await collect(b.streamFim(req()))).toBe('abc');
   });
 
+  test('an error event inside the stream throws StreamError', async () => {
+    const m = await mock(() => ({ sse: ['{"error":{"message":"rate limited"}}'] }));
+    const err = await collect(new MistralBackend(cfg(m.url), key).streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('rate limited');
+  });
+
   test('malformed JSON throws', async () => {
     const m = await mock(() => ({ sse: ['{nope'] }));
     const b = new MistralBackend(cfg(m.url), key);
@@ -119,6 +126,13 @@ describe('MistralBackend request', () => {
     expect(m.requests).toHaveLength(0);
   });
 
+  test('listModels makes no request and returns the configured model', async () => {
+    const m = await mock(() => ({ json: {} }));
+    const ac = new AbortController();
+    expect(await new MistralBackend(cfg(m.url, { fimModel: 'x' }), key).listModels(ac.signal)).toEqual({ models: ['x'], contextWindows: {} });
+    expect(await new MistralBackend(cfg(m.url), key).listModels(ac.signal)).toEqual({ models: ['codestral-latest'], contextWindows: {} });
+    expect(m.requests).toHaveLength(0);
+  });
   test('supportsNativeFim and detectModel', async () => {
     const ac = new AbortController();
     expect(new MistralBackend(cfg(''), key).supportsNativeFim()).toBe(true);

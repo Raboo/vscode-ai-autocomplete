@@ -57,7 +57,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 ## CI and automation (check at the first push)
 
 - actionlint has never been run, because the Docker daemon was down: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
-- The `integration` job has never run on GitHub. If it fails on Ubuntu 24.04 with sandbox errors, see AGENTS.md section 7.
 - CodeQL **default setup** must stay off. While it is on, uploads from the advanced `codeql.yml` workflow are rejected.
 - Watch whether Dependabot auto-merges, which use `GITHUB_TOKEN`, trigger the `push` workflows on `main`.
 - `setup-github-repo.sh` treats an unknown `-*` argument as the repo. The first `gh` call fails before any write, but the script should reject the argument up front.

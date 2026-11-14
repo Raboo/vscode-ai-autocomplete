@@ -82,3 +82,7 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - `contextWindows[model]` uses a plain object, so a model id like `constructor` reads a prototype value.
 - `resolvePreset` drops the stops of an earlier override when a later override sets `fimTemplate` (only odd multi-override configs).
 - `.vscode-test.mjs` writes the test profile's settings at import time.
+- With a typed template, the Stop field's default follows that template's stops, but its hint still says "built-in preset for this model".
+- On llama.cpp, a model with no built-in template (for example Zeta) routes natively in `auto` mode, so the page disables the Template field; choosing seed-coder there means switching the prompt mode to `template` first.
+- The model list's tags go stale after a prompt-mode or template change until the list is reloaded.
+- When the model is not detected, the "model not detected" message wins over a prompt-mode problem.

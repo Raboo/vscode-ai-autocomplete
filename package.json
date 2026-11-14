@@ -2,7 +2,7 @@
   "name": "ai-autocomplete",
   "displayName": "AI Autocomplete",
   "publisher": "raboo",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
   "author": {

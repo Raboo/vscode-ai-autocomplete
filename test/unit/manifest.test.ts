@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { FIM_LIMITS } from '../../src/config/settings';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 test('identity', () => {
@@ -12,6 +12,11 @@ test('NOTICE credits the original author', () => {
   expect(readFileSync('NOTICE', 'utf8')).toContain('Originally created by Elias Abacioglu');
 });
 test('bundle exists after build', () => { expect(readFileSync('dist/extension.js', 'utf8')).toContain('activate'); });
+test('webview bundle is built and packaged', () => {
+  expect(existsSync('dist/webview/backends.js')).toBe(true);
+  expect(existsSync('dist/webview/backends.css')).toBe(true);
+  expect(readFileSync('.vscodeignore', 'utf8').split(/\r?\n/).map((l) => l.trim())).toContain('!dist/webview/**');
+});
 test('commands are categorised and accepted is hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
   expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'menu', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());

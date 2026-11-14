@@ -34,6 +34,9 @@ describe('parseSse', () => {
   test('joins multi-line data with \\n', async () => {
     expect(await collect(streamOf('data: a\ndata: b\n\n'))).toEqual(['a\nb']);
   });
+  test('yields the data of named events such as event: error', async () => {
+    expect(await collect(streamOf('event: error\ndata: {"error":"x"}\n\n'))).toEqual(['{"error":"x"}']);
+  });
   test('stops at [DONE]', async () => {
     expect(await collect(streamOf('data: a\n\ndata: [DONE]\n\ndata: b\n\n'))).toEqual(['a']);
   });

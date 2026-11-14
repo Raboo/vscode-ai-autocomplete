@@ -1,6 +1,6 @@
 import type { BackendConfig, HostFlavor } from '../types';
 import { inferHostFlavor, isHostedFlavor } from './hostFlavor';
-import { authHeaders, getJson, joinUrl, postJson } from './http';
+import { authHeaders, getJson, joinUrl, postJson, throwIfStreamError } from './http';
 import { parseSse } from './sse';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
 
@@ -100,6 +100,7 @@ export class OpenAiCompatBackend implements FimBackend {
         continue;
       }
       const ev = JSON.parse(data) as { choices?: { text?: unknown }[] };
+      throwIfStreamError(ev);
       const text = ev.choices?.[0]?.text;
       if (typeof text === 'string' && text !== '') {
         yield text;

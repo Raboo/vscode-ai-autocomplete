@@ -13,6 +13,22 @@ export class HttpError extends Error {
   }
 }
 
+/** An error a server sent inside a stream it had answered with HTTP 200. The message is server text. */
+export class StreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StreamError';
+  }
+}
+
+/** Throws a StreamError when a parsed stream event has an `error` field, as OpenAI-compatible servers, llama.cpp and oMLX send one. */
+export function throwIfStreamError(ev: unknown): void {
+  const e = (ev as { error?: unknown } | null)?.error;
+  if (e === undefined || e === null) return;
+  const message = (e as { message?: unknown }).message;
+  throw new StreamError(typeof e === 'string' ? e : typeof message === 'string' ? message : 'the server sent an error event');
+}
+
 export interface PostOptions {
   headers?: Record<string, string>;
   signal: AbortSignal;

@@ -1,4 +1,4 @@
-import { HttpError } from '../backends/http';
+import { HttpError, StreamError } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import type { FimBackend, ServerInfo } from '../backends/types';
 import type { Settings } from '../config/settings';
@@ -38,6 +38,7 @@ export interface ConnectionTestResult { steps: TestStep[]; model?: string; info?
 /** Fixed text for a failure; never quotes server output. */
 export function explainFailure(err: unknown): { text: string; hint?: string } {
   if (err instanceof MissingApiKeyError) return { text: 'no API key stored', hint: 'enter the key in the API key field' };
+  if (err instanceof StreamError) return { text: 'the server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message' };
   if (err instanceof HttpError) {
     const s = err.status;
     if (s === 401 || s === 403) return { text: `HTTP ${s}`, hint: 'check the API key' };
@@ -72,6 +73,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
   const fail = (id: TestStep['id'], err: unknown, started: number): void => {
     const f = explainFailure(err);
     emit({ id, state: 'fail', ...f }, started, f.text);
+    // The server's own message can quote the prompt, so it is logged only with logPrompts.
+    if (err instanceof StreamError && i.settings.debug.logPrompts) i.log.debug(`connection test ${id}: server error: ${err.message}`);
   };
 
   let stage: TestStep['id'] = 'reach';

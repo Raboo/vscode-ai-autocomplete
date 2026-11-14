@@ -1,5 +1,5 @@
 import type { BackendConfig } from '../types';
-import { authHeaders, getJson, joinUrl, postJson } from './http';
+import { authHeaders, getJson, joinUrl, postJson, throwIfStreamError } from './http';
 import { parseSse } from './sse';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
 
@@ -86,6 +86,7 @@ export class LlamaCppBackend implements FimBackend {
         continue;
       }
       const ev = JSON.parse(data) as { content?: unknown; stop?: unknown };
+      throwIfStreamError(ev);
       if (ev.stop === true) {
         return;
       }

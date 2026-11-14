@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { classifyError, getJson, HttpError, joinUrl, postJson } from '../../src/backends/http';
+import { classifyError, getJson, HttpError, joinUrl, postJson, StreamError, throwIfStreamError } from '../../src/backends/http';
 import { startMockHttp } from './helpers/mockHttp';
 
 describe('joinUrl', () => {
@@ -23,6 +23,31 @@ describe('classifyError', () => {
   });
   test('network', () => {
     expect(classifyError(new TypeError('fetch failed'))).toEqual({ kind: 'network' });
+  });
+  test('an error inside a stream is a failure like a network one', () => {
+    expect(classifyError(new StreamError('x'))).toEqual({ kind: 'network' });
+  });
+});
+
+describe('throwIfStreamError', () => {
+  const thrown = (ev: unknown): unknown => {
+    try {
+      throwIfStreamError(ev);
+    } catch (err) {
+      return err;
+    }
+    return undefined;
+  };
+  test('passes events without an error', () => {
+    for (const ev of [{ choices: [] }, { error: null }, null, 5, '[x]']) expect(thrown(ev)).toBeUndefined();
+  });
+  test('error.message, a string error, or fixed text', () => {
+    const oMlx = thrown({ error: { message: 'prefill memory guard rejected this prompt' }, message: 'other' });
+    expect(oMlx).toBeInstanceOf(StreamError);
+    expect((oMlx as StreamError).name).toBe('StreamError');
+    expect((oMlx as StreamError).message).toBe('prefill memory guard rejected this prompt');
+    expect((thrown({ error: 'model not loaded' }) as StreamError).message).toBe('model not loaded');
+    expect((thrown({ error: { code: 500 } }) as StreamError).message).toBe('the server sent an error event');
   });
 });
 

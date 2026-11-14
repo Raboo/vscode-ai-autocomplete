@@ -1,6 +1,6 @@
 import { codestralPrefix } from '../models/templates';
 import type { BackendConfig } from '../types';
-import { authHeaders, HttpError, joinUrl, postJson } from './http';
+import { authHeaders, HttpError, joinUrl, postJson, throwIfStreamError } from './http';
 import { parseSse } from './sse';
 import type { ApiKeyProvider, FimBackend, FimRequest, ServerInfo } from './types';
 
@@ -117,6 +117,7 @@ export class MistralBackend implements FimBackend {
       const ev = JSON.parse(data) as {
         choices?: { delta?: { content?: unknown }; message?: { content?: unknown }; text?: unknown }[];
       };
+      throwIfStreamError(ev);
       const c = ev.choices?.[0];
       const text = c?.delta?.content ?? c?.message?.content ?? c?.text;
       if (typeof text === 'string' && text !== '') {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createBackend } from '../../src/backends/index';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError, MistralBackend } from '../../src/backends/mistral';
 import { OpenAiCompatBackend } from '../../src/backends/openaiCompat';
 import type { FimRequest } from '../../src/backends/types';
@@ -102,6 +102,13 @@ describe('MistralBackend request', () => {
     }));
     const b = new MistralBackend(cfg(m.url), key);
     expect(await collect(b.streamFim(req()))).toBe('abc');
+  });
+
+  test('an error event inside the stream throws StreamError', async () => {
+    const m = await mock(() => ({ sse: ['{"error":{"message":"rate limited"}}'] }));
+    const err = await collect(new MistralBackend(cfg(m.url), key).streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('rate limited');
   });
 
   test('malformed JSON throws', async () => {

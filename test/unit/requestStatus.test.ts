@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { ErrorBackoff } from '../../src/backends/backoff';
-import { classifyError, HttpError } from '../../src/backends/http';
+import { classifyError, HttpError, StreamError } from '../../src/backends/http';
 import { describeFailure, RequestStatus, recordBackendFailure, retryHint, type StatusSink } from '../../src/completion/requestStatus';
 
 function sink(): StatusSink & { calls: [string, string | undefined][]; actions: unknown[] } {
@@ -175,6 +175,10 @@ describe('describeFailure', () => {
     const d = describeFailure(err, { kind: 'network' }, 5000);
     expect(d).toBe('malformed response from server');
     expect(d).not.toContain('secret');
+  });
+  test('an error the server sent inside the stream has fixed text, never its message', () => {
+    const err = new StreamError('prefill memory guard: def secret()');
+    expect(describeFailure(err, classifyError(err), 5000)).toBe('server error');
   });
   test('unknown errors use fixed text', () => {
     expect(describeFailure(new Error('server said: def secret()'), { kind: 'network' }, 5000)).toBe('request failed');

@@ -1,5 +1,5 @@
 import type { BackoffState, ErrorBackoff } from '../backends/backoff';
-import { HttpError, type ErrorClass } from '../backends/http';
+import { HttpError, StreamError, type ErrorClass } from '../backends/http';
 
 /** What a request leaves the status in. `disabled` and `snoozed` are derived from the settings by the status bar. */
 export type RequestState = 'idle' | 'loading' | 'error';
@@ -56,6 +56,7 @@ export function describeFailure(err: unknown, cls: ErrorClass, timeoutMs: number
   if (cls.kind === 'http') return `HTTP ${cls.status}`;
   if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return `timed out after ${timeoutMs / 1000} s`;
   if (err instanceof SyntaxError) return 'malformed response from server';
+  if (err instanceof StreamError) return 'server error';
   const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
   const sysCode = typeof code === 'string' && SYSTEM_CODE.test(code) ? code : undefined;
   if (err instanceof TypeError || sysCode) return sysCode ? `cannot reach backend (${sysCode})` : 'cannot reach backend';

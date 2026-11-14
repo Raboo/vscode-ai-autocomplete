@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
 import type { BackendConfig } from '../../src/types';
 import { startMockHttp } from './helpers/mockHttp';
@@ -102,6 +102,13 @@ describe('LlamaCppBackend', () => {
     expect(m.requests[0].headers['x-a']).toBe('1');
     await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req()));
     expect(m.requests[1].headers.authorization).toBeUndefined();
+  });
+
+  test('an error event inside the stream throws StreamError', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"error":{"code":500,"message":"context shift is disabled","type":"server_error"}}'] }));
+    const err = await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('context shift is disabled');
   });
 
   test('skips empty data events and throws on malformed JSON', async () => {

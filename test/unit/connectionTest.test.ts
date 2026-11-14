@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { completionServed, explainFailure, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
 import type { FimBackend, FimRequest, ServerInfo } from '../../src/backends/types';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
 import { parseSettings } from '../../src/config/settings';
 import { nullLog } from '../../src/log';
@@ -178,6 +178,21 @@ describe('runConnectionTest', () => {
     expect(JSON.stringify(odd.debug.mock.calls)).not.toContain('SECRET');
   });
 
+  test('an error sent inside the stream fails the completion step; its message is logged only with debug.logPrompts', async () => {
+    const mk = () => ({ ...nullLog, debug: vi.fn() });
+    const off = mk();
+    const { res } = await run(fake({ chunks: new StreamError('SECRET memory guard') }), { log: off });
+    expect(res.steps.at(-1)).toEqual({
+      id: 'completion', state: 'fail', text: 'the server returned an error',
+      hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message', ms: 0,
+    });
+    expect(completionServed(res)).toBe(false);
+    expect(JSON.stringify(off.debug.mock.calls)).not.toContain('SECRET');
+    const on = mk();
+    await run(fake({ chunks: new StreamError('SECRET memory guard') }), { log: on, settings: { ...SETTINGS, debug: { logPrompts: true } } });
+    expect(JSON.stringify(on.debug.mock.calls)).toContain('connection test completion: server error: SECRET memory guard');
+  });
+
   test('never throws: an unexpected exception becomes a fail step', async () => {
     const f = fake();
     f.backend.supportsNativeFim = () => { throw new Error('kaput'); };
@@ -220,5 +235,8 @@ describe('explainFailure', () => {
     expect(explainFailure(new TypeError('x', { cause: { code: 'EAI_AGAIN' } }))).toEqual({ text: 'host not found' });
     expect(explainFailure(new MissingApiKeyError('b'))).toEqual({ text: 'no API key stored', hint: 'enter the key in the API key field' });
     expect(explainFailure(new SyntaxError('bad json'))).toEqual({ text: 'request failed' });
+    expect(explainFailure(new StreamError('SECRET-MESSAGE'))).toEqual({
+      text: 'the server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message',
+    });
   });
 });

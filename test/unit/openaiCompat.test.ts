@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { OpenAiCompatBackend } from '../../src/backends/openaiCompat';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
 import type { BackendConfig, HostFlavor } from '../../src/types';
 import { startMockHttp } from './helpers/mockHttp';
@@ -124,6 +124,14 @@ describe('OpenAiCompatBackend', () => {
     const b2 = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key(''));
     await collect(b2.streamFim(req()));
     expect(m.requests[1].headers.authorization).toBeUndefined();
+  });
+
+  test('an error event inside the stream throws StreamError (oMLX memory guard)', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"a"}]}', '{"error":{"message":"oMLX prefill memory guard rejected this prompt"},"message":"x"}'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
+    const err = await collect(b.streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('oMLX prefill memory guard rejected this prompt');
   });
 
   test('HTTP errors throw HttpError', async () => {

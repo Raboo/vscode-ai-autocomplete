@@ -708,7 +708,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   - mode `chat`: log `backend "<id>": fimMode "chat" arrives in v0.2`, with no action;
   - model undefined: today's "could not detect its model" text, unchanged.
   - `StatusBar` sets `item.command` to `{ command, arguments: args, title: 'Open' }` while the shown state carries an action, else `aiAutocomplete.menu`.
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   ```ts
   test('explainUnsupported: unknown template → reworded log, status and action', () => {});
   test('explainUnsupported: chat mode keeps the v0.2 message', () => {});
@@ -716,10 +716,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   // fim.test.ts (integration, mock alias 'zeta-2.1')
   test('a model without template shows "no completion template" and sends no completion request', () => {});
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** the changes.
-- [ ] **Step 4: Run the full check**, then `npm run test:integration`. Expected: PASS.
-- [ ] **Step 5: Commit.** `fix: explain models without a FIM template and link to the backends page`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** the changes.
+- [x] **Step 4: Run the full check**, then `npm run test:integration`. Expected: PASS.
+- [x] **Step 5: Commit.** `fix: explain models without a FIM template and link to the backends page`.
 
 ### Task 10: Docs and handoff
 

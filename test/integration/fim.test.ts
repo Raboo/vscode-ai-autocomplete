@@ -46,13 +46,26 @@ async function showAtEnd(doc: vscode.TextDocument): Promise<vscode.TextEditor> {
 }
 
 const openSource = async (): Promise<vscode.TextEditor> => showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content: SOURCE }));
-const trigger = (): Thenable<unknown> => vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+
+/** URIs of the documents VS Code asked for inline completions, recorded by a probe provider the suite registers. */
+const asked = new Set<string>();
+
+/**
+ * Triggers inline suggestions and fails unless VS Code asked for them in `editor`. Editor commands run on the editor
+ * with text focus, which need not be the active one: while the window has no OS focus, an editor focused earlier keeps it.
+ */
+async function trigger(editor: vscode.TextEditor): Promise<void> {
+  await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+  const uri = editor.document.uri.toString();
+  assert.ok(await waitFor(() => asked.has(uri), 2000), `the trigger did not reach ${uri}; VS Code asked for ${JSON.stringify([...asked])}`);
+}
 const commit = (): Thenable<unknown> => vscode.commands.executeCommand('editor.action.inlineSuggest.commit');
 
 suite('FIM inline completion', () => {
   let mock: MockServer;
   let api: Api;
   let tempDir: string | undefined;
+  let probe: vscode.Disposable;
 
   const infillRequests = () => mock.requests.filter((r) => r.path === '/infill');
 
@@ -60,14 +73,23 @@ suite('FIM inline completion', () => {
     mock = await startMockServer();
     const ext = vscode.extensions.getExtension<Api>('raboo.ai-autocomplete')!;
     api = await ext.activate();
+    // Registered once: adding or removing a provider while a request runs could disturb the extension's request.
+    probe = vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, {
+      provideInlineCompletionItems: (doc) => {
+        asked.add(doc.uri.toString());
+        return [];
+      },
+    });
   });
 
   suiteTeardown(async () => {
+    probe.dispose();
     await mock.close();
   });
 
   setup(() => {
     mock.reset();
+    asked.clear();
     // The status bar keeps its last state; start each test from idle so an error must come from this test.
     api.status.set('idle');
   });
@@ -85,7 +107,7 @@ suite('FIM inline completion', () => {
     await useLlamaCpp(mock.baseUrl);
     const editor = await openSource();
 
-    await trigger();
+    await trigger(editor);
     assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
     await sleep(300);
     await commit();
@@ -99,9 +121,9 @@ suite('FIM inline completion', () => {
 
   test('localOnly blocks a non-local backend', async () => {
     await useLlamaCpp('https://example.com', { 'privacy.localOnly': true });
-    await openSource();
+    const editor = await openSource();
 
-    await trigger();
+    await trigger(editor);
     await sleep(1000);
 
     assert.equal(mock.requests.length, 0);
@@ -114,7 +136,7 @@ suite('FIM inline completion', () => {
     await useLlamaCpp('http://127.0.0.1:9');
     const editor = await openSource();
 
-    await trigger();
+    await trigger(editor);
     // Model detection and the /infill request both fail; allow for timeouts if the port does not refuse at once.
     await waitFor(() => api.status.current().includes('error'), 8000);
 
@@ -131,11 +153,49 @@ suite('FIM inline completion', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'ai-autocomplete-'));
     const file = join(tempDir, '.env');
     writeFileSync(file, 'API_KEY=');
-    await showAtEnd(await vscode.workspace.openTextDocument(vscode.Uri.file(file)));
+    const editor = await showAtEnd(await vscode.workspace.openTextDocument(vscode.Uri.file(file)));
 
-    await trigger();
+    await trigger(editor);
     await sleep(1000);
 
     assert.equal(mock.requests.length, 0, `mock saw ${JSON.stringify(mock.requests)}`);
+  });
+
+  test('a model without template shows "no completion template" and sends no completion request', async () => {
+    const lm = await startMockServer({ alias: 'zeta-2.1' });
+    try {
+      await configure({
+        backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` }],
+        'fim.backend': BACKEND_ID,
+      });
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('no completion template'), 5000), `status: ${api.status.current()}`);
+      const completions = lm.requests.filter((r) => r.method === 'POST' && (r.path === '/v1/completions' || r.path === '/infill'));
+      assert.equal(completions.length, 0, `mock saw ${JSON.stringify(lm.requests)}`);
+    } finally {
+      await lm.close();
+    }
+  });
+
+  test('choosing a template in the settings clears "no completion template" without a new request', async () => {
+    const lm = await startMockServer({ alias: 'zeta-2.1' });
+    try {
+      const entry = { id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` };
+      await configure({ backends: [entry], 'fim.backend': BACKEND_ID });
+      const editor = await openSource();
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('no completion template'), 5000), `status: ${api.status.current()}`);
+
+      // What Save on the Backends page writes for the Zeta fix.
+      await configure({ backends: [{ ...entry, fim: { template: 'seed-coder' } }] });
+
+      assert.ok(await waitFor(() => api.status.current() === 'idle', 2000), `status: ${api.status.current()}`);
+      const posts = lm.requests.filter((r) => r.method === 'POST');
+      assert.equal(posts.length, 0, `mock saw ${JSON.stringify(lm.requests)}`);
+    } finally {
+      await lm.close();
+    }
   });
 });

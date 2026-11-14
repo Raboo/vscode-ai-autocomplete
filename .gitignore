@@ -4,3 +4,7 @@ out/
 .vscode-test/
 *.vsix
 .superpowers/
+
+*.swp
+*.swo
+*~

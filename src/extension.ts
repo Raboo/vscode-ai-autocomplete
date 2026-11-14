@@ -5,12 +5,14 @@ import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
 import { ExtraContextRing } from './completion/context';
 import { ContextTracker } from './completion/contextTracker';
+import { resolveFim } from './completion/effective';
 import { FimProvider } from './completion/provider';
 import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { createLog } from './log';
+import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
 
@@ -20,7 +22,7 @@ const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets } {
+export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -47,7 +49,10 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     }
     if (settings.backends.length === 0 && !warnedNoBackends) {
       warnedNoBackends = true;
-      void vscode.window.showInformationMessage('AI Autocomplete: no backends configured.', 'Open Settings').then((c) => c && openSettings());
+      void vscode.window.showInformationMessage('AI Autocomplete: no backends configured.', 'Add Backend', 'Open Settings').then((c) => {
+        if (c === 'Add Backend') manageBackends({ add: true });
+        else if (c) openSettings();
+      });
     }
   };
 
@@ -89,15 +94,34 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     debouncer: (id) => {
       let d = debouncers.get(id);
       if (!d) {
-        const url = backends.get(id)?.config.baseUrl;
+        const cfg = backends.get(id)?.config;
+        const url = cfg?.baseUrl;
+        const fixedMs = cfg ? resolveFim(cfg, undefined, settings).values.debounceMs : settings.fim.debounceMs;
         const initialMs = url && isObviouslyLocal(url) ? LOCAL_DEBOUNCE_MS : REMOTE_DEBOUNCE_MS;
-        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs: settings.fim.debounceMs });
+        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs });
         debouncers.set(id, d);
       }
       return d;
     },
   });
   sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
+
+  const panelDeps: BackendsPanelDeps = {
+    context,
+    secrets,
+    log,
+    getSettings: () => settings,
+    isLocal,
+    detectedModel: (id) => provider.detectedModel(id),
+    // As "Retry now" does, for the backend that answered the test completion.
+    onTestPassed: (id) => {
+      backoffs.get(id)?.reset();
+      if (id === settings.fim.backendId) provider.clearError();
+      log.info(`backend "${id}": connection test got a completion, backoff cleared`);
+    },
+  };
+  const manageBackends = (o: OpenOptions): void => void BackendsPanel.show(panelDeps, o);
+  sub({ dispose: () => BackendsPanel.current()?.dispose() });
 
   // A new (or deleted) key may fix a 401/403 that stopped requests to that backend.
   sub(
@@ -114,6 +138,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     secrets,
     channel,
     log,
+    manageBackends,
     retry: () => {
       for (const b of backoffs.values()) b.reset();
       provider.clearError();
@@ -136,6 +161,9 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
+    // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
+    provider.clearError();
+    provider.forgetLogged();
     status.setLocalLock(settings.privacy.localOnly);
     status.refresh();
     warnOnce(problems);
@@ -150,7 +178,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
-  return { status, secrets };
+  return { status, secrets, backendsPanel: () => BackendsPanel.current() };
 }
 
 export function deactivate(): void {}

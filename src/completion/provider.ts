@@ -5,17 +5,16 @@ import { MissingApiKeyError } from '../backends/mistral';
 import type { FimBackend, FimRequest } from '../backends/types';
 import type { Settings } from '../config/settings';
 import type { Log } from '../log';
-import { resolvePreset } from '../models/presets';
 import type { SuggestionCache } from './cache';
-import { buildFimWindow, DEFAULT_WINDOW, type ExtraContextRing } from './context';
+import { buildFimWindow, type ExtraContextRing } from './context';
+import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
-import { buildFimRequest, explainUnsupported, planInsertion, planRoute } from './route';
+import { buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
-const EXTRA_CONTEXT_CHARS = 6000;
 const MAX_LINES = 16;
 
 export type { StatusSink } from './requestStatus';
@@ -79,6 +78,17 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   /** Shows idle again (after "Retry now" or an API key change); a request still running reports its own outcome. */
   clearError(): void {
     this.requests.report({ state: 'idle' });
+  }
+
+  /** Lets every once-only log line appear again, e.g. a route line for a model that was fixed and is broken again. */
+  forgetLogged(): void {
+    this.logged.clear();
+  }
+
+  /** The model detected for the backend's current instance, if any; read-only, never fetches. */
+  detectedModel(backendId: string): string | undefined {
+    const backend = this.d.getBackend(backendId);
+    return backend ? this.models.get(backend) : undefined;
   }
 
   async provideInlineCompletionItems(
@@ -147,7 +157,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       return [];
     }
 
-    const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: s.fim.prefixLines, suffixLines: s.fim.suffixLines, ...DEFAULT_WINDOW });
+    // The window and the cache key use values that do not depend on the model (only a template/preset depends on it).
+    const early = resolveFim(backend.config, undefined, s).values;
+    const caps = contextCaps(early.contextTokens);
+    const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
     const uri = doc.uri.toString();
     const spot: Spot = { doc, pos, lineSuffix, backendId: id };
     // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
@@ -170,27 +183,27 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
 
     const model = await this.model(backend, signal);
     if (signal.aborted) return [];
-    const preset = resolvePreset(model ?? '', s.modelOverrides);
-    const route = planRoute(backend.config.kind, backend.supportsNativeFim(), preset, backend.config.fimMode);
+    const fim = resolveFim(backend.config, model, s).values;
+    const { kind, fimMode } = backend.config;
+    const route = planRoute(kind, backend.supportsNativeFim(), fim, fimMode);
     if (route === 'unsupported') {
       // Only a detected model id is remembered, so an undetected one is probed again on the next request.
-      const why = explainUnsupported(id, model);
+      const why = explainUnsupported(id, model, fimMode, whyNoRoute(kind, backend.supportsNativeFim(), fimMode));
       this.once(why.onceKey, () => this.d.log.warn(why.log));
-      if (why.status) this.requests.report({ state: 'error', detail: why.status });
+      if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];
     }
 
     const filePath = vscode.workspace.asRelativePath(doc.uri, false);
-    const extra = s.fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, EXTRA_CONTEXT_CHARS) : [];
-    const multiline = shouldCompleteMultiline(s.fim.multiline, linePrefix, lineSuffix, doc.languageId);
+    const extra = fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars) : [];
+    const multiline = shouldCompleteMultiline(fim.multiline, linePrefix, lineSuffix, doc.languageId);
     // Not linked to the VS Code token: a newer keystroke may join this request. It is aborted by a newer request for this uri.
     const ctl = new AbortController();
     const req = buildFimRequest({
       route,
-      preset,
+      fim,
       model,
       multiline,
-      maxTokens: s.fim.maxTokens,
       signal: ctl.signal,
       input: { prefix: win.prefix, suffix: win.suffix, filePath, repoName: vscode.workspace.getWorkspaceFolder(doc.uri)?.name ?? '', extra },
     });
@@ -198,7 +211,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
 
     this.d.inflight.abortAll(uri);
-    const result = this.run({ backend, backoff, debouncer, req, ctl, uri, prefix: win.prefix, suffix: win.suffix, stop: preset.stop, multiline, post, eol, logPrompts: s.debug.logPrompts });
+    const result = this.run({ backend, backoff, debouncer, req, ctl, uri, prefix: win.prefix, suffix: win.suffix, stop: fim.stop, multiline, post, eol, logPrompts: s.debug.logPrompts });
     this.d.inflight.add(uri, win.prefix, win.suffix, result, ctl);
     const text = await result;
     return text === undefined || signal.aborted ? [] : this.items(text, spot);
@@ -255,7 +268,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
       return { state: 'error', detail: `Set API key for ${id}` };
     }
-    const { detail, warn } = recordBackendFailure(j.backoff, id, err, cls, j.logPrompts);
+    const { detail, warn } = recordBackendFailure(j.backoff, id, err, cls, j.logPrompts, j.req.timeoutMs);
     if (warn) this.d.log.warn(warn);
     else this.d.log.debug(detail);
     // Error messages can quote server output, so the raw one is logged only with logPrompts.

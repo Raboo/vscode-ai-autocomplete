@@ -8,5 +8,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test/unit"]
+  "include": ["src", "test/unit"],
+  "exclude": ["src/webview"]
 }

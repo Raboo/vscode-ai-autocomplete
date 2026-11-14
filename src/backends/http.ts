@@ -13,7 +13,29 @@ export class HttpError extends Error {
   }
 }
 
+/** An error a server sent inside a stream it had answered with HTTP 200. The message is server text. */
+export class StreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StreamError';
+  }
+}
+
+/** Throws a StreamError when a parsed stream event has an `error` field, as OpenAI-compatible servers, llama.cpp and oMLX send one. */
+export function throwIfStreamError(ev: unknown): void {
+  const e = (ev as { error?: unknown } | null)?.error;
+  if (e === undefined || e === null) return;
+  const message = (e as { message?: unknown }).message;
+  throw new StreamError(typeof e === 'string' ? e : typeof message === 'string' ? message : 'the server sent an error event');
+}
+
 export interface PostOptions {
+  headers?: Record<string, string>;
+  signal: AbortSignal;
+  timeoutMs: number;
+}
+
+export interface GetOptions {
   headers?: Record<string, string>;
   signal: AbortSignal;
   timeoutMs: number;
@@ -38,6 +60,21 @@ export async function postJson(url: string, body: unknown, o: PostOptions): Prom
     throw new HttpError(res.status, text.slice(0, MAX_BODY_TEXT), url);
   }
   return res;
+}
+
+/** GETs JSON. Same error contract as postJson: non-2xx (including an unfollowed 3xx) throws an HttpError. */
+export async function getJson(url: string, o: GetOptions): Promise<unknown> {
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: o.headers,
+    redirect: 'manual',
+    signal: AbortSignal.any([o.signal, AbortSignal.timeout(o.timeoutMs)]),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new HttpError(res.status, text.slice(0, MAX_BODY_TEXT), url);
+  }
+  return res.json();
 }
 
 export function joinUrl(base: string, path: string): string {

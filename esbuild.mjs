@@ -5,7 +5,7 @@ const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
 /** @type {import('esbuild').BuildOptions} */
-const options = {
+const extension = {
   entryPoints: ['src/extension.ts'],
   outfile: 'dist/extension.js',
   bundle: true,
@@ -18,9 +18,27 @@ const options = {
   logLevel: 'info',
 };
 
+/**
+ * The Backends page: dist/webview/backends.js and backends.css.
+ * Source maps are inline: .vscodeignore packages all of dist/webview, so a stale .map file there would ship.
+ * @type {import('esbuild').BuildOptions}
+ */
+const webview = {
+  entryPoints: ['src/webview/backends/main.ts', 'src/webview/backends/style.css'],
+  outdir: 'dist/webview',
+  entryNames: 'backends',
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  target: 'es2022',
+  sourcemap: production ? false : 'inline',
+  minify: production,
+  logLevel: 'info',
+};
+
 if (watch) {
-  const ctx = await context(options);
-  await ctx.watch();
+  const contexts = await Promise.all([context(extension), context(webview)]);
+  await Promise.all(contexts.map((ctx) => ctx.watch()));
 } else {
-  await build(options);
+  await Promise.all([build(extension), build(webview)]);
 }

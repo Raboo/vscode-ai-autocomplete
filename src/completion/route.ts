@@ -1,13 +1,13 @@
+import type { StatusAction } from './requestStatus';
 import type { FimRequest } from '../backends/types';
-import type { ResolvedPreset } from '../models/presets';
+import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
-import type { BackendKind, FimMode } from '../types';
+import type { BackendKind, FimMode, FimTemplateId } from '../types';
 
 export type FimRoute = 'native' | 'template';
 
 const SINGLE_LINE_MAX_TOKENS = 48;
 const TIME_MAX_PREDICT_MS = 500;
-export const REQUEST_TIMEOUT_MS = 5000;
 
 /**
  * Picks how a FIM prompt is sent:
@@ -16,8 +16,8 @@ export const REQUEST_TIMEOUT_MS = 5000;
  * llama.cpp /infill lays tokens out prefix-first, so suffix-first models go through a template on /completion.
  * The chat hole-filler route arrives in v0.2.
  */
-export function planRoute(kind: BackendKind, supportsNative: boolean, preset: ResolvedPreset, mode: FimMode): FimRoute | 'unsupported' {
-  const templateOk = preset.fimTemplate !== undefined && kind !== 'mistral';
+export function planRoute(kind: BackendKind, supportsNative: boolean, fim: { fimTemplate?: FimTemplateId; suffixFirst: boolean }, mode: FimMode): FimRoute | 'unsupported' {
+  const templateOk = fim.fimTemplate !== undefined && kind !== 'mistral';
   switch (mode) {
     case 'chat':
       return 'unsupported';
@@ -26,8 +26,29 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, preset: Re
     case 'template':
       return templateOk ? 'template' : 'unsupported';
     case 'auto':
-      if (supportsNative && !(kind === 'llamacpp' && preset.suffixFirst)) return 'native';
+      if (supportsNative && !(kind === 'llamacpp' && fim.suffixFirst)) return 'native';
       return templateOk ? 'template' : 'unsupported';
+  }
+}
+
+/** Why planRoute found no route: the chat mode (v0.2), a prompt mode this server cannot use, or a model without a FIM template. */
+export type NoRoute = 'chat' | 'mode' | 'template';
+
+/** Why planRoute returned 'unsupported' for these inputs. Mistral builds every prompt itself, so it has no template mode. */
+export function whyNoRoute(kind: BackendKind, supportsNative: boolean, mode: FimMode): NoRoute {
+  if (mode === 'chat') return 'chat';
+  return (mode === 'native' && !supportsNative) || (mode === 'template' && kind === 'mistral') ? 'mode' : 'template';
+}
+
+/** The short text the status bar, the Backends page and the connection test show for a model with no route. */
+export function noRouteText(why: NoRoute, mode: FimMode): string {
+  switch (why) {
+    case 'chat':
+      return 'chat FIM arrives in v0.2';
+    case 'mode':
+      return `prompt mode "${mode}" does not work with this server`;
+    case 'template':
+      return 'no completion template';
   }
 }
 
@@ -35,7 +56,12 @@ export function planRoute(kind: BackendKind, supportsNative: boolean, preset: Re
  * What to log (once per `onceKey`) and show when a model has no route. An undetected model is a detection
  * problem, not a model problem, so it gets its own message and an error status.
  */
-export function explainUnsupported(backendId: string, model: string | undefined): { onceKey: string; log: string; status?: string } {
+export function explainUnsupported(
+  backendId: string,
+  model: string | undefined,
+  mode: FimMode,
+  why: NoRoute,
+): { onceKey: string; log: string; status?: string; action?: StatusAction } {
   if (model === undefined) {
     return {
       onceKey: `detect:${backendId}`,
@@ -43,7 +69,24 @@ export function explainUnsupported(backendId: string, model: string | undefined)
       status: `${backendId}: model not detected`,
     };
   }
-  return { onceKey: `route:${backendId}:${model}`, log: `model ${model} has no FIM route; chat FIM arrives in v0.2` };
+  const onceKey = `route:${backendId}:${model}`;
+  if (why === 'chat') return { onceKey, log: `backend "${backendId}": fimMode "chat" arrives in v0.2` };
+  // Both fixes are on the Backends page: the prompt mode, or the model or its template.
+  const action: StatusAction = { command: 'aiAutocomplete.manageBackends', args: [{ focus: backendId }] };
+  if (why === 'mode') {
+    return {
+      onceKey,
+      log: `backend "${backendId}": prompt mode (fimMode) "${mode}" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`,
+      status: `${backendId}: ${noRouteText(why, mode)}`,
+      action,
+    };
+  }
+  return {
+    onceKey,
+    log: `model "${model}" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`,
+    status: `${backendId}: ${noRouteText(why, mode)}`,
+    action,
+  };
 }
 
 /** Converts line breaks to the document's EOL. */
@@ -53,34 +96,30 @@ export function planInsertion(text: string, eol: '\n' | '\r\n'): string {
 
 export interface FimRequestPlan {
   route: FimRoute;
-  preset: ResolvedPreset;
+  fim: FimValues;
   model: string | undefined;
   multiline: boolean;
-  /** `fim.maxTokens` from settings; a per-model override (`preset.maxTokensOverride`) replaces it. */
-  maxTokens: number;
   input: TemplateInput;
   signal: AbortSignal;
 }
 
 export function buildFimRequest(p: FimRequestPlan): FimRequest {
-  const { preset, input } = p;
-  // A modelOverrides maxTokens is more specific than fim.maxTokens; built-in preset values never cap it.
-  const budget = preset.maxTokensOverride ?? p.maxTokens;
+  const { fim, input } = p;
   let payload: FimRequest['payload'];
   if (p.route === 'native') {
     payload = { route: 'native', ...input };
   } else {
-    if (!preset.fimTemplate) throw new Error(`preset "${preset.id}" has no FIM template`);
-    payload = { route: 'template', prompt: TEMPLATES[preset.fimTemplate].render(input) };
+    if (!fim.fimTemplate) throw new Error(`preset "${fim.presetId}" has no FIM template`);
+    payload = { route: 'template', prompt: TEMPLATES[fim.fimTemplate].render(input) };
   }
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
     payload,
-    stop: preset.stop,
-    sampling: { ...preset.sampling, maxTokens: p.multiline ? budget : Math.min(budget, SINGLE_LINE_MAX_TOKENS) },
+    stop: fim.stop,
+    sampling: { ...fim.sampling, maxTokens: p.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS) },
     timeMaxPredictMs: TIME_MAX_PREDICT_MS,
-    extraBody: preset.extraBody,
+    extraBody: fim.extraBody,
     signal: p.signal,
-    timeoutMs: REQUEST_TIMEOUT_MS,
+    timeoutMs: fim.timeoutMs,
   };
 }

@@ -2,7 +2,7 @@ import { HttpError, StreamError } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import type { FimBackend, ServerInfo } from '../backends/types';
 import type { Settings } from '../config/settings';
-import { resolveFim } from '../completion/effective';
+import { resolveFim, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
 import { buildFimRequest, noRouteText, planRoute, whyNoRoute } from '../completion/route';
@@ -138,7 +138,12 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;
     }
-    emit({ id: 'model', state: 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template` }, stageStart);
+    // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
+    const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
+    emit({
+      id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
+      ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
+    }, stageStart);
 
     // 3. completion
     stage = 'completion';

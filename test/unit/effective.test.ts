@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { contextCaps, resolveFim } from '../../src/completion/effective';
+import { contextCaps, resolveFim, templateMismatch } from '../../src/completion/effective';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
 import type { BackendConfig, BackendFimSettings, ModelOverrideBody } from '../../src/types';
@@ -89,3 +89,19 @@ describe('resolveFim', () => {
 });
 
 test('contextCaps(4700)', () => expect(contextCaps(4700)).toEqual({ maxPrefixChars: 8225, maxSuffixChars: 2468, extraChars: 5758 }));
+
+describe('templateMismatch', () => {
+  test('a backend template that differs from the model\'s own', () => {
+    expect(templateMismatch(backend({ template: 'seed-coder' }), 'mellum-4b-dpo-all-mlx', settings())).toEqual({ template: 'seed-coder', own: 'mellum' });
+  });
+  test('none without a backend template, for the same template, or for a model with no template of its own', () => {
+    expect(templateMismatch(backend(), 'mellum-4b', settings())).toBeUndefined();
+    expect(templateMismatch(backend({ template: 'mellum' }), 'mellum-4b', settings())).toBeUndefined();
+    expect(templateMismatch(backend({ template: 'seed-coder' }), 'zeta-2.1', settings())).toBeUndefined();
+    expect(templateMismatch(backend({ template: 'seed-coder' }), undefined, settings())).toBeUndefined();
+  });
+  test('the own template includes a model override', () => {
+    const s = settings({ overrides: { zeta: { fimTemplate: 'qwen' } } });
+    expect(templateMismatch(backend({ template: 'seed-coder' }), 'zeta-2.1', s)).toEqual({ template: 'seed-coder', own: 'qwen' });
+  });
+});

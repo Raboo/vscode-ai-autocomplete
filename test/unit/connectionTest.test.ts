@@ -116,6 +116,15 @@ describe('runConnectionTest', () => {
     expect(f.requests[0].payload.route).toBe('template');
   });
 
+  test('a backend template that differs from the model\'s own warns, and the test goes on', async () => {
+    const f = fake({ native: false, info: { models: ['mellum-4b'], contextWindows: { 'mellum-4b': 8192 } }, config: { kind: 'openai', fimModel: 'mellum-4b', fim: { template: 'seed-coder' } } });
+    const { res } = await run(f);
+    expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'Model mellum-4b with the seed-coder template', hint: 'mellum-4b\'s own template is mellum; reset the Template field' });
+    expect(res.steps.map((s) => s.id)).toEqual(['reach', 'model', 'completion', 'context']);
+    expect(f.requests[0].payload).toMatchObject({ route: 'template' });
+    expect(completionServed(res)).toBe(true);
+  });
+
   test('slow first completion is a warning', async () => {
     const clock = { t: 0 };
     const f = fake({ clock, streamCost: 8000, config: { fim: { timeoutMs: 5000 } } });

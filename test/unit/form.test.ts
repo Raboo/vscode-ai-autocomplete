@@ -157,6 +157,16 @@ describe('form model', () => {
     expect(formWarnings(form({ changed: { stop: '1\n2\n3\n4\n5\n6' } }), undefined, settings())).toEqual([]);
   });
 
+  test('formWarnings flags a Template that differs from the model\'s own', () => {
+    const f = form({ changed: { template: 'seed-coder' } });
+    expect(formWarnings(f, 'mellum-4b-dpo-all-mlx', settings()))
+      .toEqual(['mellum-4b-dpo-all-mlx\'s own template is mellum; reset Template unless you mean to override it']);
+    expect(formWarnings(f, 'zeta-2.1', settings())).toEqual([]);
+    expect(formWarnings(form({ changed: { template: 'mellum' } }), 'mellum-4b', settings())).toEqual([]);
+    // The server builds the prompt on the native route, so the template is not used there.
+    expect(formWarnings(form({ type: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', changed: { template: 'starcoder' } }), 'qwen2.5-coder-1.5b', settings())).toEqual([]);
+  });
+
   test('upsert keeps other entries and unknown fields', () => {
     const raw = [{ id: 'a', x: 1 }, { id: 'b' }];
     const out = upsertBackend(raw, { id: 'b', kind: 'llamacpp' });

@@ -96,3 +96,14 @@ export function resolveFim(backend: BackendConfig, model: string | undefined, s:
   };
   return { values, sources, extraContextAllowed: s.fim.extraContext };
 }
+
+/**
+ * The backend's Template when the model has a different one of its own (preset or modelOverrides), else undefined.
+ * The Template belongs to the backend, so it stays when the model changes: a template chosen for Zeta then sends Mellum a prompt it cannot read.
+ */
+export function templateMismatch(backend: BackendConfig, model: string | undefined, s: Settings): { template: FimTemplateId; own: FimTemplateId } | undefined {
+  const template = backend.fim?.template;
+  if (template === undefined) return undefined;
+  const own = resolveFim({ ...backend, fim: undefined }, model, s).values.fimTemplate;
+  return own !== undefined && own !== template ? { template, own } : undefined;
+}

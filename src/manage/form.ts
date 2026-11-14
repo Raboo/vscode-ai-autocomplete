@@ -1,6 +1,6 @@
 import { createBackend } from '../backends';
 import { inferHostFlavor, isHostedFlavor } from '../backends/hostFlavor';
-import { resolveFim, type ValueSource } from '../completion/effective';
+import { resolveFim, templateMismatch, type ValueSource } from '../completion/effective';
 import { planRoute } from '../completion/route';
 import { FIM_LIMITS, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
@@ -258,11 +258,19 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
   });
 }
 
-/** Warnings that do not block Save. A hosted flavor sends only the first 4 stop sequences. */
+/** Warnings that do not block Save: a hosted flavor sends only the first 4 stop sequences; a Template differs from the model's own. */
 export function formWarnings(f: BackendForm, model: string | undefined, s: Settings): string[] {
   const cfg = formToConfig(f);
-  if (!cfg || !isHostedFlavor(inferHostFlavor(cfg))) return [];
-  return resolveFim(cfg, model, s).values.stop.length > MAX_HOSTED_STOPS ? [`only the first ${MAX_HOSTED_STOPS} stop sequences are sent`] : [];
+  if (!cfg) return [];
+  const out: string[] = [];
+  const values = resolveFim(cfg, model, s).values;
+  if (isHostedFlavor(inferHostFlavor(cfg)) && values.stop.length > MAX_HOSTED_STOPS) out.push(`only the first ${MAX_HOSTED_STOPS} stop sequences are sent`);
+  const mismatch = templateMismatch(cfg, model, s);
+  // On the native route the server builds the prompt, so the Template is not used.
+  if (mismatch && model !== undefined && planRoute(cfg.kind, createBackend(cfg, async () => undefined).supportsNativeFim(), values, cfg.fimMode) !== 'native') {
+    out.push(`${model}'s own template is ${mismatch.own}; reset Template unless you mean to override it`);
+  }
+  return out;
 }
 
 const idOf = (v: unknown): unknown => (isObj(v) ? v.id : undefined);

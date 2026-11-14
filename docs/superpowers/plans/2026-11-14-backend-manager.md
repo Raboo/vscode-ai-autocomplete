@@ -582,7 +582,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   - It takes part in `--watch` and `--production`.
 - `tsconfig.webview.json` extends the root config with `lib: ["ES2023", "DOM"]` and `include: ["src/webview"]`.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   ```ts
   // render.test.ts
   test('render escapes server-supplied text', () => {
@@ -598,10 +598,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
     // dist/webview/backends.js and dist/webview/backends.css exist; .vscodeignore contains '!dist/webview/**'
   });
   ```
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement** `render.ts`, `main.ts`, `style.css` and the build changes.
-- [ ] **Step 4: Run the full check**, then `npm run package`. Expected: PASS, and `unzip -l *.vsix` lists `extension/dist/webview/backends.js`.
-- [ ] **Step 5: Commit.** `feat: backends page webview`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement** `render.ts`, `main.ts`, `style.css` and the build changes.
+- [x] **Step 4: Run the full check**, then `npm run package`. Expected: PASS, and `unzip -l *.vsix` lists `extension/dist/webview/backends.js`.
+- [x] **Step 5: Commit.** `feat: backends page webview`.
 
 ### Task 8: Panel host, command, menu and links
 

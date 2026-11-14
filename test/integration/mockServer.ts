@@ -21,6 +21,8 @@ export interface MockOptions {
   alias?: string;
   /** The context window `/props` reports as `default_generation_settings.n_ctx`; left out when not set. */
   nCtx?: number;
+  /** Delays every answer by this many milliseconds (the request is recorded when it arrives). */
+  delayMs?: number;
 }
 
 /** A stand-in llama.cpp server on 127.0.0.1 with an ephemeral port. It also answers `GET /v1/models` like an OpenAI-compatible server. */
@@ -41,17 +43,22 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
       }
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
       requests.push({ method: req.method ?? '', path, body });
-      if (path === '/props') {
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(props));
-      } else if (path === '/v1/models' && req.method === 'GET') {
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));
-      } else if (path === '/infill') {
-        res.writeHead(200, { 'content-type': 'text/event-stream' });
-        res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);
-        res.end(`data: ${JSON.stringify({ content: '', stop: true })}\n\n`);
-      } else {
-        res.writeHead(404).end();
-      }
+      const answer = (): void => {
+        if (path === '/props') {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(props));
+        } else if (path === '/v1/models' && req.method === 'GET') {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));
+        } else if (path === '/infill') {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);
+          res.end(`data: ${JSON.stringify({ content: '', stop: true })}\n\n`);
+        } else {
+          res.writeHead(404).end();
+        }
+      };
+      if (!o.delayMs) answer();
+      // A client that gave up meanwhile gets no answer.
+      else setTimeout(() => (res.socket && !res.socket.destroyed ? answer() : undefined), o.delayMs);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

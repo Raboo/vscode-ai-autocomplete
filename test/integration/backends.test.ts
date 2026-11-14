@@ -20,6 +20,10 @@ const TOUCHED = ['backends', 'fim.backend', 'privacy.localOnly'];
 const KEYS = ['old', 'renamed'];
 /** Time for the extension's onDidChangeConfiguration handler to rebuild its backends. */
 const SETTLE_MS = 200;
+/** The slow mock's delay: a card test against it needs two answers (/props, then /infill). */
+const SLOW_MS = 1500;
+/** Long enough for a card test against the slow mock to have finished. */
+const SLOW_TEST_DONE_MS = 2 * SLOW_MS + 500;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -149,5 +153,47 @@ suite('Backends page', () => {
     assert.deepEqual(userBackends(), [{ id: 'renamed', kind: 'llamacpp', baseUrl: mock.baseUrl }]);
     assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').inspect('fim.backend')?.globalValue, 'renamed');
     assert.ok(!JSON.stringify(panel.lastState()).includes('sk-moved'), 'the key reached the page');
+  });
+
+  test('a card test still running when the card is saved leaves no result and sends nothing more', async () => {
+    const slow = await startMockServer({ nCtx: 8192, delayMs: SLOW_MS });
+    try {
+      await configure({ backends: [{ id: 'slow', kind: 'llamacpp', baseUrl: slow.baseUrl }], 'fim.backend': 'slow' });
+      const panel = await open();
+      await panel.handle({ type: 'test', id: 'slow' });
+      assert.ok(await waitFor(() => slow.requests.length > 0, 5000), 'the test never reached the server');
+      await panel.handle({ type: 'edit', id: 'slow' });
+      await panel.handle({ type: 'save', form: { ...panel.lastState()!.edit!.form, baseUrl: mock.baseUrl } });
+
+      await sleep(SLOW_TEST_DONE_MS);
+      const card = panel.lastState()!.cards.find((c) => c.id === 'slow');
+      assert.equal(card?.baseUrl, mock.baseUrl);
+      assert.equal(card?.test, undefined, JSON.stringify(card));
+      assert.equal(card?.dot, 'grey');
+      assert.deepEqual(slow.requests.map((r) => r.path), ['/props']);
+    } finally {
+      await slow.close();
+    }
+  });
+
+  test('a card test stops when its card leaves the settings', async () => {
+    const slow = await startMockServer({ nCtx: 8192, delayMs: SLOW_MS });
+    const entry = { id: 'slow', kind: 'llamacpp', baseUrl: slow.baseUrl };
+    try {
+      await configure({ backends: [entry], 'fim.backend': 'slow' });
+      const panel = await open();
+      await panel.handle({ type: 'test', id: 'slow' });
+      assert.ok(await waitFor(() => slow.requests.length > 0, 5000), 'the test never reached the server');
+      await configure({ backends: [] });
+
+      await sleep(SLOW_TEST_DONE_MS);
+      assert.deepEqual(slow.requests.map((r) => r.path), ['/props']);
+      // Added again, the card shows no result of the test that ran before it was removed.
+      await configure({ backends: [entry] });
+      const card = panel.lastState()!.cards.find((c) => c.id === 'slow');
+      assert.equal(card?.test, undefined, JSON.stringify(card));
+    } finally {
+      await slow.close();
+    }
   });
 });

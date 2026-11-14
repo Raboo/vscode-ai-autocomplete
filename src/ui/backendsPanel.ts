@@ -248,6 +248,7 @@ export class BackendsPanel implements vscode.Disposable {
       return;
     }
     const old = form.originalId;
+    for (const id of [old, form.id]) if (id !== undefined) this.stopCardTest(id);
     const original = old === undefined ? undefined : entriesOf(list).find((e) => e.id === old);
     await config().update('backends', upsertBackend(list, formToEntry(form, original), old), vscode.ConfigurationTarget.Global);
     if (old !== undefined) {
@@ -270,6 +271,7 @@ export class BackendsPanel implements vscode.Disposable {
     const yes: vscode.MessageItem = { title: 'Remove' };
     const pick = await vscode.window.showWarningMessage(`Remove backend "${id}"?`, { modal: true, detail: 'Its stored API key is deleted too.' }, yes);
     if (pick !== yes) return;
+    this.stopCardTest(id);
     await config().update('backends', removeBackend(userBackends(), id), vscode.ConfigurationTarget.Global);
     await this.d.secrets.delete(id);
     this.tests.delete(id);
@@ -285,10 +287,24 @@ export class BackendsPanel implements vscode.Disposable {
   private testCard(id: string): void {
     const cfg = this.d.getSettings().backends.find((b) => b.id === id);
     if (!cfg) return;
+    // The result belongs to the card only while its config is the one tested; a changed or removed card stops the test.
+    const tested = JSON.stringify(cfg);
+    const live = (): boolean => JSON.stringify(this.d.getSettings().backends.find((b) => b.id === id)) === tested;
     this.tests.set(id, []);
-    void this.runTest(`card:${id}`, cfg, () => this.d.secrets.get(id), (steps) => this.tests.set(id, steps)).then((r) => {
-      if (r) this.finish(id, r, cfg.fimModel === undefined);
+    void this.runTest(`card:${id}`, cfg, () => this.d.secrets.get(id), (steps) => {
+      if (live()) this.tests.set(id, steps);
+      else this.stopCardTest(id);
+    }).then((r) => {
+      if (r && live()) this.finish(id, r, cfg.fimModel === undefined);
     });
+  }
+
+  /** Stops a running test of a saved card and drops its partial result. */
+  private stopCardTest(id: string): void {
+    const ctl = this.running.get(`card:${id}`);
+    if (!ctl) return;
+    ctl.abort();
+    this.tests.delete(id);
   }
 
   private testForm(raw: unknown, apiKey: string | undefined): void {

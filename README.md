@@ -10,7 +10,7 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 
 ### 1. Run a model with llama.cpp
 
-Any server works; llama.cpp is the example here.
+llama.cpp is the example here. The extension also works with LM Studio, Ollama, vLLM, SGLang and other servers with an OpenAI-compatible `/v1/completions` endpoint, and with the hosted Mistral Codestral, DeepSeek, Fireworks and Together APIs.
 
 ```sh
 brew install llama.cpp
@@ -21,7 +21,7 @@ On Linux and Windows, download a build from the [llama.cpp releases](https://git
 
 ### 2. Point the extension at it
 
-Run **AI Autocomplete: Manage Backends** from the Command Palette (it is also in the status bar menu). The Backends page lists your backends and lets you add one, pick its model from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends a built-in sample, never your code.
+Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Add Backend** button of the "no backends configured" notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, pick its model from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends a built-in sample, never your code.
 
 Or edit the settings by hand. Open your user settings (**Preferences: Open User Settings (JSON)**) and add:
 
@@ -81,7 +81,7 @@ Each backend can carry a `fim` object with its own completion settings. The Back
 
 Fields: `template`, `contextTokens` (default 4700), `prefixLines`, `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`. A backend can also set `fimMode` and `headers` at the top level.
 
-A value is taken from the first of these that sets it: the backend's `fim` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.fim.*` settings, then the built-in preset for the model.
+A value is taken from the first of these that sets it: the backend's `fim` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.fim.*` settings, then the built-in preset for the model. Three fields work differently: the backend's `stop` sequences are added to the preset's and the override's, not used instead of them; its `extraBody` is merged over the override's; and its `extraContext` can only switch extra context off: it cannot turn it on while `aiAutocomplete.fim.extraContext` is off.
 
 ### Keep requests on your machine
 

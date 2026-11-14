@@ -104,7 +104,7 @@ There is one page at a time. Opening it again reveals the existing tab.
 
 | Server type | kind / hostFlavor | Default URL | Key |
 |---|---|---|---|
-| llama.cpp | llamacpp / – | `http://127.0.0.1:8012` | no |
+| llama.cpp | llamacpp / – | `http://127.0.0.1:8012` | optional |
 | LM Studio | openai / lmstudio | `http://127.0.0.1:1234/v1` | no |
 | Ollama | openai / ollama | `http://127.0.0.1:11434/v1` | no |
 | vLLM | openai / vllm | `http://127.0.0.1:8000/v1` | optional |

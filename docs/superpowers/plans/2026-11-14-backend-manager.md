@@ -667,7 +667,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   - `startMockServer({ alias?, nCtx? })` sets the `/props` `model_alias` (default `qwen2.5-coder-1.5b`) and `default_generation_settings.n_ctx`;
   - it also answers `GET /v1/models` with that alias.
 
-- [ ] **Step 1: Write failing tests.**
+- [x] **Step 1: Write failing tests.**
   ```ts
   // statusModel.test.ts
   test('Manage backends comes first when no backend exists', () => {});
@@ -681,10 +681,10 @@ README.md  AGENTS.md  docs/ROADMAP.md  docs/superpowers/specs/2026-11-13-ai-auto
   });
   test('rename moves the stored key', () => {});
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/statusModel.test.ts test/unit/manifest.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the host, command, menu, links and wiring.
-- [ ] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass.
-- [ ] **Step 5: Commit.** `feat: manage backends from a page with connection tests`.
+- [x] **Step 2: Run** `npx vitest run test/unit/statusModel.test.ts test/unit/manifest.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the host, command, menu, links and wiring.
+- [x] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass.
+- [x] **Step 5: Commit.** `feat: manage backends from a page with connection tests`.
 
 ### Task 9: "No completion template" feedback
 

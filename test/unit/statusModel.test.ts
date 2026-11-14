@@ -26,20 +26,27 @@ describe('displayState', () => {
 });
 
 describe('menuEntries', () => {
-  const ids = (state: Parameters<typeof menuEntries>[0]) => menuEntries(state).map((e) => e.id);
+  const ids = (state: Parameters<typeof menuEntries>[0], count = 1) => menuEntries(state, count).map((e) => e.id);
   test('lists Retry now first while the status is error', () => {
-    expect(menuEntries('error')[0]).toEqual({ label: 'Retry now', id: 'retry' });
+    expect(menuEntries('error', 1)[0]).toEqual({ label: 'Retry now', id: 'retry' });
     expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);
   });
   test('lists Resume now first while snoozed', () => {
-    expect(menuEntries('snoozed')[0]).toEqual({ label: 'Resume now', id: 'resume' });
+    expect(menuEntries('snoozed', 1)[0]).toEqual({ label: 'Resume now', id: 'resume' });
     expect(ids('snoozed').slice(1)).toEqual(ids('idle'));
     expect(ids('idle')).not.toContain('resume');
     expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
-    expect(ids('idle')).toEqual(['toggle', 'snooze', 'selectBackend', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle')).toEqual(['toggle', 'snooze', 'selectBackend', 'manageBackends', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(ids('loading')).toEqual(ids('idle'));
+  });
+  test('Manage backends comes first when no backend exists', () => {
+    expect(menuEntries('idle', 0)[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
+    expect(ids('idle', 0)).toEqual(['manageBackends', 'toggle', 'snooze', 'selectBackend', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('error', 0).slice(0, 2)).toEqual(['manageBackends', 'retry']);
+    expect(ids('snoozed', 0).slice(0, 2)).toEqual(['manageBackends', 'resume']);
+    for (const state of ['idle', 'error', 'snoozed'] as const) expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
   });
 });
 

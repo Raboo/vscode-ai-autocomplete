@@ -13,6 +13,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - No telemetry, ever. Nothing leaves the machine except requests to the user-configured backend.
 - Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from `globalValue` only; workspace values are ignored.
 - Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`. Everything else is pure and unit-testable.
+- The Backends page never receives an API key, and server-supplied text (model ids, error bodies) is HTML-escaped before it reaches the page. Error text shown in the page is fixed text.
 - Prompt and completion text are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
 - A file that copies or closely adapts upstream code starts with `// Portions adapted from <project> <path> @ <commit> (<license>). Copyright <holder>.`, and `THIRD_PARTY_NOTICES.md` gets an entry for that project (full MIT text for MIT projects).
 - Never touch the GitHub repo `Raboo/ai-autocomplete`.
@@ -28,12 +29,12 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 
 Node version comes from `.nvmrc` (22); code must also work on newer Node.
 
-- `npm run build`: bundle `src/extension.ts` into `dist/extension.js` with esbuild.
+- `npm run build`: bundle `src/extension.ts` into `dist/extension.js` and the Backends page into `dist/webview/backends.{js,css}` with esbuild.
 - `npm run watch`: rebuild on change.
-- `npm run typecheck`: `tsc --noEmit`.
+- `npm run typecheck`: `tsc --noEmit` for both `tsconfig.json` and `tsconfig.webview.json`.
 - `npm run lint`: ESLint over the repo.
 - `npm test`: unit tests with vitest. Run `npm run build` first: a manifest test reads `dist/extension.js`.
-- `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server; CI runs it under `xvfb-run`.
+- `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server; CI runs it under `xvfb-run`. `.vscode-test.mjs` sets `chat.disableAIFeatures` in the test profile: VS Code 1.146 focuses its chat input at startup, and without OS window focus (a locked screen) editor actions like `inlineSuggest.trigger` would hit it.
 - `npm run package`: build a `.vsix` with `vsce package --no-dependencies`.
 - `npm run vscode:prepublish`: production (minified) build, run by vsce.
 - `bash scripts/setup-github-repo.sh --dry-run`: print the GitHub repo settings the automation needs (never run it without `--dry-run` unless the user approved; see section 7).
@@ -41,6 +42,8 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 ## Layout
 
 - Pure modules (config parsing, backends, models, most of `completion/`) never import `vscode` and are unit-tested in `test/unit/`.
+- `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
+- `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking and `src/ui/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 
@@ -81,4 +84,4 @@ Cut a release: merge the open release-please PR. The first one proposes `0.1.0`.
 
 Needs a human: creating the `RELEASE_PLEASE_TOKEN` secret, Marketplace and Open VSX tokens (Phase 5), approving major dependency updates.
 
-Open item: the CI `integration` job had not yet run on GitHub when this was written. If it fails with Chromium sandbox errors on ubuntu-24.04, add a CI-only `--no-sandbox` launch arg in `.vscode-test.mjs`, or a `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` step before it.
+If the CI `integration` job ever fails with Chromium sandbox errors on ubuntu-24.04 (it passed on GitHub on 2026-11-13), add a CI-only `--no-sandbox` launch arg in `.vscode-test.mjs`, or a `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` step before it.

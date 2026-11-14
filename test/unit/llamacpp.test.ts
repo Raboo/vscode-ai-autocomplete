@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
 import type { BackendConfig } from '../../src/types';
 import { startMockHttp } from './helpers/mockHttp';
@@ -104,6 +104,13 @@ describe('LlamaCppBackend', () => {
     expect(m.requests[1].headers.authorization).toBeUndefined();
   });
 
+  test('an error event inside the stream throws StreamError', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"error":{"code":500,"message":"context shift is disabled","type":"server_error"}}'] }));
+    const err = await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('context shift is disabled');
+  });
+
   test('skips empty data events and throws on malformed JSON', async () => {
     m = await startMockHttp(() => ({ sse: ['', '{"content":"a"}'] }));
     const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
@@ -156,5 +163,23 @@ describe('LlamaCppBackend', () => {
     const err = await collect(b.streamFim(req())).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(503);
+  });
+
+  test('listModels reads alias and n_ctx', async () => {
+    m = await startMockHttp(() => ({ json: { model_alias: 'q', default_generation_settings: { n_ctx: 8192 } } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => 'k');
+    expect(await b.listModels(new AbortController().signal)).toEqual({ models: ['q'], contextWindows: { q: 8192 } });
+    expect(m.requests[0].url).toBe('/props');
+    expect(m.requests[0].headers.authorization).toBe('Bearer k');
+  });
+  test('listModels falls back to top-level n_ctx and model_path', async () => {
+    m = await startMockHttp(() => ({ json: { model_path: '/m/Qwen.gguf', n_ctx: 4096 } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    expect(await b.listModels(new AbortController().signal)).toEqual({ models: ['Qwen'], contextWindows: { Qwen: 4096 } });
+  });
+  test('listModels throws HttpError on 401', async () => {
+    m = await startMockHttp(() => ({ status: 401, json: { error: 'no' } }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    await expect(b.listModels(new AbortController().signal)).rejects.toBeInstanceOf(HttpError);
   });
 });

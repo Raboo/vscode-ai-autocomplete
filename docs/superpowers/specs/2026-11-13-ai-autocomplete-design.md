@@ -48,7 +48,7 @@ So on Strata, Next Edit is **borderline** and ghost-text FIM is **not viable**. 
   - Per-model sampling presets for FIM and for Next Edit, each overridable by the user.
   - Provider chosen per workspace, with a "local only" lock for sensitive repos.
 - **Non-goals**
-  - Chat, agents, commit messages, or a settings webview.
+  - Chat, agents, commit messages, or a webview beyond the Backends page (see `2026-11-14-backend-manager-design.md`).
   - VS Code for the Web; the extension is desktop-only because it spawns processes and talks to localhost.
   - A dedicated Mercury adapter: Inception shuts the Mercury API down on 2026-12-28 (verified on docs.inceptionlabs.ai).
 - **Anti-goals** (failure even if it "works")

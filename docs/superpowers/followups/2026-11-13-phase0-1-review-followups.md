@@ -5,7 +5,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 ## Recommended next (small, behaviour-visible)
 
 - **Requests waiting in the debouncer during a settings change use the old settings.** A request not yet in `InFlight` still goes out up to ~600 ms after the change, with the old backend and the old `localOnly` value. Fix: in `FimProvider.provide()`, return `[]` when `this.d.getSettings()` is no longer the object read at the start, checked after the awaits and before `inflight.add`. (`src/completion/provider.ts`)
-- **A settings change leaves a stale error on the status bar**, with a "retrying in N s" that matches no backoff. Fix: call `provider.clearError()` in the settings rebuild. (`src/extension.ts`)
 - **A string `"true"` for `privacy.localOnly` fails open**, because the check is `=== true`. Fix: type-check boolean settings in `parseSettings` (report a problem; treat `"true"` as true for restrict-only keys).
 
 ## Settings
@@ -21,7 +20,7 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - The 5 s timeout covers the whole stream, so output from a slow stream is thrown away. The spec's "show what we have at X ms" time cap is not implemented (Phase 2).
 - An abort with a custom reason is classified as a network failure. Callers must use a plain `abort()`.
 - Late in-flight failures count as consecutive. After the circuit expires, a single failure re-opens it.
-- Failed model detection (`GET /models`) is not backed off. It probes again on every debounced keystroke while the server is down.
+- Failed model detection (`GET /models`) is not backed off. It probes again on every debounced keystroke while the server is down, or while a server lists several models and the backend sets no `fimModel`.
 - `0.0.0.0` and `::` count as not local. This fails safe.
 - `stop: []` is always sent by the OpenAI-compatible backend.
 - A `/props` response that is not ok is not cancelled. A missing `res.body` silently ends as an empty completion.
@@ -57,7 +56,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 ## CI and automation (check at the first push)
 
 - actionlint has never been run, because the Docker daemon was down: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
-- The `integration` job has never run on GitHub. If it fails on Ubuntu 24.04 with sandbox errors, see AGENTS.md section 7.
 - CodeQL **default setup** must stay off. While it is on, uploads from the advanced `codeql.yml` workflow are rejected.
 - Watch whether Dependabot auto-merges, which use `GITHUB_TOKEN`, trigger the `push` workflows on `main`.
 - `setup-github-repo.sh` treats an unknown `-*` argument as the repo. The first `gh` call fails before any write, but the script should reject the argument up front.
@@ -65,3 +63,26 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - The Dependabot `actions` group has no `update-types: [minor, patch]`, so one major bump holds back the whole group.
 - The dry-run output escapes the commas in the topic list (cosmetic).
 - There is no `.vscode-test` cache, and the integration tests run against an unpinned `stable` VS Code.
+
+## Backends page (2026-11-14 review)
+
+- Opening the page under `privacy.localOnly` resolves the backends' hostnames via DNS (no HTTP request, no user data).
+- Clicking Edit on another card, or a status-bar click that focuses a card, replaces an open draft without asking.
+- The page script (`src/webview/backends/main.ts`) has no committed tests: focus restore, key isolation and the hold logic are untested.
+- Focus is lost when the focused control disappears or is disabled, and showing the tab again moves focus to the server type.
+- A narrow race between a host state and an in-flight `formChanged` can lose an edit.
+- Config and secret change events post the state outside the panel's message queue, so a duplicate-name error or a doubled card can flash briefly.
+- Page messages without an `id` pass the host's guard, and `remove`/`removeKey` do not check that the id exists.
+- The `LOCAL_ONLY` text and the local-only gate are duplicated between `connectionTest.ts` and `backendsPanel.ts`.
+- A cancelled test of a new draft keeps its result under the proposed id, and a rename does not move test results or detected models.
+- The panel does not post a new state when workspace folders change.
+- `backendsPanel.ts` is about 460 lines; split it when next touched.
+- `getJson` duplicates `postJson`'s non-ok handling; `form.ts` duplicates the fimMode and multiline value lists of `settings.ts` (`FIM_MODES`, `MULTILINE`); the hosted check is duplicated in `fieldViews` and `formWarnings`.
+- Header names typed on the page are not validated, so a bad name fails as "request failed".
+- `contextWindows[model]` uses a plain object, so a model id like `constructor` reads a prototype value.
+- `resolvePreset` drops the stops of an earlier override when a later override sets `fimTemplate` (only odd multi-override configs).
+- `.vscode-test.mjs` writes the test profile's settings at import time.
+- With a typed template, the Stop field's default follows that template's stops, but its hint still says "built-in preset for this model".
+- On llama.cpp, a model with no built-in template (for example Zeta) routes natively in `auto` mode, so the page disables the Template field; choosing seed-coder there means switching the prompt mode to `template` first.
+- The model list's tags go stale after a prompt-mode or template change until the list is reloaded.
+- When the model is not detected, the "model not detected" message wins over a prompt-mode problem.

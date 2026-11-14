@@ -1,0 +1,92 @@
+<style>
+  .vs { background:#1e1e1e; color:#cccccc; font:13px -apple-system, "Segoe UI", sans-serif; border:1px solid #3c3c3c; border-radius:4px; overflow:hidden; text-align:left; max-width:860px; }
+  .vs .tab { background:#252526; padding:6px 12px; font-size:12px; color:#fff; border-bottom:1px solid #3c3c3c; }
+  .vs h4 { margin:0; font-size:13px; color:#e7e7e7; font-weight:600; }
+  .vs h5 { margin:14px 0 2px; font-size:11px; color:#9d9d9d; text-transform:uppercase; letter-spacing:.06em; font-weight:600; border-bottom:1px solid #333; padding-bottom:3px; }
+  .vs .muted { color:#8b8b8b; font-size:12px; }
+  .vs .row { display:flex; gap:8px; align-items:center; }
+  .vs .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+  .ok { background:#3fb950; } .warn { background:#d29922; } .lock { background:#8b8b8b; }
+  .vs .grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:2px 16px; }
+  .vs label { display:block; font-size:12px; color:#bbb; margin:8px 0 3px; }
+  .vs .in { background:#3c3c3c; border:1px solid #3c3c3c; color:#ddd; padding:4px 7px; font-size:12px; border-radius:2px; }
+  .vs .in.chg { border-color:#0078d4; }
+  .vs .def { font-size:10px; color:#7a7a7a; margin-left:4px; }
+  .vs .chgtag { font-size:10px; color:#3794ff; margin-left:4px; }
+  .vs .hint { font-size:11px; color:#7a7a7a; margin-top:2px; }
+  .vs .btn { background:#0e639c; color:#fff; padding:4px 11px; font-size:12px; border-radius:2px; display:inline-block; }
+  .vs .btn2 { background:#3a3d41; color:#ddd; padding:4px 11px; font-size:12px; border-radius:2px; display:inline-block; }
+  .vs .link { color:#3794ff; font-size:12px; }
+  .vs .badge { font-size:10px; padding:1px 6px; border-radius:8px; background:#4d4d4d; color:#ddd; }
+  .vs .card { border:1px solid #3c3c3c; border-radius:3px; padding:9px 11px; margin-bottom:8px; }
+  .vs .card.edit { border-color:#0078d4; }
+  .vs .result { background:#252526; border:1px solid #3c3c3c; border-radius:3px; padding:8px 10px; margin-top:10px; font-size:12px; line-height:1.7; }
+  .vs code { background:#2d2d2d; padding:0 4px; border-radius:2px; font-family:Menlo, monospace; font-size:11px; color:#ce9178; }
+  .g { color:#3fb950; } .y { color:#d29922; }
+</style>
+
+<h2>Card B, editing a backend</h2>
+<p class="subtitle">Every field starts filled with the value used today (grey "default"). Changing one stores it on this backend only (blue "changed · reset"). Here the Zeta card has been switched to the seed-coder template and a lower temperature.</p>
+
+<div class="vs">
+  <div class="tab">AI Autocomplete: Backends ×</div>
+  <div style="padding:12px 16px">
+    <div class="row" style="margin-bottom:10px"><h4>Backends</h4><span class="muted">· Completions on · Local only: off in this workspace · <span class="link">General settings…</span></span><span class="btn" style="margin-left:auto">+ Add backend</span></div>
+
+    <div class="card">
+      <div class="row"><span class="dot ok"></span><b>local</b><span class="badge">in use</span><span class="muted">llama.cpp · http://127.0.0.1:8012 · qwen2.5-coder-1.5b</span><span class="row" style="margin-left:auto"><span class="btn2">Test</span><span class="btn2">Edit</span></span></div>
+    </div>
+
+    <div class="card edit">
+      <div class="row"><span class="dot warn"></span><b>lmstudio</b><span class="muted">editing</span></div>
+
+      <h5>Connection</h5>
+      <div class="grid">
+        <div><label>Server type</label><div class="in">LM Studio ▾</div></div>
+        <div><label>Name</label><div class="in">lmstudio</div></div>
+        <div><label>URL</label><div class="in">http://127.0.0.1:1234/v1</div></div>
+        <div style="grid-column:span 2"><label>Model <span class="link">↻ reload list</span></label><div class="in">randmaru/zeta-2.1-mlx ▾</div><div class="hint">From the server's model list. Coder models show "ready"; this one has no built-in template.</div></div>
+        <div><label>API key</label><div class="in" style="color:#777">not needed for local servers</div></div>
+      </div>
+
+      <h5>Prompt</h5>
+      <div class="grid">
+        <div><label>Template <span class="chgtag">changed · reset</span></label><div class="in chg">seed-coder ▾</div><div class="hint">Default: none found for "zeta"</div></div>
+        <div><label>Prompt mode <span class="def">default</span></label><div class="in">auto ▾</div></div>
+        <div><label>Multi-line <span class="def">default</span></label><div class="in">auto ▾</div></div>
+      </div>
+
+      <h5>Context</h5>
+      <div class="grid">
+        <div><label>Context size (tokens) <span class="def">default</span></label><div class="in">4700</div><div class="hint">Server's context window: 8192</div></div>
+        <div><label>Lines before cursor <span class="def">default</span></label><div class="in">200</div></div>
+        <div><label>Lines after cursor <span class="def">default</span></label><div class="in">60</div></div>
+        <div><label>Use other open files <span class="def">default</span></label><div class="in">☑ on</div></div>
+      </div>
+
+      <h5>Generation</h5>
+      <div class="grid">
+        <div><label>Temperature <span class="chgtag">changed · reset</span></label><div class="in chg">0.05</div><div class="hint">Default for this model: 0.1</div></div>
+        <div><label>Top P <span class="def">default</span></label><div class="in">0.95</div></div>
+        <div><label>Top K <span class="def">default</span></label><div class="in">40</div></div>
+        <div><label>Max tokens <span class="def">default</span></label><div class="in">128</div><div class="hint">Single-line completions stop at 48</div></div>
+        <div><label>Wait after typing (ms) <span class="def">default</span></label><div class="in">auto (75)</div></div>
+        <div><label>Timeout (ms) <span class="def">default</span></label><div class="in">5000</div></div>
+      </div>
+
+      <div class="muted" style="margin-top:10px">▸ Advanced: stop sequences, extra HTTP headers, extra request body (JSON)</div>
+
+      <div class="row" style="margin-top:12px"><span class="btn">Test connection</span><span class="btn2">Save</span><span class="btn2">Cancel</span><span class="btn2">Use for completions</span><span class="link" style="margin-left:auto">Remove backend</span></div>
+      <div class="result">
+        <div><span class="g">✓</span> Server answered in 38 ms (LM Studio, 3 models)</div>
+        <div><span class="g">✓</span> Model <b>randmaru/zeta-2.1-mlx</b> with the seed-coder template</div>
+        <div><span class="g">✓</span> Test completion in 412 ms: <code>return a + b;</code></div>
+        <div class="muted">Tested with the form's unsaved values. Uses a built-in sample snippet, never your code.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="dot lock"></span><b>codestral</b><span class="muted">Mistral · https://codestral.mistral.ai · API key set · 🔒 not used here (local only)</span><span class="row" style="margin-left:auto"><span class="btn2">Test</span><span class="btn2">Edit</span></span></div>
+    </div>
+  </div>
+</div>

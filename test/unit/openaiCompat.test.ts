@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { OpenAiCompatBackend } from '../../src/backends/openaiCompat';
-import { HttpError } from '../../src/backends/http';
+import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
 import type { BackendConfig, HostFlavor } from '../../src/types';
 import { startMockHttp } from './helpers/mockHttp';
@@ -126,6 +126,14 @@ describe('OpenAiCompatBackend', () => {
     expect(m.requests[1].headers.authorization).toBeUndefined();
   });
 
+  test('an error event inside the stream throws StreamError (oMLX memory guard)', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"a"}]}', '{"error":{"message":"oMLX prefill memory guard rejected this prompt"},"message":"x"}'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
+    const err = await collect(b.streamFim(req())).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StreamError);
+    expect((err as StreamError).message).toBe('oMLX prefill memory guard rejected this prompt');
+  });
+
   test('HTTP errors throw HttpError', async () => {
     m = await startMockHttp(() => ({ status: 500, json: { error: 'no' } }));
     const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
@@ -163,6 +171,60 @@ describe('OpenAiCompatBackend', () => {
       const dead = `${m.url}/v1`;
       await m.close();
       expect(await new OpenAiCompatBackend(cfg(dead), key()).detectModel(signal())).toBeUndefined();
+    });
+  });
+
+  describe('listModels', () => {
+    const signal = () => new AbortController().signal;
+    test('listModels lists ids and vLLM max_model_len', async () => {
+      m = await startMockHttp(() => ({ json: { data: [{ id: 'a', max_model_len: 32768 }, { id: 'b' }, { id: 5 }, { id: 'c', max_model_len: 'x' }] } }));
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key('sk'));
+      expect(await b.listModels(signal())).toEqual({ models: ['a', 'b', 'c'], contextWindows: { a: 32768 } });
+      expect(m.requests.map((r) => r.url)).toEqual(['/v1/models']);
+      expect(m.requests[0].headers.authorization).toBe('Bearer sk');
+    });
+    test('throws HttpError on non-ok', async () => {
+      m = await startMockHttp(() => ({ status: 401 }));
+      await expect(new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).listModels(signal())).rejects.toBeInstanceOf(HttpError);
+    });
+    test('lmstudio adds loaded_context_length from /api/v0/models at the origin', async () => {
+      m = await startMockHttp(({ url }) =>
+        url === '/api/v0/models'
+          ? { json: { data: [{ id: 'a', loaded_context_length: 16384 }, { id: 'b', loaded_context_length: 'n' }] } }
+          : { json: { data: [{ id: 'a' }, { id: 'b' }] } },
+      );
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key('sk'));
+      expect(await b.listModels(signal())).toEqual({ models: ['a', 'b'], contextWindows: { a: 16384 } });
+      expect(m.requests.map((r) => r.url)).toEqual(['/v1/models', '/api/v0/models']);
+      expect(m.requests[1].headers.authorization).toBe('Bearer sk');
+    });
+    test('lmstudio ignores a failing /api/v0/models', async () => {
+      m = await startMockHttp(({ url }) => (url === '/api/v0/models' ? { status: 500 } : { json: { data: [{ id: 'a' }] } }));
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+      expect(await b.listModels(signal())).toEqual({ models: ['a'], contextWindows: {} });
+    });
+    test('lmstudio ignores malformed /api/v0/models JSON', async () => {
+      m = await startMockHttp(({ url }) => (url === '/api/v0/models' ? { json: 'nope' } : { json: { data: [{ id: 'a' }] } }));
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+      expect(await b.listModels(signal())).toEqual({ models: ['a'], contextWindows: {} });
+    });
+    test('lmstudio detectModel makes one request: it needs no context windows', async () => {
+      m = await startMockHttp(({ url }) =>
+        url === '/api/v0/models' ? { json: { data: [{ id: 'a', loaded_context_length: 16384 }] } } : { json: { data: [{ id: 'a' }] } },
+      );
+      const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+      expect(await b.detectModel(signal())).toBe('a');
+      expect(m.requests.map((r) => r.url)).toEqual(['/v1/models']);
+    });
+    test('detectModel: one model -> id, two -> undefined, 500 -> undefined', async () => {
+      m = await startMockHttp(() => ({ json: { data: [{ id: 'one' }] } }));
+      expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBe('one');
+      await m.close();
+      m = await startMockHttp(() => ({ json: { data: [{ id: 'a' }, { id: 'b' }] } }));
+      expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBeUndefined();
+      await m.close();
+      m = await startMockHttp(() => ({ status: 500 }));
+      expect(await new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).detectModel(signal())).toBeUndefined();
     });
   });
 });

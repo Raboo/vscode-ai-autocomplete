@@ -3,6 +3,15 @@ export type HostFlavor = 'llamacpp' | 'vllm' | 'sglang' | 'lmstudio' | 'ollama' 
 export type FimMode = 'auto' | 'native' | 'template' | 'chat';
 export type FimTemplateId = 'qwen' | 'codestral' | 'deepseek' | 'starcoder' | 'codellama' | 'codegemma' | 'granite-code' | 'granite4' | 'seed-coder' | 'mellum';
 
+export type Multiline = 'auto' | 'always' | 'never';
+
+/** Per-backend completion settings; every key is optional and overrides the global `aiAutocomplete.fim.*` value. */
+export interface BackendFimSettings {
+  template?: FimTemplateId; contextTokens?: number; prefixLines?: number; suffixLines?: number; extraContext?: boolean;
+  multiline?: Multiline; maxTokens?: number; temperature?: number; topP?: number; topK?: number;
+  debounceMs?: number; timeoutMs?: number; stop?: string[]; extraBody?: Record<string, unknown>;
+}
+
 export interface BackendConfig {
   id: string;
   kind: BackendKind;
@@ -12,6 +21,7 @@ export interface BackendConfig {
   nextEditModel?: string;
   fimMode: FimMode;
   headers: Record<string, string>;
+  fim?: BackendFimSettings;
 }
 
 export interface Sampling {

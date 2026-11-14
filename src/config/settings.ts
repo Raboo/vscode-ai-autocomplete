@@ -1,10 +1,10 @@
 import { TEMPLATES } from '../models/templates';
-import type { BackendConfig, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Sampling } from '../types';
+import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling } from '../types';
 
 export interface Settings {
   backends: BackendConfig[];
   fim: {
-    enabled: boolean; backendId?: string; debounceMs: number | null; multiline: 'auto' | 'always' | 'never'; maxTokens: number;
+    enabled: boolean; backendId?: string; debounceMs: number | null; multiline: Multiline; maxTokens: number;
     prefixLines: number; suffixLines: number; extraContext: boolean; disableInLanguages: string[]; disableInFiles: string[]; skipMidWord: boolean;
   };
   privacy: { localOnly: boolean };
@@ -39,29 +39,88 @@ export function withFolderValues(root: RawSettingsSource, folders: RawSettingsSo
 const KINDS: readonly BackendKind[] = ['llamacpp', 'openai', 'mistral'];
 const FIM_MODES: readonly FimMode[] = ['auto', 'native', 'template', 'chat'];
 const FLAVORS: readonly HostFlavor[] = ['llamacpp', 'vllm', 'sglang', 'lmstudio', 'ollama', 'strata', 'deepseek', 'fireworks', 'together', 'openrouter', 'mistral', 'generic'];
-const MULTILINE = ['auto', 'always', 'never'] as const;
+const MULTILINE: readonly Multiline[] = ['auto', 'always', 'never'];
 const SAMPLING_KEYS: readonly (keyof Sampling)[] = ['temperature', 'topP', 'topK', 'maxTokens'];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
-function parseBackend(raw: unknown, i: number, seen: Set<string>): { backend?: BackendConfig; problem?: string } {
+/** Allowed range of each numeric `fim` setting; the package.json schema and the Backends page use the same values. */
+export const FIM_LIMITS: Record<'temperature' | 'topP' | 'topK' | 'maxTokens' | 'prefixLines' | 'suffixLines' | 'contextTokens' | 'debounceMs' | 'timeoutMs',
+  { min: number; max?: number; integer: boolean; exclusiveMin?: boolean }> = {
+  temperature: { min: 0, max: 2, integer: false },
+  topP: { min: 0, max: 1, integer: false, exclusiveMin: true },
+  topK: { min: 0, integer: true },
+  maxTokens: { min: 1, max: 4096, integer: true },
+  prefixLines: { min: 0, max: 10000, integer: true },
+  suffixLines: { min: 0, max: 10000, integer: true },
+  contextTokens: { min: 256, max: 131072, integer: true },
+  debounceMs: { min: 0, max: 2000, integer: true },
+  timeoutMs: { min: 500, max: 60000, integer: true },
+};
+
+function limitText(l: { min: number; max?: number; integer: boolean; exclusiveMin?: boolean }): string {
+  const lo = l.exclusiveMin ? `greater than ${l.min}` : `${l.min}`;
+  const range = l.max === undefined ? `${lo} or more` : l.exclusiveMin ? `${lo} and at most ${l.max}` : `${lo} to ${l.max}`;
+  return `${l.integer ? 'an integer ' : 'a number '}${range}`;
+}
+
+/** Keeps the valid keys of one backend's `fim` object; each dropped key adds a problem. */
+function parseBackendFim(raw: unknown, at: string, problems: string[]): BackendFimSettings | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObj(raw)) {
+    problems.push(`${at}.fim: not an object, ignored`);
+    return undefined;
+  }
+  const out: BackendFimSettings = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined) continue;
+    const bad = (why: string): void => void problems.push(`${at}.fim.${k}: ${why}, ignored`);
+    if (Object.hasOwn(FIM_LIMITS, k)) {
+      const key = k as keyof typeof FIM_LIMITS;
+      const l = FIM_LIMITS[key];
+      const ok = typeof v === 'number' && Number.isFinite(v) && (!l.integer || Number.isInteger(v)) && (l.exclusiveMin ? v > l.min : v >= l.min) && (l.max === undefined || v <= l.max);
+      if (ok) out[key] = v;
+      else bad(`expected ${limitText(l)}`);
+    } else if (k === 'template') {
+      if (typeof v === 'string' && Object.hasOwn(TEMPLATES, v)) out.template = v as FimTemplateId;
+      else bad(`unknown template ${JSON.stringify(v)} (use one of ${Object.keys(TEMPLATES).join(', ')})`);
+    } else if (k === 'multiline') {
+      if (typeof v === 'string' && MULTILINE.includes(v as Multiline)) out.multiline = v as Multiline;
+      else bad(`expected one of ${MULTILINE.join(', ')}`);
+    } else if (k === 'extraContext') {
+      if (typeof v === 'boolean') out.extraContext = v;
+      else bad('expected true or false');
+    } else if (k === 'stop') {
+      if (Array.isArray(v) && v.every((x) => typeof x === 'string')) out.stop = v;
+      else bad('not a list of strings');
+    } else if (k === 'extraBody') {
+      if (isObj(v)) out.extraBody = v;
+      else bad('not an object');
+    } else bad('unknown key');
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Parses one raw backends entry; pushes every problem; undefined when the entry is unusable. `seen` collects ids for duplicate checks. */
+export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, problems: string[]): BackendConfig | undefined {
+  const fail = (problem: string): undefined => void problems.push(problem);
   const at = `aiAutocomplete.backends[${i}]`;
-  if (!isObj(raw)) return { problem: `${at}: not an object, ignored` };
+  if (!isObj(raw)) return fail(`${at}: not an object, ignored`);
   const id = raw.id;
-  if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return { problem: `${at}: invalid id ${JSON.stringify(id)} (use lowercase letters, digits and dashes), ignored` };
-  if (seen.has(id)) return { problem: `${at}: duplicate id "${id}", ignored` };
-  if (typeof raw.kind !== 'string' || !KINDS.includes(raw.kind as BackendKind)) return { problem: `${at} ("${id}"): invalid kind ${JSON.stringify(raw.kind)}, ignored` };
+  if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return fail(`${at}: invalid id ${JSON.stringify(id)} (use lowercase letters, digits and dashes), ignored`);
+  if (seen.has(id)) return fail(`${at}: duplicate id "${id}", ignored`);
+  if (typeof raw.kind !== 'string' || !KINDS.includes(raw.kind as BackendKind)) return fail(`${at} ("${id}"): invalid kind ${JSON.stringify(raw.kind)}, ignored`);
   const baseUrl = str(raw.baseUrl);
-  if (!baseUrl) return { problem: `${at} ("${id}"): missing baseUrl, ignored` };
+  if (!baseUrl) return fail(`${at} ("${id}"): missing baseUrl, ignored`);
   try {
     const u = new URL(baseUrl);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('protocol');
   } catch {
-    return { problem: `${at} ("${id}"): baseUrl "${baseUrl}" is not a valid http(s) URL, ignored` };
+    return fail(`${at} ("${id}"): baseUrl "${baseUrl}" is not a valid http(s) URL, ignored`);
   }
   const fimMode = raw.fimMode === undefined ? 'auto' : raw.fimMode;
-  if (typeof fimMode !== 'string' || !FIM_MODES.includes(fimMode as FimMode)) return { problem: `${at} ("${id}"): invalid fimMode ${JSON.stringify(fimMode)}, ignored` };
+  if (typeof fimMode !== 'string' || !FIM_MODES.includes(fimMode as FimMode)) return fail(`${at} ("${id}"): invalid fimMode ${JSON.stringify(fimMode)}, ignored`);
   const headers: Record<string, string> = {};
   if (isObj(raw.headers)) {
     for (const [k, v] of Object.entries(raw.headers)) if (typeof v === 'string') headers[k] = v;
@@ -73,7 +132,9 @@ function parseBackend(raw: unknown, i: number, seen: Set<string>): { backend?: B
   if (fimModel) backend.fimModel = fimModel;
   const nextEditModel = str(raw.nextEditModel);
   if (nextEditModel) backend.nextEditModel = nextEditModel;
-  return { backend };
+  const fim = parseBackendFim(raw.fim, `${at} ("${id}")`, problems);
+  if (fim) backend.fim = fim;
+  return backend;
 }
 
 /** Keeps the valid parts of one modelOverrides entry; each dropped part adds a problem. */
@@ -139,9 +200,8 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
   if (Array.isArray(rawBackends)) {
     const seen = new Set<string>();
     rawBackends.forEach((r, i) => {
-      const { backend, problem } = parseBackend(r, i, seen);
+      const backend = parseBackendEntry(r, i, seen, problems);
       if (backend) backends.push(backend);
-      if (problem) problems.push(problem);
     });
   } else problems.push('aiAutocomplete.backends: not an array, ignored');
 
@@ -184,7 +244,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       enabled: resource('fim.enabled', true),
       backendId,
       debounceMs: typeof debounce === 'number' && Number.isFinite(debounce) ? debounce : null,
-      multiline: (MULTILINE as readonly string[]).includes(multiline) ? (multiline as Settings['fim']['multiline']) : 'auto',
+      multiline: (MULTILINE as readonly string[]).includes(multiline) ? (multiline as Multiline) : 'auto',
       maxTokens: num('fim.maxTokens', 128),
       prefixLines: num('fim.prefixLines', 200),
       suffixLines: num('fim.suffixLines', 60),

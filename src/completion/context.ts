@@ -7,8 +7,6 @@ export interface FimWindowOptions {
   maxSuffixChars: number;
 }
 
-export const DEFAULT_WINDOW: Omit<FimWindowOptions, 'prefixLines' | 'suffixLines'> = { maxPrefixChars: 8000, maxSuffixChars: 2500 };
-
 /** Offsets of each line's first character and of its end (before the \r?\n terminator). */
 function indexLines(text: string): { starts: number[]; ends: number[] } {
   const starts = [0];

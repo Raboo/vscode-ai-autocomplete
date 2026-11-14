@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldViews, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, upsertBackend, validateForm } from '../../src/manage/form';
+import { fieldViews, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 
@@ -15,6 +15,26 @@ describe('form model', () => {
   test('newForm prefills from the type', () => {
     expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {} });
     expect(newForm('mistral', [])).toMatchObject({ id: 'codestral', model: 'codestral-latest' });
+  });
+
+  test('retypeForm replaces the URL, id and model only while they are empty or the old type\'s defaults', () => {
+    const fresh = newForm('llamacpp', ['lmstudio']);
+    expect(retypeForm(fresh, { ...fresh, type: 'lmstudio' }, ['lmstudio'], true))
+      .toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {} });
+    expect(retypeForm(fresh, { ...fresh, type: 'mistral' }, [], true)).toMatchObject({ id: 'codestral', baseUrl: 'https://codestral.mistral.ai', model: 'codestral-latest' });
+    const mistral = newForm('mistral', []);
+    expect(retypeForm(mistral, { ...mistral, type: 'other' }, [], true)).toMatchObject({ id: 'openai', baseUrl: '', model: '' });
+    const typed = { ...fresh, id: 'mine', baseUrl: 'http://10.0.0.2:8012', model: 'qwen', changed: { temperature: '0.1' } };
+    expect(retypeForm(typed, { ...typed, type: 'lmstudio' }, [], true)).toEqual({ ...typed, type: 'lmstudio' });
+    const empty = { ...fresh, baseUrl: '  ' };
+    expect(retypeForm(empty, { ...empty, type: 'ollama' }, [], true).baseUrl).toBe('http://127.0.0.1:11434/v1');
+  });
+
+  test('retypeForm keeps the id of a saved backend, and changes nothing when the type is the same', () => {
+    const saved = { ...newForm('llamacpp', []), originalId: 'llamacpp' };
+    expect(retypeForm(saved, { ...saved, type: 'lmstudio' }, [], false)).toMatchObject({ id: 'llamacpp', baseUrl: 'http://127.0.0.1:1234/v1' });
+    const next = { ...saved, baseUrl: '' };
+    expect(retypeForm(saved, next, [], false)).toBe(next);
   });
 
   test('entryToForm → formToEntry round-trips a full entry', () => {

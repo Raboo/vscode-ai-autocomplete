@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
 import { readSettings } from '../config/vscodeSettings';
+import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
 import { menuEntries } from './statusModel';
 
@@ -22,6 +23,21 @@ export interface CommandDeps {
   log: Log;
   /** Clears every backend's backoff and shows idle, so the next keystroke sends a request. */
   retry(): void;
+  /** Opens (or reveals) the Backends page. */
+  manageBackends(o: OpenOptions): void;
+}
+
+/** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
+export async function useBackend(id: string): Promise<void> {
+  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+}
+
+/** The command argument as OpenOptions; anything else opens the page as it is. */
+function openOptions(arg: unknown): OpenOptions {
+  if (typeof arg !== 'object' || arg === null) return {};
+  const o = arg as { add?: unknown; focus?: unknown };
+  return { ...(o.add === true ? { add: true } : {}), ...(typeof o.focus === 'string' ? { focus: o.focus } : {}) };
 }
 
 async function pickBackend(placeHolder: string): Promise<string | undefined> {
@@ -42,7 +58,8 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const pick = await vscode.window.showQuickPick(menuEntries(d.status.state()), { placeHolder: 'AI Autocomplete' });
+      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length);
+      const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
       else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
@@ -72,10 +89,9 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     }),
     reg('selectBackend', async () => {
       const id = await pickBackend('Select the completion backend');
-      if (!id) return;
-      const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-      await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+      if (id) await useBackend(id);
     }),
+    reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
     reg('setApiKey', async () => {
       const id = await pickBackend('Set the API key for which backend?');
       if (!id) return;

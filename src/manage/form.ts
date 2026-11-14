@@ -35,6 +35,21 @@ export function newForm(type: ServerTypeId, taken: readonly string[]): BackendFo
   return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', changed: {} };
 }
 
+/**
+ * `next` after a server-type change from `prev`: the URL, the model and (for a new backend) the id take the new type's
+ * prefills, but only while each is empty or still the old type's prefill, so typed values survive.
+ */
+export function retypeForm(prev: BackendForm, next: BackendForm, taken: readonly string[], isNew: boolean): BackendForm {
+  if (next.type === prev.type) return next;
+  const from = typeInfo(prev.type);
+  const to = typeInfo(next.type);
+  const out = { ...next };
+  if (out.baseUrl.trim() === '' || out.baseUrl === from.defaultUrl) out.baseUrl = to.defaultUrl;
+  if (isNew && out.id === suggestId(prev.type, taken)) out.id = suggestId(next.type, taken);
+  if (out.model.trim() === '' || out.model === (from.defaultModel ?? '')) out.model = to.defaultModel ?? '';
+  return out;
+}
+
 export function entryToForm(raw: Record<string, unknown>): BackendForm {
   const kind = (raw.kind === 'llamacpp' || raw.kind === 'openai' || raw.kind === 'mistral' ? raw.kind : 'openai') as BackendKind;
   const baseUrl = typeof raw.baseUrl === 'string' ? raw.baseUrl : '';

@@ -35,7 +35,7 @@
           "type": "array",
           "default": [],
           "scope": "machine",
-          "markdownDescription": "Completion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
+          "markdownDescription": "[Manage backends](command:aiAutocomplete.manageBackends)\n\nCompletion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
           "items": {
             "type": "object",
             "required": [
@@ -334,6 +334,11 @@
       {
         "command": "aiAutocomplete.selectBackend",
         "title": "Select Backend",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.manageBackends",
+        "title": "Manage Backends",
         "category": "AI Autocomplete"
       },
       {

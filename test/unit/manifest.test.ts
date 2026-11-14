@@ -19,9 +19,15 @@ test('webview bundle is built and packaged', () => {
 });
 test('commands are categorised and accepted is hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
-  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'menu', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
+  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'manageBackends', 'menu', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
   expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
   expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
+});
+test('the backends setting links to the Backends page', () => {
+  const backends = pkg.contributes.configuration.properties['aiAutocomplete.backends'];
+  expect(backends.markdownDescription.startsWith('[Manage backends](command:aiAutocomplete.manageBackends)')).toBe(true);
+  const manage = (pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.manageBackends');
+  expect(manage?.title).toBe('Manage Backends');
 });
 test('backends schema fim limits match FIM_LIMITS', () => {
   const props = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.fim.properties;

@@ -80,6 +80,12 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     this.requests.report({ state: 'idle' });
   }
 
+  /** The model detected for the backend's current instance, if any; read-only, never fetches. */
+  detectedModel(backendId: string): string | undefined {
+    const backend = this.d.getBackend(backendId);
+    return backend ? this.models.get(backend) : undefined;
+  }
+
   async provideInlineCompletionItems(
     doc: vscode.TextDocument,
     pos: vscode.Position,

@@ -177,7 +177,7 @@ git commit -m "feat: Next Edit settings and per-backend values"
     - `add(path: string, lines: string[], centerLine: number): void`;
     - `pick(excludePath: string, budgetChars: number): Snippet[]`, oldest first.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `renderDiff renders zero-context hunks with 1-based numbers`: before `a\nb\nc\n`, after `a\nB\nc\n` gives exactly `--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B`.
 - `renderDiff of equal texts is undefined`.
@@ -193,22 +193,22 @@ git commit -m "feat: Next Edit settings and per-backend values"
 - `RecentSnippets.pick skips the excluded path and keeps the newest that fit the budget, returned oldest first`.
 - In `manifest.test.ts`, the dependency list is `['diff']`.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/nextEdit/history.test.ts test/unit/manifest.test.ts`
 Expected: FAIL (module not found; the manifest test expects `['diff']`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Use `structuredPatch(path, path, before, after, '', '', { context: 0 })` from `diff`, after normalizing `\r\n` to `\n`. Render each hunk as `@@ -${oldStart},${oldLines} +${newStart},${newLines} @@` followed by its lines, and join with `\n`.
 - Merging (Ruling 13): keep, for the newest entry, the snapshot it started from and the first hunk's `oldStart`. When the next commit for the same path starts its first hunk on that line, re-render from that older snapshot and replace the entry.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit/nextEdit/history.test.ts test/unit/manifest.test.ts && npm run build`
 Expected: PASS; the build bundles `diff`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json src/nextEdit/history.ts test/unit/nextEdit/history.test.ts test/unit/manifest.test.ts

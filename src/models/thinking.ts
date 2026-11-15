@@ -65,7 +65,8 @@ const MARKERS: readonly string[] = ['<|open|>response<|sep|>', '<|close|>respons
 
 const TAGS: readonly Tag[] = [
   ...BLOCKS.map(([o, c]): Tag => ({ text: o, kind: 'open', closer: c })),
-  ...BLOCKS.map(([, c]): Tag => ({ text: c, kind: 'close' })),
+  // `<|end|>` is also an end-of-turn token elsewhere (Phi), so it closes reasoning only after its opener, never bare.
+  ...BLOCKS.filter(([, c]) => c !== '<|end|>').map(([, c]): Tag => ({ text: c, kind: 'close' })),
   ...MARKERS.map((m): Tag => ({ text: m, kind: 'marker' })),
 ];
 const TAG_STARTS = new Set(TAGS.map((t) => t.text[0]));

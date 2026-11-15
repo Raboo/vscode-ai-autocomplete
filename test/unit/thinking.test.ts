@@ -40,6 +40,18 @@ describe('stripThinking', () => {
     expect(stripThinking('<|open|>think<|sep|>hm<|close|>think<|sep|><|open|>response<|sep|>a + b;<|close|>response<|sep|>').text).toBe('a + b;');
     expect(stripThinking('<|start|>assistant<|channel|>final<|message|>a + b;<|return|>').text).toBe('a + b;');
   });
+  test('a bare <|end|> is not a reasoning closer', () => {
+    expect(stripThinking('a + b;<|end|>')).toEqual({ text: 'a + b;<|end|>', thinking: false });
+    const f = new ReasoningFilter();
+    f.push('a + b;');
+    f.push('<|end|>');
+    f.end('stop');
+    expect(f.visible).toBe('a + b;<|end|>');
+  });
+  test('Harmony analysis then final yields only the final text', () => {
+    expect(stripThinking('<|channel|>analysis<|message|>hm<|end|><|start|>assistant<|channel|>final<|message|>a + b;<|return|>'))
+      .toEqual({ text: 'a + b;', thinking: true });
+  });
   test('plain text passes through', () => {
     expect(stripThinking('a + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('if (a < b) {}')).toEqual({ text: 'if (a < b) {}', thinking: false });

@@ -216,7 +216,7 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
   const own = resolveFim({ ...cfg, fim: undefined }, model, s);
   const { values, sources, extraContextAllowed } = template === undefined ? own : resolveFim({ ...cfg, fim: { template } }, model, s);
   const hosted = isHostedFlavor(inferHostFlavor(cfg));
-  const native = planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes().native, values, cfg.fimMode) === 'native';
+  const native = planRoute(cfg.kind, { ...createBackend(cfg, async () => undefined).routes(), chat: false }, values, cfg.fimMode) === 'native';
   const num = (n: number | undefined): string => (n === undefined ? '' : String(n));
   const defaults: Record<FormField, { text: string; source: ValueSource; hint?: string }> = {
     template: { text: own.values.fimTemplate ?? '', source: own.sources.template },
@@ -268,7 +268,7 @@ export function formWarnings(f: BackendForm, model: string | undefined, s: Setti
   if (isHostedFlavor(inferHostFlavor(cfg)) && values.stop.length > MAX_HOSTED_STOPS) out.push(`only the first ${MAX_HOSTED_STOPS} stop sequences are sent`);
   const mismatch = templateMismatch(cfg, model, s);
   // On the native route the server builds the prompt, so the Template is not used.
-  if (mismatch && model !== undefined && planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes().native, values, cfg.fimMode) !== 'native') {
+  if (mismatch && model !== undefined && planRoute(cfg.kind, { ...createBackend(cfg, async () => undefined).routes(), chat: false }, values, cfg.fimMode) !== 'native') {
     out.push(`${model}'s own template is ${mismatch.own}; reset Template unless you mean to override it`);
   }
   return out;

@@ -29,7 +29,7 @@ function fake(o: FakeOpts = {}) {
       yield* c;
     })();
   });
-  const backend: FimBackend = { config, routes: () => ({ native: o.native ?? true, template: true, chat: true, nativeChatModels: false }), detectModel: async () => undefined, listModels, streamFim, streamChat: () => (async function* () { /* no-op */ })() };
+  const backend: FimBackend = { config, routes: () => ({ native: o.native ?? true, template: config.kind !== 'mistral', chat: config.kind !== 'mistral', nativeChatModels: false }), detectModel: async () => undefined, listModels, streamFim, streamChat: () => (async function* () { /* no-op */ })() };
   return { backend, listModels, streamFim, requests };
 }
 
@@ -90,11 +90,11 @@ describe('runConnectionTest', () => {
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
-  test('a non-zeta model without template gets the plain hint; chat mode warns about v0.2', async () => {
+  test('a non-zeta model without template gets the plain hint; chat mode is not yet routed', async () => {
     const plain = await run(fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3' } }));
     expect(plain.res.steps[1]).toMatchObject({ text: 'llama-3 has no completion template', hint: 'pick a coder model, or choose a template' });
     const chat = await run(fake({ config: { fimModel: 'qwen2.5-coder-7b', fimMode: 'chat' } }));
-    expect(chat.res.steps[1]).toMatchObject({ state: 'warn', text: 'chat FIM arrives in v0.2' });
+    expect(chat.res.steps[1]).toMatchObject({ state: 'warn', text: 'prompt mode "chat" does not work with this server' });
   });
 
   test('a prompt mode the server cannot use names the mode, not the template', async () => {

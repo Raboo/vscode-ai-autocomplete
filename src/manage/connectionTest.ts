@@ -131,9 +131,11 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     }
     result.model = model;
     const values = resolveFim(cfg, model, settings).values;
-    const route = planRoute(cfg.kind, backend.routes().native, values, cfg.fimMode);
+    // The chat route stays off until the test handles it.
+    const caps = { ...backend.routes(), chat: false };
+    const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
     if (route === 'unsupported') {
-      const why = whyNoRoute(cfg.kind, backend.routes().native, cfg.fimMode);
+      const why = whyNoRoute(caps, cfg.fimMode);
       if (why === 'template') emit({ id: 'model', state: 'warn', text: `${model} has no completion template`, hint: `pick a coder model, or choose a template${/zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}` }, stageStart);
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;

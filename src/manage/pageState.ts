@@ -34,8 +34,9 @@ const typeLabel = (id: string): string => SERVER_TYPES.find((t) => t.id === id)?
 
 /** Why the backend has no route for `model`, or undefined when it has one. */
 function noRoute(cfg: BackendConfig, model: string, s: Settings): NoRoute | undefined {
-  const native = createBackend(cfg, async () => undefined).routes().native;
-  return planRoute(cfg.kind, native, resolveFim(cfg, model, s).values, cfg.fimMode) === 'unsupported' ? whyNoRoute(cfg.kind, native, cfg.fimMode) : undefined;
+  // The chat route stays off until the page handles it.
+  const caps = { ...createBackend(cfg, async () => undefined).routes(), chat: false };
+  return planRoute(cfg.kind, caps, resolveFim(cfg, model, s).values, cfg.fimMode) === 'unsupported' ? whyNoRoute(caps, cfg.fimMode) : undefined;
 }
 
 /** The model list's tag for `model`: "ready", or why the backend has no route for it. */

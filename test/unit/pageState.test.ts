@@ -37,7 +37,7 @@ describe('page state', () => {
 
   test('the card warning names the prompt mode when the mode, not the model, is the problem', () => {
     const chat = buildPageState(inputs({ rawBackends: [{ ...lm, fimMode: 'chat' }] }));
-    expect(chat.cards[0]).toMatchObject({ warning: 'chat FIM arrives in v0.2', dot: 'yellow' });
+    expect(chat.cards[0]).toMatchObject({ warning: 'prompt mode "chat" does not work with this server', dot: 'yellow' });
     const native = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'qwen2.5-coder-7b', fimMode: 'native' }] }));
     expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });
     const mistral = buildPageState(inputs({ rawBackends: [{ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimModel: 'codestral-latest', fimMode: 'template' }] }));
@@ -49,7 +49,7 @@ describe('page state', () => {
     expect(modelTag(cfg(), 'qwen2.5-coder-7b', base())).toBe('ready');
     expect(modelTag(cfg(), 'zeta-2.1', base())).toBe('no completion template');
     expect(modelTag(cfg({ fim: { template: 'seed-coder' } }), 'zeta-2.1', base())).toBe('ready');
-    expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('chat FIM arrives in v0.2');
+    expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "chat" does not work with this server');
     expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
   });
 

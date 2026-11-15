@@ -185,10 +185,12 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if (signal.aborted) return [];
     const fim = resolveFim(backend.config, model, s).values;
     const { kind, fimMode } = backend.config;
-    const route = planRoute(kind, backend.routes().native, fim, fimMode);
+    // The chat route stays off until the provider streams it.
+    const routeCaps = { ...backend.routes(), chat: false };
+    const route = planRoute(kind, routeCaps, fim, fimMode);
     if (route === 'unsupported') {
       // Only a detected model id is remembered, so an undetected one is probed again on the next request.
-      const why = explainUnsupported(id, model, fimMode, whyNoRoute(kind, backend.routes().native, fimMode));
+      const why = explainUnsupported(id, model, fimMode, whyNoRoute(routeCaps, fimMode), false);
       this.once(why.onceKey, () => this.d.log.warn(why.log));
       if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];

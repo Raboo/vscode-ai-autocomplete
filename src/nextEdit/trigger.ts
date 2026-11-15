@@ -4,6 +4,11 @@ export const EDIT_PAUSE_MS = 400;
 export const HISTORY_IDLE_MS = 1500;
 /** Cursor moves ask for a Next Edit only this long after an edit to the same file. */
 export const AFTER_EDIT_WINDOW_MS = 10_000;
+/**
+ * A cursor report this soon after an edit to the same file is the edit's own, not a move: a command that makes several
+ * edits (typing several characters at once) gets its cursor reported again in a version the controller has seen.
+ */
+export const EDIT_ECHO_MS = 100;
 /** A cursor move to the line of the last request does not ask again within this time. */
 export const SAME_LINE_COOLDOWN_MS = 5_000;
 /** Nothing is asked this long after the user rejected a suggestion. */
@@ -34,11 +39,11 @@ export class TriggerPolicy {
     return now - this.rejectedAt >= REJECTION_COOLDOWN_MS;
   }
 
-  /** Whether moving the cursor to `line` may ask: the last edit was to this document, recently, and the line was not just asked about. */
+  /** Whether moving the cursor to `line` may ask: the last edit was to this document, recently but not just now, and the line was not just asked about. */
   onCursorMove(uri: string, line: number, now: number): boolean {
     if (!this.afterPause(now)) return false;
     const edit = this.lastEdit;
-    if (edit?.uri !== uri || now - edit.at > AFTER_EDIT_WINDOW_MS) return false;
+    if (edit?.uri !== uri || now - edit.at > AFTER_EDIT_WINDOW_MS || now - edit.at < EDIT_ECHO_MS) return false;
     const last = this.lastRequest;
     return !(last && last.uri === uri && last.line === line && now - last.at < SAME_LINE_COOLDOWN_MS);
   }

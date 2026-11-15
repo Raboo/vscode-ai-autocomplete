@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { AFTER_EDIT_WINDOW_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy } from '../../../src/nextEdit/trigger';
+import { AFTER_EDIT_WINDOW_MS, EDIT_ECHO_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy } from '../../../src/nextEdit/trigger';
 
 test('a cursor move within 10 s of an edit triggers; after 10 s it does not', () => {
   const p = new TriggerPolicy();
@@ -8,6 +8,17 @@ test('a cursor move within 10 s of an edit triggers; after 10 s it does not', ()
   expect(p.onCursorMove('a', 3, 10_000)).toBe(true);
   expect(p.onCursorMove('a', 3, 12_000)).toBe(false);
   expect(AFTER_EDIT_WINDOW_MS).toBe(10_000);
+});
+
+test("a cursor report within 100 ms of an edit is the edit's own, not a move", () => {
+  // A command that types several characters makes several edits, and VS Code reports the cursor again after the last
+  // one, in a document version the controller has already seen.
+  const p = new TriggerPolicy();
+  p.edited('a', 1_000);
+  expect(p.onCursorMove('a', 3, 1_003)).toBe(false);
+  expect(p.onCursorMove('a', 3, 1_099)).toBe(false);
+  expect(p.onCursorMove('a', 3, 1_100)).toBe(true);
+  expect(EDIT_ECHO_MS).toBe(100);
 });
 
 test('the edit window belongs to the edited document', () => {

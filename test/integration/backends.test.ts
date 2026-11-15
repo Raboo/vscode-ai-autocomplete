@@ -196,4 +196,25 @@ suite('Backends page', () => {
       await slow.close();
     }
   });
+
+  test('testForm on Strata runs the chat route and reports thinking', async () => {
+    const strata = await startMockServer({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['hm'] } });
+    try {
+      const panel = await open();
+      const form = await draft(panel, { type: 'strata', baseUrl: `${strata.baseUrl}/v1` });
+
+      await panel.handle({ type: 'testForm', form });
+      assert.ok(await waitFor(() => panel.lastState()?.edit?.testing === false, 15_000), 'the test did not finish');
+
+      const steps = panel.lastState()!.edit!.test ?? [];
+      const by = (id: string) => steps.find((s) => s.id === id);
+      assert.equal(by('model')?.state, 'ok', JSON.stringify(steps));
+      assert.equal(by('model')?.text, 'Model qwen3.8-flash-next-iq3_s (chat prompt)');
+      assert.equal(by('completion')?.state, 'ok', JSON.stringify(steps));
+      assert.equal(by('thinking')?.state, 'warn', JSON.stringify(steps));
+      assert.ok(steps.every((s) => s.state === 'ok' || s.state === 'warn'), JSON.stringify(steps));
+    } finally {
+      await strata.close();
+    }
+  });
 });

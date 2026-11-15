@@ -35,6 +35,9 @@ async function configure(values: Record<string, unknown>): Promise<void> {
   await sleep(SETTLE_MS);
 }
 
+const useStrata = (baseUrl: string, model: string): Promise<void> =>
+  configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${baseUrl}/v1`, fimModel: model }], 'fim.backend': BACKEND_ID });
+
 const useLlamaCpp = (baseUrl: string, extra: Record<string, unknown> = {}): Promise<void> =>
   configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl }], 'fim.backend': BACKEND_ID, ...extra });
 
@@ -55,11 +58,25 @@ const asked = new Set<string>();
  * with text focus, which need not be the active one: while the window has no OS focus, an editor focused earlier keeps it.
  */
 async function trigger(editor: vscode.TextEditor): Promise<void> {
+  // VS Code does not ask again for an unchanged document it already has an answer for: an edit and its undo bump the version.
+  await vscode.commands.executeCommand('editor.action.inlineSuggest.hide');
+  const end = editor.selection.active;
+  await editor.edit((b) => b.insert(end, ' '));
+  await editor.edit((b) => b.delete(new vscode.Range(end, end.translate(0, 1))));
+  asked.delete(editor.document.uri.toString());
   await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
   const uri = editor.document.uri.toString();
   assert.ok(await waitFor(() => asked.has(uri), 2000), `the trigger did not reach ${uri}; VS Code asked for ${JSON.stringify([...asked])}`);
 }
 const commit = (): Thenable<unknown> => vscode.commands.executeCommand('editor.action.inlineSuggest.commit');
+
+/** Commits the ghost text every 50 ms until `cond` holds for the document text or 5 s pass (a commit with no ghost text does nothing). */
+async function commitWhen(editor: vscode.TextEditor, cond: (text: string) => boolean): Promise<void> {
+  await waitFor(() => {
+    void commit();
+    return cond(editor.document.getText());
+  }, 5000);
+}
 
 suite('FIM inline completion', () => {
   let mock: MockServer;
@@ -109,8 +126,7 @@ suite('FIM inline completion', () => {
 
     await trigger(editor);
     assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
-    await sleep(300);
-    await commit();
+    await commitWhen(editor, (t) => t.endsWith('return a + b;'));
 
     const text = editor.document.getText();
     assert.ok(text.endsWith('return a + b;'), `document text: ${JSON.stringify(text)}`);
@@ -196,6 +212,191 @@ suite('FIM inline completion', () => {
       assert.equal(posts.length, 0, `mock saw ${JSON.stringify(lm.requests)}`);
     } finally {
       await lm.close();
+    }
+  });
+
+  const posts = (m: MockServer, path: string) => m.requests.filter((r) => r.method === 'POST' && r.path === path);
+  const withMock = async (opts: Parameters<typeof startMockServer>[0], fn: (m: MockServer) => Promise<void>): Promise<void> => {
+    const m = await startMockServer(opts);
+    try {
+      await fn(m);
+    } finally {
+      await m.close();
+    }
+  };
+
+  test('ghost text from a chat model on Strata, thinking off', async () => {
+    await withMock({ alias: 'qwen3.8-flash-next-iq3_s' }, async (m) => {
+      await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+
+      const text = editor.document.getText();
+      assert.ok(text.endsWith('return a + b;'), `document text: ${JSON.stringify(text)}`);
+      const body = posts(m, '/v1/chat/completions')[0].body as Record<string, unknown>;
+      assert.equal(body.stream, true);
+      assert.equal(body.presence_penalty, 0);
+      assert.equal(body.reasoning_effort, 'none');
+      assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
+      assert.deepEqual(body.stop, ['</COMPLETION>']);
+      const messages = body.messages as { role: string; content: string }[];
+      assert.equal(messages[0].role, 'system');
+      assert.ok(messages[1].content.includes('<|cursor|>'), JSON.stringify(messages[1]));
+      assert.equal(posts(m, '/v1/completions').length + posts(m, '/infill').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
+      assert.ok(!api.status.current().includes('[thinking]'), `status: ${api.status.current()}`);
+    });
+  });
+
+  test('a model that thinks anyway still completes and the status bar warns', async () => {
+    await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['Let me think.'] } }, async (m) => {
+      await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
+      const editor = await openSource();
+
+      await trigger(editor);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+
+      assert.ok(editor.document.getText().endsWith('return a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
+      assert.ok(await waitFor(() => api.status.current().includes('[thinking]'), 2000), `status: ${api.status.current()}`);
+    });
+  });
+
+  test('OpenRouter without a model sends nothing', async () => {
+    await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${mock.baseUrl}/v1` }], 'fim.backend': BACKEND_ID });
+    const editor = await openSource();
+
+    await trigger(editor);
+    assert.ok(await waitFor(() => api.status.current().includes('choose a model'), 5000), `status: ${api.status.current()}`);
+    assert.equal(mock.requests.filter((r) => r.method === 'POST').length, 0, `mock saw ${JSON.stringify(mock.requests)}`);
+  });
+
+  /** A llama.cpp backend whose /infill answers 501, so the template route (/completion) is the fallback. */
+  const learnMissingInfill = async (m: MockServer, editor: vscode.TextEditor): Promise<void> => {
+    await trigger(editor);
+    assert.ok(await waitFor(() => posts(m, '/infill').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+    // The request ends without an error: a missing route is learned, not a failure.
+    await sleep(500);
+    assert.ok(!api.status.current().includes('error'), `status: ${api.status.current()}`);
+    assert.equal(editor.document.getText(), SOURCE);
+  };
+
+  test('a missing route is learned silently and the next trigger uses the next route', async () => {
+    await withMock({ infill501: true }, async (m) => {
+      await useLlamaCpp(m.baseUrl);
+      const editor = await openSource();
+      await learnMissingInfill(m, editor);
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/completion').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await commitWhen(editor, (t) => t.endsWith('a + b;'));
+
+      assert.ok(editor.document.getText().endsWith('a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
+      assert.equal(posts(m, '/infill').length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+    });
+  });
+
+  test('Retry now forgets a learned missing route', async () => {
+    await withMock({ infill501: true }, async (m) => {
+      await useLlamaCpp(m.baseUrl);
+      const editor = await openSource();
+      await learnMissingInfill(m, editor);
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/completion').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await sleep(500);
+
+      await vscode.commands.executeCommand('aiAutocomplete.retry');
+      await trigger(editor);
+
+      assert.ok(await waitFor(() => posts(m, '/infill').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+    });
+  });
+
+  test('a 404 that mentions a model is an ordinary error, not a learned route', async () => {
+    await withMock({ infill404Body: JSON.stringify({ error: 'model "x" not found' }) }, async (m) => {
+      await useLlamaCpp(m.baseUrl);
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('error'), 5000), `status: ${api.status.current()}`);
+      assert.equal(posts(m, '/completion').length, 0);
+
+      // The backend backs off for 2 s; after that the same route is tried again.
+      await sleep(2500);
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/infill').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      assert.equal(posts(m, '/completion').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
+    });
+  });
+
+  test('a missing route without a fallback is an ordinary error with backoff', async () => {
+    await withMock({ infill501: true }, async (m) => {
+      await configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl: m.baseUrl, fimMode: 'native' }], 'fim.backend': BACKEND_ID });
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('error'), 5000), `status: ${api.status.current()}`);
+
+      // Inside the backoff nothing is sent, and no other route is tried.
+      await trigger(editor);
+      await sleep(500);
+      assert.equal(posts(m, '/infill').length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+      assert.equal(posts(m, '/completion').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
+    });
+  });
+
+  test('a server-rejected thinking field is retried once and left out afterwards', async () => {
+    await withMock({ alias: 'qwen3.8-flash-next-iq3_s', rejectField: 'chat_template_kwargs' }, async (m) => {
+      await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+      const first = posts(m, '/v1/chat/completions');
+      assert.equal(first.length, 2);
+      assert.ok('chat_template_kwargs' in (first[0].body ?? {}));
+      assert.ok(!('chat_template_kwargs' in (first[1].body ?? {})), JSON.stringify(first[1].body));
+      assert.ok(editor.document.getText().endsWith('return a + b;'));
+
+      m.reset();
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await sleep(500);
+      const second = posts(m, '/v1/chat/completions');
+      assert.equal(second.length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+      assert.ok(!('chat_template_kwargs' in (second[0].body ?? {})), JSON.stringify(second[0].body));
+    });
+  });
+
+  test('a model that cannot turn thinking off warns once, and not again after a settings change', async () => {
+    const warnings: string[] = [];
+    const real = vscode.window.showWarningMessage;
+    (vscode.window as { showWarningMessage: unknown }).showWarningMessage = (m: string) => {
+      warnings.push(m);
+      return Promise.resolve(undefined);
+    };
+    try {
+      await withMock({ alias: 'gpt-oss-20b' }, async (m) => {
+        await useStrata(m.baseUrl, 'gpt-oss-20b');
+        const editor = await openSource();
+
+        await trigger(editor);
+        assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+        const cannot = () => warnings.filter((w) => w.includes('gpt-oss-20b') && w.includes('cannot turn thinking off'));
+        assert.ok(await waitFor(() => cannot().length >= 1, 2000), `warnings: ${JSON.stringify(warnings)}`);
+        await sleep(500);
+
+        // A settings change makes every once-only log line appear again, but not this notification.
+        await configure({ 'fim.disableInLanguages': [] });
+        await trigger(editor);
+        assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+        await sleep(500);
+        assert.equal(cannot().length, 1, `warnings: ${JSON.stringify(warnings)}`);
+      });
+    } finally {
+      (vscode.window as { showWarningMessage: unknown }).showWarningMessage = real;
     }
   });
 });

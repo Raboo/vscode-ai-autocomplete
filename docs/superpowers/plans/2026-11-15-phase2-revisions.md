@@ -98,7 +98,7 @@
 - **Recovery:** "Retry now", `onTestPassed` and the API-key change call `forgetLearned`. `rebuild()` still clears all capabilities.
 - **OpenRouter** keeps `EFFORT_NONE_REJECTED`. After the rejection, `chatThinking` returns `cannotDisable`, so `thinkingBlocked` returns `'cannotDisable'`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   // stream.test.ts
   test('a reasoning event fails fast with ThinkingError and aborts', () => { /* events: reasoning 'hm', content '<COMPLETION>a' → rejects ThinkingError; ctl.signal.aborted */ });
@@ -112,9 +112,9 @@
   test('forgetLearned clears thinks and failed routes, keeps rejected fields', () => {});
   // effective.test.ts: rewrite the chatTimeoutMs/reasoningTimeoutMs assertions to "timeoutMs is 5000 by default and backend fim.timeoutMs replaces it".
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/stream.test.ts test/unit/route.test.ts test/unit/capabilities.test.ts test/unit/effective.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.** Remove the values listed under Global Constraints "Removed", and update every unit test that asserts them.
-- [ ] **Step 4: Rewrite the integration tests** in `test/integration/fim.test.ts`:
+- [x] **Step 2: Run** `npx vitest run test/unit/stream.test.ts test/unit/route.test.ts test/unit/capabilities.test.ts test/unit/effective.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement.** Remove the values listed under Global Constraints "Removed", and update every unit test that asserts them.
+- [x] **Step 4: Rewrite the integration tests** in `test/integration/fim.test.ts`:
   - **`a model that keeps thinking fails, and Retry now asks again`:** the mock is a Strata-flavored backend with `chat: { reasoning: ['Let me think.'] }`.
     - The first trigger sends one chat POST, shows no ghost text (check with `commit()`), and the status includes `keeps thinking`.
     - The second trigger sends no POST.
@@ -122,8 +122,8 @@
   - **`a model that cannot turn thinking off sends nothing`:** alias `gpt-oss-20b` on a Strata-flavored backend. A trigger sends no POST, and the status includes `cannot turn thinking off`.
   - **Remove** the "thinks anyway still completes", "notify once" and "thinking until the timeout, then the allowance" tests.
   - **Keep** `ghost text from a chat model on Strata, thinking off`, and give its mock content the prefilled empty block `<think>\n\n</think>\n\n<COMPLETION>a + b;` (Review Focus 1).
-- [ ] **Step 5: Run the full check and** `npm run test:integration`. Expected: PASS.
-- [ ] **Step 6: Commit.** `fix: models that keep thinking fail fast; one 5 s deadline`.
+- [x] **Step 5: Run the full check and** `npm run test:integration`. Expected: PASS.
+- [x] **Step 6: Commit.** `fix: models that keep thinking fail fast; one 5 s deadline`.
 
 ### Task 2: Connection test and the Thinking dropdown
 

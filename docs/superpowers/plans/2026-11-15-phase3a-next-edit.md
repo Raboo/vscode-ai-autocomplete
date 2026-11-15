@@ -375,7 +375,7 @@ git commit -m "feat: chatXtab Next Edit prompt and answer parser"
   - `export function classify(e: LineEdit, docLines: string[], cursor: Pos): NextEditShow`;
   - `export function toItemText(text: string, eol: '\n' | '\r\n'): string`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `regionEdit trims common lines`: old `['a','b','c']`, new `['a','B','c']`, start 10 gives `{ startLine: 11, endLine: 12, newLines: ['B'] }`.
 - `regionEdit of an echo is undefined`.
@@ -390,21 +390,21 @@ git commit -m "feat: chatXtab Next Edit prompt and answer parser"
 - `a change before the cursor on the cursor line is an inline edit, not ghost text`.
 - `toItemText converts line breaks to CRLF`.
 
-- [ ] **Step 2: Run it and see it fail**
+- [x] **Step 2: Run it and see it fail**
 
 Run: `npx vitest run test/unit/nextEdit/diff.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `classify` widens the edit to include the cursor line when the edit touches or directly follows it. It then checks whether the new text equals the old text with something inserted at the cursor offset. If so, the result is ghost text with what was inserted; otherwise it is an inline edit over the original (un-widened) lines.
 
-- [ ] **Step 4: Run it and see it pass**
+- [x] **Step 4: Run it and see it pass**
 
 Run: `npx vitest run test/unit/nextEdit/diff.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/nextEdit/diff.ts test/unit/nextEdit/diff.test.ts

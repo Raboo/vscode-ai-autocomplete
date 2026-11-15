@@ -566,7 +566,7 @@ git commit -m "feat: Next Edit triggers and controller"
   - `FimProvider.handleEndOfLifetime(item, reason)` (proposed; ignored without the proposal);
   - `activate()`'s return value gains `nativeNextEdit: boolean`.
 
-- [ ] **Step 1: Implement arbitration**
+- [x] **Step 1: Implement arbitration**
 
 - At the top of `provide()`, before the FIM gate: when `nextEdit.itemFor(doc, pos)` returns a result, return one item:
   - `ghost`: `new vscode.InlineCompletionItem(toItemText(insertText, eol), new vscode.Range(pos, pos), { command: 'aiAutocomplete.nextEditAccepted', title: '' })`;
@@ -578,24 +578,24 @@ git commit -m "feat: Next Edit triggers and controller"
 
   Gate skips (FIM disabled, suggest widget, mid-word), debounce bail-outs, superseded calls and failed or joined-then-aborted flights report nothing; the cursor-move trigger covers those cases. When FIM is not active for the document, the controller does not wait for this call (Task 7).
 
-- [ ] **Step 2: Implement the probe in `extension.ts`**
+- [x] **Step 2: Implement the probe in `extension.ts`**
 
 - `try { registerInlineCompletionItemProvider({ pattern: '**' }, provider, { displayName: 'AI Autocomplete' }); native = true } catch { registerInlineCompletionItemProvider({ pattern: '**' }, provider); native = false }`.
 - Log `next edit: native inline edits available` or `… not available (VS Code's proposed API is not enabled for this extension)` at info.
 - The provider never defines `handleDidShowCompletionItem` or `handleDidPartiallyAcceptCompletionItem`.
 - `handleEndOfLifetime` passes kind `1` (Rejected) for a Next Edit item to `nextEdit.rejected()`. Compare the numeric value, because the enum is proposed. The provider keeps a `WeakSet` of the Next Edit items it returned, so FIM items never reach `rejected()`.
 
-- [ ] **Step 3: Add `enabledApiProposals`**
+- [x] **Step 3: Add `enabledApiProposals`**
 
 - `package.json` gains `"enabledApiProposals": ["inlineCompletionsAdditions"]`.
 - Run `npm run build && npm run package`. Expected: the `.vsix` builds (plain `vsce package` does not check proposals).
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npm run lint && npm run typecheck && npm test`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/completion/provider.ts src/extension.ts src/ui/commands.ts package.json src/types/vscode.proposed.inlineCompletionsAdditions.d.ts

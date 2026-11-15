@@ -75,7 +75,9 @@ export class HoleFillerAnswer {
     } else {
       return '';
     }
-    return this.dropLinePrefix(answer, complete);
+    // The fence goes first: re-typed indentation or line prefix sits after the opening fence line.
+    const fenced = unfence(answer, complete);
+    return this.dropLinePrefix(fenced.text, complete || fenced.closed);
   }
 
   private dropLinePrefix(answer: string, complete: boolean): string {
@@ -97,6 +99,21 @@ export class HoleFillerAnswer {
     const later = answer.split('\n').slice(1);
     return later.every((l) => l.trim() === '' || l.startsWith(ind)) ? answer.slice(ind.length) : answer;
   }
+}
+
+/**
+ * Unwraps an answer that starts with a Markdown code fence, despite the prompt. The closing fence ends the answer
+ * (`closed`); while streaming, an unfinished fence line is held back.
+ */
+function unfence(answer: string, complete: boolean): { text: string; closed: boolean } {
+  const open = /^\s*```[^\n]*/.exec(answer);
+  if (!open) return { text: !complete && /^\s*`{1,2}$/.test(answer) ? '' : answer, closed: false };
+  const rest = answer.slice(open[0].length);
+  if (!rest.startsWith('\n')) return { text: '', closed: false };
+  const body = rest.slice(1);
+  const close = /(^|\n)[ \t]*```/.exec(body);
+  if (close) return { text: body.slice(0, close.index), closed: true };
+  return { text: complete ? body : body.replace(/(^|\n)[ \t]*`{1,2}$/, ''), closed: false };
 }
 
 /** Length of the longest suffix of `text` that is a proper prefix of the closing tag. */

@@ -101,6 +101,28 @@ describe('HoleFillerAnswer', () => {
     expect(new HoleFillerAnswer('').update('<COMPLETION>  x = 1;', true)).toBe('  x = 1;');
   });
 
+  test('unwraps a Markdown code fence before dropping re-typed indentation or line prefix', () => {
+    // Observed on Strata (Qwen3.8): no wrapper, a fenced answer after a whitespace-only line prefix.
+    expect(new HoleFillerAnswer('    ').update('```python\n    print(c)\n    print(d)\n```', true)).toBe('print(c)\n    print(d)');
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION>```ts\n  return a;\n```</COMPLETION>', true)).toBe('return a;');
+    expect(new HoleFillerAnswer('  return ').update('<COMPLETION>\n```\nreturn a + b;\n```\n</COMPLETION>', true)).toBe('a + b;');
+    expect(new HoleFillerAnswer('').update('<COMPLETION>```python\n```</COMPLETION>', true)).toBe('');
+  });
+
+  test('while streaming, fence lines are held back and the closing fence ends the answer', () => {
+    const a = new HoleFillerAnswer('');
+    expect(a.update('<COMPLETION>``', false)).toBe('');
+    expect(a.update('<COMPLETION>```py', false)).toBe('');
+    expect(a.update('<COMPLETION>```python\nx = 1', false)).toBe('x = 1');
+    expect(a.update('<COMPLETION>```python\nx = 1\n``', false)).toBe('x = 1');
+    expect(a.update('<COMPLETION>```python\nx = 1\n```\nThis sets x.', false)).toBe('x = 1');
+  });
+
+  test('backticks inside the code are not a fence', () => {
+    expect(new HoleFillerAnswer('').update('<COMPLETION>`a${b}`</COMPLETION>', true)).toBe('`a${b}`');
+    expect(new HoleFillerAnswer('').update('<COMPLETION>const s = `\nhi\n`;</COMPLETION>', true)).toBe('const s = `\nhi\n`;');
+  });
+
   test('while streaming, the indentation drop holds until a later line breaks it', () => {
     const a = new HoleFillerAnswer('  ');
     expect(a.update('<COMPLETION>  ', false)).toBe('');

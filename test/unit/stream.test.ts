@@ -175,6 +175,14 @@ describe('collectCompletion', () => {
     expect(seen).toEqual(['x = 1;\n', '  x = 1;\n}']);
   });
 
+  test('a fenced answer after a whitespace-only line prefix loses the fence and the re-typed indentation', async () => {
+    // Observed on Strata (Qwen3.8): the first line came out indented twice.
+    const acc = new CompletionAccumulator(opts({ multiline: true }));
+    const chat = [content('```python\n'), content('    print(c)\n'), content('    print(d)\n'), content('```'), finish()];
+    const r = await collectCompletion(backend({ chat }), chatPlan('    '), acc, new AbortController());
+    expect(r.text).toBe('print(c)\n    print(d)');
+  });
+
   test('a single-line chat timeout rethrows the timeout', async () => {
     const chat: ChatEvent[] = [content('<COMPLETION>a + b')];
     await expect(

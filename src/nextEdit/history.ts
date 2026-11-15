@@ -77,6 +77,12 @@ export class EditHistory {
     this.snapshots.delete(path);
   }
 
+  /** Drops the file's snapshot and its entries, e.g. when it may no longer be sent. */
+  forget(path: string): void {
+    this.snapshots.delete(path);
+    this.list = this.list.filter((e) => e.path !== path);
+  }
+
   clear(): void {
     this.snapshots.clear();
     this.list = [];
@@ -106,6 +112,10 @@ export class RecentSnippets {
     this.snippets = this.snippets.filter((s) => s.path !== path);
     this.snippets.push({ path, text: lines.slice(start, start + size).join('\n') });
     if (this.snippets.length > this.max) this.snippets.splice(0, this.snippets.length - this.max);
+  }
+
+  forget(path: string): void {
+    this.snippets = this.snippets.filter((s) => s.path !== path);
   }
 
   clear(): void {

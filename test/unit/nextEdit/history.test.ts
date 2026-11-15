@@ -98,6 +98,27 @@ test('RecentSnippets.pick skips the excluded path and keeps the newest that fit 
   expect(s.pick('', 4).map((x) => x.path)).toEqual(['d']);
 });
 
+test('forget drops one path\'s snapshot and entries', () => {
+  const h = new EditHistory();
+  h.open('a', 'x\n');
+  h.commit('a', 'y\n');
+  h.open('b', 'p\n');
+  h.commit('b', 'q\n');
+  h.forget('a');
+  expect(h.entries().map((e) => e.path)).toEqual(['b']);
+  // Without a snapshot the next commit only snapshots.
+  h.commit('a', 'z\n');
+  expect(h.entries().map((e) => e.path)).toEqual(['b']);
+});
+
+test('RecentSnippets.forget drops that path\'s snippet', () => {
+  const s = new RecentSnippets();
+  s.add('a', ['aaaa'], 0);
+  s.add('b', ['bbbb'], 0);
+  s.forget('a');
+  expect(s.pick('', 100).map((x) => x.path)).toEqual(['b']);
+});
+
 test('RecentSnippets.clear forgets every snippet', () => {
   const s = new RecentSnippets();
   s.add('a', ['aaaa'], 0);

@@ -82,13 +82,17 @@ export class NextEditController implements vscode.Disposable {
   /** FIM's outcome for a document version. FIM wins: only an empty one lets Next Edit ask, after the edit pause. */
   fimResult(uri: string, version: number, shown: boolean): void {
     if (shown || this.chainTimers.has(uri)) return;
-    // Only FIM's answer for the latest edit arms a request, not one after a cursor move or an undo.
+    // Only FIM's first answer for the latest edit arms a request: not a repeated one (a cache hit after a cursor move) or one after an undo.
     const change = this.lastChange.get(uri);
     if (change?.version !== version) return;
+    this.lastChange.delete(uri);
     this.schedulePause(uri, version, change.at + EDIT_PAUSE_MS - Date.now());
   }
 
-  /** A Next Edit item was accepted; its change event has already run. Asks again shortly, so repeated Tabs walk through a change. */
+  /**
+   * A Next Edit item was accepted; its change event has already run. Asks again shortly, so repeated Tabs walk through a change.
+   * The chain skips the same-line cooldown, not the rejection cooldown or the gate.
+   */
   accepted(): void {
     this.result = undefined;
     const doc = vscode.window.activeTextEditor?.document;
@@ -102,7 +106,7 @@ export class NextEditController implements vscode.Disposable {
       setTimeout(() => {
         this.chainTimers.delete(uri);
         const current = vscode.window.activeTextEditor?.document;
-        if (current?.uri.toString() === uri) this.trigger(current);
+        if (current?.uri.toString() === uri && this.policy.afterPause(Date.now())) this.trigger(current);
       }, CHAIN_DELAY_MS),
     );
   }
@@ -151,7 +155,13 @@ export class NextEditController implements vscode.Disposable {
   }
 
   private opened(doc: vscode.TextDocument): void {
-    if (!this.eligible(doc)) return;
+    if (!this.eligible(doc)) {
+      // A document reopened in a disabled language (a language change closes and reopens it) must not keep diffs or a snippet that would be sent.
+      const path = this.path(doc);
+      this.history.forget(path);
+      this.d.snippets.forget(path);
+      return;
+    }
     this.history.open(this.path(doc), doc.getText());
     this.selectionVersions.set(doc.uri.toString(), doc.version);
   }
@@ -159,7 +169,6 @@ export class NextEditController implements vscode.Disposable {
   private closed(doc: vscode.TextDocument): void {
     const uri = doc.uri.toString();
     this.cancel(uri);
-    this.clearTimer(this.chainTimers, uri);
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
@@ -177,10 +186,7 @@ export class NextEditController implements vscode.Disposable {
     this.cancel(uri);
     this.restartIdle(doc);
     const reason = e.reason;
-    if (reason === vscode.TextDocumentChangeReason.Undo || reason === vscode.TextDocumentChangeReason.Redo) {
-      this.clearTimer(this.chainTimers, uri);
-      return;
-    }
+    if (reason === vscode.TextDocumentChangeReason.Undo || reason === vscode.TextDocumentChangeReason.Redo) return;
     if (vscode.window.activeTextEditor?.document !== doc) return;
     const now = Date.now();
     this.policy.edited(uri, now);
@@ -203,12 +209,16 @@ export class NextEditController implements vscode.Disposable {
     if (this.policy.onCursorMove(uri, e.selections[0].active.line, Date.now())) this.trigger(doc);
   }
 
-  /** Aborts the document's request and drops its result and pending pause: they belong to an older version. */
+  /**
+   * Aborts the document's request and drops its result, pending pause and pending chain: they belong to an older version.
+   * accepted() runs after the accept's own change event, so a chain is only cancelled by a later change.
+   */
   private cancel(uri: string): void {
     this.inflight.get(uri)?.ctl.abort();
     this.inflight.delete(uri);
     if (this.result?.uri === uri) this.result = undefined;
     this.clearTimer(this.pauseTimers, uri);
+    this.clearTimer(this.chainTimers, uri);
   }
 
   private restartIdle(doc: vscode.TextDocument): void {
@@ -384,8 +394,9 @@ export class NextEditController implements vscode.Disposable {
     else this.d.log.debug(`next edit: ${detail}`);
     // Error messages can quote server output, so the raw one is logged only with logPrompts.
     if (logPrompts && err instanceof Error) this.d.log.debug(`next edit ${id}: raw error: ${err.message}`);
-    const what = describeFailure(err, cls, timeoutMs);
-    this.notifyOnce(`error:${id}:${what}`, `AI Autocomplete: Next Edit request to "${id}" failed (${what}).`);
+    // One notification per backend and error kind (HTTP, network, timeout); the text names this occurrence.
+    const kind = (err as { name?: unknown } | null)?.name === 'TimeoutError' ? 'timeout' : cls.kind;
+    this.notifyOnce(`error:${id}:${kind}`, `AI Autocomplete: Next Edit request to "${id}" failed (${describeFailure(err, cls, timeoutMs)}).`);
   }
 
   private rejectedFields(id: string, model: string | undefined, fields: string[]): void {

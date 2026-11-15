@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildChatRequest, buildFimRequest, chatStops, explainUnsupported, noRouteText, planInsertion, planRoute, whyNoRoute, type ChatRequestPlan, type FimRoute } from '../../src/completion/route';
+import { buildChatRequest, buildFimRequest, chatStops, chatThinking, EFFORT_NONE_REJECTED, explainUnsupported, noRouteText, planInsertion, planRoute, whyNoRoute, type ChatRequestPlan, type FimRoute } from '../../src/completion/route';
 import { usableRoutes } from '../../src/models/capabilities';
 import type { RouteCaps } from '../../src/backends/types';
 import type { HoleFillerInput } from '../../src/completion/holeFiller';
@@ -230,5 +230,42 @@ describe('buildChatRequest', () => {
   test('onRejected is passed through', () => {
     const onRejected = (): void => undefined;
     expect(buildChatRequest(plan('Qwen3.8-Flash', { onRejected })).onRejected).toBe(onRejected);
+  });
+
+  describe('OpenRouter model that must reason', () => {
+    // google/gemini-2.5-pro falls to the generic preset, which can turn thinking off
+    const gemini = (over: Partial<ChatRequestPlan> = {}) => buildChatRequest(plan('google/gemini-2.5-pro', over, 'openrouter'));
+    test('a rejected effort "none" is learned under its own key', () => {
+      const learned: string[][] = [];
+      const r = gemini({ onRejected: (f) => learned.push(f) });
+      expect(r.thinking).toEqual({ reasoning: { effort: 'none' } });
+      r.onRejected!(['reasoning', 'top_p']);
+      expect(learned).toEqual([[EFFORT_NONE_REJECTED, 'top_p']]);
+    });
+    test('afterwards it sends effort "low" with the reasoning allowance and 30 s', () => {
+      const r = gemini({ rejected: new Set([EFFORT_NONE_REJECTED]) });
+      expect(r.thinking).toEqual({ reasoning: { effort: 'low' } });
+      expect(r.maxTokens).toBe(80 + 1024);
+      expect(r.timeoutMs).toBe(30000);
+      expect(chatThinking('templateKwarg:enable_thinking', 'openrouter', new Set([EFFORT_NONE_REJECTED]))).toBe('cannotDisable');
+      expect(chatThinking('templateKwarg:enable_thinking', 'openrouter', new Set())).toBe('templateKwarg:enable_thinking');
+      expect(chatThinking('templateKwarg:enable_thinking', 'strata', new Set([EFFORT_NONE_REJECTED]))).toBe('templateKwarg:enable_thinking');
+    });
+    test('if "low" is rejected too, reasoning is dropped and the allowance stays', () => {
+      const learned: string[][] = [];
+      const low = gemini({ rejected: new Set([EFFORT_NONE_REJECTED]), onRejected: (f) => learned.push(f) });
+      low.onRejected!(['reasoning']);
+      expect(learned).toEqual([['reasoning']]);
+      const r = gemini({ rejected: new Set([EFFORT_NONE_REJECTED, 'reasoning']) });
+      expect(r.thinking).toEqual({});
+      expect(r.maxTokens).toBe(80 + 1024);
+    });
+  });
+
+  test('a model seen thinking anyway gets the reasoning allowance and 30 s, with its thinking fields unchanged', () => {
+    const r = buildChatRequest(plan('Qwen3.8-Flash', { thinksAnyway: true }));
+    expect(r.maxTokens).toBe(80 + 1024);
+    expect(r.timeoutMs).toBe(30000);
+    expect(r.thinking).toEqual({ reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } });
   });
 });

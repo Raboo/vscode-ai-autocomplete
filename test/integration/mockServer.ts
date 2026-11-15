@@ -23,8 +23,11 @@ export interface MockOptions {
   nCtx?: number;
   /** Delays every answer by this many milliseconds (the request is recorded when it arrives). */
   delayMs?: number;
-  /** What `POST /v1/chat/completions` streams; default content `['<COMPLETION>a + b;']` (real servers drop the stop string) and finish `stop`. */
-  chat?: { reasoning?: string[]; content?: string[]; finish?: string };
+  /**
+   * What `POST /v1/chat/completions` streams; default content `['<COMPLETION>a + b;']` (real servers drop the stop string) and finish `stop`.
+   * `stallMs` waits that long after the reasoning before the content, like a model that keeps thinking.
+   */
+  chat?: { reasoning?: string[]; content?: string[]; finish?: string; stallMs?: number };
   /** `POST /infill` answers 501 and `POST /completion` streams `a + b;`. */
   infill501?: boolean;
   /** `POST /v1/chat/completions` answers 400 "Unrecognized request argument supplied: <field>" while the body has that field. */
@@ -72,9 +75,14 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
             const delta = (d: Record<string, unknown>, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ delta: d, finish_reason: finish }] })}\n\n`;
             res.writeHead(200, { 'content-type': 'text/event-stream' });
             for (const r of chat.reasoning ?? []) res.write(delta({ reasoning_content: r }));
-            for (const c of chat.content ?? ['<COMPLETION>a + b;']) res.write(delta({ content: c }));
-            res.write(delta({}, chat.finish ?? 'stop'));
-            res.end('data: [DONE]\n\n');
+            const rest = (): void => {
+              for (const c of chat.content ?? ['<COMPLETION>a + b;']) res.write(delta({ content: c }));
+              res.write(delta({}, chat.finish ?? 'stop'));
+              res.end('data: [DONE]\n\n');
+            };
+            // A client that gave up meanwhile gets nothing more.
+            if (chat.stallMs) setTimeout(() => (res.socket && !res.socket.destroyed ? rest() : undefined), chat.stallMs);
+            else rest();
           }
         } else if (path === '/infill') {
           res.writeHead(200, { 'content-type': 'text/event-stream' });

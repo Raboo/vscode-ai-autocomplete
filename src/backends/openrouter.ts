@@ -1,6 +1,7 @@
 import type { BackendConfig } from '../types';
 import { streamOpenAiChat } from './chat';
 import { authHeaders, getJson, joinUrl } from './http';
+import { MissingApiKeyError } from './mistral';
 import { OpenAiCompatBackend } from './openaiCompat';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type RouteCaps, type ServerInfo } from './types';
 
@@ -23,8 +24,13 @@ export class OpenRouterBackend extends OpenAiCompatBackend {
     return this.openRouterChat(req);
   }
 
+  /** Without a key OpenRouter answers 401, after the code was sent: check first, as Mistral does. */
   private async *openRouterChat(req: ChatRequest): AsyncGenerator<ChatEvent> {
-    yield* streamOpenAiChat(joinUrl(this.config.baseUrl, 'chat/completions'), await this.authHeaders(), req, true);
+    const key = await this.key();
+    if (!key) {
+      throw new MissingApiKeyError(this.config.id);
+    }
+    yield* streamOpenAiChat(joinUrl(this.config.baseUrl, 'chat/completions'), authHeaders(this.config, key), req, true);
   }
 
   private async authHeaders(): Promise<Record<string, string>> {

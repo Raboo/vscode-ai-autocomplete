@@ -4,7 +4,7 @@ import { COMPLETION_CLOSE, holeFillerMessages, type HoleFillerInput } from './ho
 import { thinkingFields } from '../models/thinking';
 import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
-import type { BackendKind, FimMode, FimTemplateId, HostFlavor } from '../types';
+import type { BackendKind, FimMode, FimTemplateId, HostFlavor, ThinkingStrategy } from '../types';
 
 export type FimRoute = 'native' | 'template' | 'chat';
 
@@ -155,8 +155,21 @@ export interface ChatRequestPlan {
   model: string | undefined;
   input: HoleFillerInput;
   rejected: ReadonlySet<string>;
+  /** The model was seen thinking with thinking off this session: it gets the reasoning allowance. */
+  thinksAnyway?: boolean;
   signal: AbortSignal;
   onRejected?(fields: string[]): void;
+}
+
+/**
+ * Learned when OpenRouter rejects `reasoning: {effort: "none"}` (the model must reason). It has its own key, so the
+ * `reasoning` field is still sent, with effort "low"; if that is rejected too, `reasoning` itself is learned.
+ */
+export const EFFORT_NONE_REJECTED = 'reasoning.effort=none';
+
+/** The thinking strategy a chat request uses: an OpenRouter model that rejected effort "none" cannot turn thinking off. */
+export function chatThinking(strategy: ThinkingStrategy, flavor: HostFlavor, rejected: ReadonlySet<string>): ThinkingStrategy {
+  return flavor === 'openrouter' && rejected.has(EFFORT_NONE_REJECTED) ? 'cannotDisable' : strategy;
 }
 
 /** The chat stop rule: the closing tag, then the backend's own stops, deduplicated. Shared with the Backends page form. */
@@ -168,11 +181,15 @@ const SAMPLING_WIRE = { temperature: 'temperature', topP: 'top_p', topK: 'top_k'
 
 export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
   const { fim, input, rejected } = p;
-  const tf = thinkingFields(fim.thinking, p.flavor);
+  const strategy = chatThinking(fim.thinking, p.flavor, rejected);
+  const tf = thinkingFields(strategy, p.flavor);
   const thinking = Object.fromEntries(Object.entries(tf.body).filter(([k]) => !rejected.has(k)));
   const budget = (input.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS)) + CHAT_OVERHEAD_TOKENS;
   // A model that reasons anyway needs room for it, and time.
-  const allowance = fim.thinking === 'cannotDisable';
+  const allowance = strategy === 'cannotDisable' || p.thinksAnyway === true;
+  const effortNone = (thinking.reasoning as { effort?: unknown } | undefined)?.effort === 'none';
+  const report = p.onRejected;
+  const onRejected = report && effortNone ? (fields: string[]) => report(fields.map((f) => (f === 'reasoning' ? EFFORT_NONE_REJECTED : f))) : report;
   const sampling: ChatRequest['sampling'] = {};
   if (fim.samplingParams !== 'omit') {
     const all: ChatRequest['sampling'] = { ...fim.sampling, presencePenalty: 0 };
@@ -190,6 +207,6 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
     extraBody: fim.extraBody,
     signal: p.signal,
     timeoutMs: allowance ? fim.reasoningTimeoutMs : fim.chatTimeoutMs,
-    ...(p.onRejected ? { onRejected: p.onRejected } : {}),
+    ...(onRejected ? { onRejected } : {}),
   };
 }

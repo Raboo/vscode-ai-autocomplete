@@ -5,7 +5,7 @@ import type { Settings } from '../config/settings';
 import { resolveFim, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
-import { buildChatRequest, buildFimRequest, noRouteFix, noRouteText, planRoute, whyNoRoute } from '../completion/route';
+import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, noRouteFix, noRouteText, planRoute, whyNoRoute } from '../completion/route';
 import { collectCompletion, type Collected, type PlannedRequest } from '../completion/stream';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
@@ -195,7 +195,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     if (route === 'chat') {
       stage = 'thinking';
       stageStart = now();
-      const rej = rejected.size > 0 ? `the server rejected ${[...rejected].join(', ')}; they are left out` : undefined;
+      const names = [...rejected].map((f) => (f === EFFORT_NONE_REJECTED ? 'reasoning effort "none"' : f));
+      const rej = names.length > 0 ? `the server rejected ${names.join(', ')}; they are left out` : undefined;
       if (collected.thinking) {
         emit({ id: 'thinking', state: 'warn', text: 'the model still thinks with thinking off',
           hint: ['completions take longer; choose a model that can turn thinking off, or set the Thinking switch', rej].filter(Boolean).join('; ') }, stageStart);

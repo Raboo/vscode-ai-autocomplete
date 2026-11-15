@@ -17,7 +17,7 @@ import { gate } from './gate';
 import { ChatTimeoutError, collectCompletion, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
-import { buildChatRequest, buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
+import { buildChatRequest, buildFimRequest, chatThinking, EFFORT_NONE_REJECTED, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
 const MAX_LINES = 16;
@@ -226,17 +226,23 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     let planned: PlannedRequest;
     let stop = fim.stop;
     if (route === 'chat') {
-      if (fim.thinking === 'cannotDisable') this.warnCannotDisable(id, model);
+      const flavor = inferHostFlavor(backend.config);
+      if (chatThinking(fim.thinking, flavor, learned.rejected) === 'cannotDisable') this.warnCannotDisable(id, model);
       const req = buildChatRequest({
         fim,
-        flavor: inferHostFlavor(backend.config),
+        flavor,
         model,
         input: { ...input, languageId: doc.languageId, multiline },
         rejected: learned.rejected,
+        thinksAnyway: learned.thinkingMs !== undefined,
         signal: ctl.signal,
         onRejected: (fields) => {
           const added = this.d.capabilities.reject(id, model, fields);
-          if (added.length > 0) this.d.log.info(`backend "${id}": the server rejected ${added.join(', ')} for ${model ?? 'the model'}; sending without them`);
+          if (added.includes(EFFORT_NONE_REJECTED)) {
+            this.d.log.info(`backend "${id}": ${model ?? 'the model'} must reason (the server rejected reasoning effort "none"); requests now ask for effort "low" with room to reason`);
+          }
+          const dropped = added.filter((f) => f !== EFFORT_NONE_REJECTED);
+          if (dropped.length > 0) this.d.log.info(`backend "${id}": the server rejected ${dropped.join(', ')} for ${model ?? 'the model'}; sending without them`);
         },
       });
       planned = { route: 'chat', req, linePrefix };

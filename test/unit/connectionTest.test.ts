@@ -301,6 +301,14 @@ describe('explainFailure', () => {
       expect(res.steps[3]).toMatchObject({ id: 'thinking', state: 'ok', text: 'Thinking is off', hint: 'the server rejected top_k, presence_penalty; they are left out' });
     });
 
+    test('an OpenRouter model that rejects effort "none" is named readably in the thinking hint', async () => {
+      const config = { kind: 'openai' as const, hostFlavor: 'openrouter' as const, baseUrl: 'https://openrouter.ai/api/v1', fimModel: 'google/gemini-2.5-pro' };
+      const f = fake({ config, caps: { native: false, template: false }, info: { models: ['google/gemini-2.5-pro'], contextWindows: {} },
+        chatEvents: ev('<COMPLETION>a + b;'), onChat: (r) => r.onRejected?.(['reasoning']) });
+      const { res } = await run(f);
+      expect(res.steps.find((s) => s.id === 'thinking')).toMatchObject({ hint: 'the server rejected reasoning effort "none"; they are left out' });
+    });
+
     test('a cannotDisable model warns at the model step and still runs the completion', async () => {
       const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, chatEvents: [{ type: 'reasoning', text: 'x' }, ...ev('<COMPLETION>a + b;')] });
       const { res } = await run(f);

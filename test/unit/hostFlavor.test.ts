@@ -15,6 +15,12 @@ describe('inferHostFlavor', () => {
   test('explicit hostFlavor wins', () => {
     expect(inferHostFlavor(cfg('https://api.deepseek.com/v1', { hostFlavor: 'vllm' }))).toBe('vllm');
   });
+  test('a known hosted hostname overrides an explicit generic; port rules do not', () => {
+    expect(inferHostFlavor(cfg('https://openrouter.ai/api/v1', { hostFlavor: 'generic' }))).toBe('openrouter');
+    expect(inferHostFlavor(cfg('https://api.deepseek.com/beta', { hostFlavor: 'generic' }))).toBe('deepseek');
+    expect(inferHostFlavor(cfg('http://localhost:11434/v1', { hostFlavor: 'generic' }))).toBe('generic');
+    expect(inferHostFlavor(cfg('not a url', { hostFlavor: 'generic' }))).toBe('generic');
+  });
   test.each([
     ['https://api.deepseek.com/v1', 'deepseek'],
     ['https://openrouter.ai/api/v1', 'openrouter'],

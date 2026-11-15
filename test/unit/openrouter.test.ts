@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { createBackend } from '../../src/backends';
+import { MissingApiKeyError } from '../../src/backends/mistral';
 import { OpenRouterBackend } from '../../src/backends/openrouter';
 import type { ChatEvent, ChatRequest } from '../../src/backends/types';
 import { thinkingFields } from '../../src/models/thinking';
@@ -98,5 +99,17 @@ describe('OpenRouterBackend', () => {
     expect(createBackend(cfg('https://openrouter.ai/api/v1', { hostFlavor: undefined }), key())).toBeInstanceOf(OpenRouterBackend);
     expect(createBackend(cfg('http://127.0.0.1:1/api/v1'), key())).toBeInstanceOf(OpenRouterBackend);
     expect(createBackend(cfg('http://127.0.0.1:1/v1', { hostFlavor: 'vllm' }), key())).not.toBeInstanceOf(OpenRouterBackend);
+    // "Other OpenAI-compatible" pointed at openrouter.ai still gets OpenRouter's rules
+    expect(createBackend(cfg('https://openrouter.ai/api/v1', { hostFlavor: 'generic' }), key())).toBeInstanceOf(OpenRouterBackend);
+  });
+
+  test('without a stored key no chat request is sent', async () => {
+    m = await startMockHttp(() => ({ sse: ['[DONE]'] }));
+    const req: ChatRequest = { model: 'm', messages: [{ role: 'user', content: 'code' }], maxTokens: 16, stop: [], sampling: {}, thinking: {}, extraBody: {}, signal: signal(), timeoutMs: 5000 };
+    for (const k of [undefined, '']) {
+      const b = new OpenRouterBackend(cfg(`${m.url}/api/v1`), key(k));
+      await expect((async () => { for await (const _ of b.streamChat(req)) void _; })()).rejects.toBeInstanceOf(MissingApiKeyError);
+    }
+    expect(m.requests).toHaveLength(0);
   });
 });

@@ -263,6 +263,26 @@ suite('FIM inline completion', () => {
     });
   });
 
+  test('a model that thinks until the timeout shows the thinking note, and the next request gets room to reason', async () => {
+    await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['Let me think.'], stallMs: 3000 } }, async (m) => {
+      const backend = { id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, fimModel: 'qwen3.8-flash-next-iq3_s', fim: { timeoutMs: 1000 } };
+      await configure({ backends: [backend], 'fim.backend': BACKEND_ID });
+      const editor = await openSource();
+
+      await trigger(editor);
+      assert.ok(await waitFor(() => api.status.current().includes('timed out') && api.status.current().includes('[thinking]'), 5000), `status: ${api.status.current()}`);
+      const first = posts(m, '/v1/chat/completions');
+      assert.equal(first.length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+
+      // After the 2 s backoff, the next request asks for 1024 more tokens.
+      await sleep(2500);
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      const [a, b] = posts(m, '/v1/chat/completions').map((r) => r.body?.max_tokens as number);
+      assert.equal(b, a + 1024, `max_tokens ${a} then ${b}`);
+    });
+  });
+
   test('OpenRouter without a model sends nothing', async () => {
     await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${mock.baseUrl}/v1` }], 'fim.backend': BACKEND_ID });
     const editor = await openSource();

@@ -84,7 +84,7 @@
 
 ## Review Focus
 
-1. **The user keeps typing while a request runs:** a result is shown only for the exact document version it was computed for. An inline edit is checked for drift (the replaced text still matches) right before VS Code applies it: VS Code applies our item's range only while the version matches, and the controller drops results on every change. Tests: Task 6 (stale snapshot), Task 7 (a change clears the result), Task 8 (`itemFor` returns nothing for another version).
+1. **The user keeps typing while a request runs:** a result is shown only for the exact document version it was computed for. The controller drops its result on every change, and VS Code asks the provider again on every text change, so a stale item is replaced. We have no hook right before VS Code applies a native inline edit. The window between an edit appearing and Tab, in which VS Code may have shifted its range, is a follow-up and a smoke-test step. Tests: Task 6 (stale snapshot), Task 7 (a change clears the result), Task 8 (`itemFor` returns nothing for another version).
 2. **Sensitive and excluded files:** a `.env` file (default `disableInFiles`), a disabled language or a file outside the workspace never gets a history entry, a snippet or a request. With `fim.extraContext` off, other files' diffs and snippets are not sent. Tests: Task 2 (path filter hook), Task 7 (gate), Task 11 (an excluded file sends no request).
 3. **CRLF documents:** lines are split on `\r?\n`, edits are computed on lines, and inserted or replaced text uses the document's EOL. Test: Task 5 (`toItemText` with `\r\n`), Task 8.
 4. **Malformed answers:**
@@ -508,7 +508,7 @@ Expected: FAIL (module not found).
 - `open` on `onDidOpenTextDocument` and for documents already open; `close` on close.
 - On every change, restart a per-document `HISTORY_IDLE_MS` timer that calls `commit`.
 - `commit` (flush) right before each request.
-- History is recorded only for documents that are not excluded.
+- History is recorded only for `file` documents inside a workspace folder and for `untitled` documents (the same check as `ContextTracker.capture`), and only when they are not excluded. Changes to `git:`, `output:`, `vscode-userdata:` and other documents are ignored.
 - Entries of other files are included only while `fim.extraContext` is on (filter on `entries`).
 
 **Triggers.**
@@ -518,6 +518,7 @@ Expected: FAIL (module not found).
 - On a selection change of kind Keyboard, Mouse or Command: request when `policy.onCursorMove` allows it.
 
 **Request.**
+- At most one request per `(uri, version)`: skip when one is in flight or a result exists for that version. The accept chain supersedes a pending pause timer.
 - Build the snapshot from the document: lines split on `\r?\n`, the cursor, `editableRegion`, the history entries, and `snippets.pick(path, SNIPPETS_BUDGET_CHARS)`.
 - Run `runNextEdit`. Log the prompt and answer through `onPrompt` and `onAnswer` only with `logPrompts`.
 
@@ -571,14 +572,18 @@ git commit -m "feat: Next Edit triggers and controller"
   - `ghost`: `new vscode.InlineCompletionItem(toItemText(insertText, eol), new vscode.Range(pos, pos), { command: 'aiAutocomplete.nextEditAccepted', title: '' })`;
   - `edit`: an item with `range` from `start`/`end`, `insertText` `toItemText(text, eol)`, `isInlineEdit = true` and the same command.
 - `itemFor` returns a `ghost` result only when `pos` equals the snapshot cursor; `edit` results only when native.
-- After FIM resolves (in `provide()`, including the early returns of the FIM gate), call `nextEdit.fimResult(uri, doc.version, items.length > 0)`.
+- Report FIM's outcome with `nextEdit.fimResult(uri, doc.version, shown)` only in two cases:
+  - a completed request whose text is `''` (shown `false`) or non-empty (shown `true`), while the call was not aborted and the document version is unchanged;
+  - a cache hit (shown is whether the cached text is non-empty).
+
+  Gate skips (FIM disabled, suggest widget, mid-word), debounce bail-outs, superseded calls and failed or joined-then-aborted flights report nothing; the cursor-move trigger covers those cases. When FIM is not active for the document, the controller does not wait for this call (Task 7).
 
 - [ ] **Step 2: Implement the probe in `extension.ts`**
 
 - `try { registerInlineCompletionItemProvider({ pattern: '**' }, provider, { displayName: 'AI Autocomplete' }); native = true } catch { registerInlineCompletionItemProvider({ pattern: '**' }, provider); native = false }`.
 - Log `next edit: native inline edits available` or `… not available (VS Code's proposed API is not enabled for this extension)` at info.
 - The provider never defines `handleDidShowCompletionItem` or `handleDidPartiallyAcceptCompletionItem`.
-- `handleEndOfLifetime` passes kind `1` (Rejected) for a Next Edit item to `nextEdit.rejected()`. Compare the numeric value, because the enum is proposed.
+- `handleEndOfLifetime` passes kind `1` (Rejected) for a Next Edit item to `nextEdit.rejected()`. Compare the numeric value, because the enum is proposed. The provider keeps a `WeakSet` of the Next Edit items it returned, so FIM items never reach `rejected()`.
 
 - [ ] **Step 3: Add `enabledApiProposals`**
 
@@ -720,6 +725,7 @@ git commit -m "feat: choose the Next Edit backend and model"
   - commit (`editor.action.inlineSuggest.commit` accepts a visible inline edit) and assert that line 7 reads `def circle_circumference(radius):`.
 - `without the proposed API an edit elsewhere is not applied` (`main` only): the same scenario; after the Next Edit request completes and 1 s passes, commit, and the document is unchanged.
 - `an excluded file sends no Next Edit request`: a `.env`-named file; edit; wait 1.5 s; the mock saw no request containing `<|code_to_edit|>`.
+- `typing fast sends one Next Edit request`: type 5 characters 30 ms apart with `editor.edit`; after the pause, the mock saw exactly one request containing `<|code_to_edit|>`.
 - `the Next Edit request carries the history diff`: after two edits more than 1.5 s apart, the user message contains `<|edit_diff_history|>` and `@@ -`.
 
 - [ ] **Step 2: Run them**
@@ -761,6 +767,7 @@ git commit -m "test: Next Edit integration tests with and without the proposed A
 - [ ] **Step 5: ROADMAP:** the Phase 3 row is split into "3a. Next Edit core, chatXtab, native display" (plan: this file; status implemented) and "3b. Sweep and Zeta formats, decoration fallback" (plan not written yet; not started). Add Phase 3a's manual checks under "Deferred manual checks" (Publish step 4).
 - [ ] **Step 6: Follow-ups:** a "Phase 3a" section listing:
   - Copilot's replace-to-end-of-line rebase (Ruling 12);
+  - no drift check is possible right before VS Code applies a native inline edit (Review Focus 1);
   - rejected-edit memory;
   - the import-only edit filter;
   - `onDidChange` instead of the trigger command;
@@ -793,6 +800,7 @@ These steps create public state on GitHub. **Ask the user once, listing every st
      - the rename shows as an inline edit on the next function; Tab jumps, Tab accepts;
      - Esc dismisses it, and nothing re-shows for 5 s;
      - accepting chains the next suggestion.
+     - with an inline edit showing, type a character on another line, then press Tab: the edit is either gone or still correct, never applied to shifted text.
    - With `debug.logPrompts` on, the log shows the chatXtab prompt with `<|edit_diff_history|>`, and the request time. Note the latency on a large file.
    - A `.env` file gets no Next Edit request.
 

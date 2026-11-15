@@ -108,6 +108,10 @@ export class RecentSnippets {
     if (this.snippets.length > this.max) this.snippets.splice(0, this.snippets.length - this.max);
   }
 
+  clear(): void {
+    this.snippets = [];
+  }
+
   /** The newest snippets of other files that fit the budget, oldest first. */
   pick(excludePath: string, budgetChars: number): Snippet[] {
     let remaining = budgetChars;

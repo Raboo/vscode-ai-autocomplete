@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
+import type { RecentSnippets } from '../nextEdit/history';
 import type { ExtraContextRing } from './context';
 
 const SELECTION_DEBOUNCE_MS = 1000;
 
-/** Feeds recently viewed/edited regions of open files into the extra-context ring. */
+/** Feeds recently viewed/edited regions of open files into the extra-context ring and Next Edit's recent snippets. */
 export class ContextTracker implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -11,6 +12,7 @@ export class ContextTracker implements vscode.Disposable {
   constructor(
     private readonly ring: ExtraContextRing,
     private readonly isExcluded: (doc: vscode.TextDocument) => boolean,
+    private readonly snippets?: RecentSnippets,
   ) {
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor((e) => {
@@ -33,7 +35,9 @@ export class ContextTracker implements vscode.Disposable {
     if (doc.uri.scheme !== 'untitled' && !inWorkspace) return;
     if (this.isExcluded(doc)) return;
     const lines = doc.getText().split(/\r?\n/);
-    this.ring.add(vscode.workspace.asRelativePath(doc.uri, false), lines, line);
+    const path = vscode.workspace.asRelativePath(doc.uri, false);
+    this.ring.add(path, lines, line);
+    this.snippets?.add(path, lines, line);
   }
 
   dispose(): void {

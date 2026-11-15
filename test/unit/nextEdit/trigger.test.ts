@@ -1,0 +1,56 @@
+import { expect, test } from 'vitest';
+import { AFTER_EDIT_WINDOW_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy } from '../../../src/nextEdit/trigger';
+
+test('a cursor move within 10 s of an edit triggers; after 10 s it does not', () => {
+  const p = new TriggerPolicy();
+  expect(p.onCursorMove('a', 3, 1_000)).toBe(false);
+  p.edited('a', 1_000);
+  expect(p.onCursorMove('a', 3, 10_000)).toBe(true);
+  expect(p.onCursorMove('a', 3, 12_000)).toBe(false);
+  expect(AFTER_EDIT_WINDOW_MS).toBe(10_000);
+});
+
+test('the edit window belongs to the edited document', () => {
+  const p = new TriggerPolicy();
+  p.edited('a', 1_000);
+  expect(p.onCursorMove('b', 3, 2_000)).toBe(false);
+});
+
+test('the same line does not trigger again within 5 s, another line does', () => {
+  const p = new TriggerPolicy();
+  p.edited('a', 1_000);
+  p.requested('a', 3, 2_000);
+  expect(p.onCursorMove('a', 3, 4_000)).toBe(false);
+  expect(p.onCursorMove('a', 4, 4_000)).toBe(true);
+  expect(p.onCursorMove('a', 3, 8_000)).toBe(true);
+  expect(SAME_LINE_COOLDOWN_MS).toBe(5_000);
+});
+
+test('the same line of another document is not cooling down', () => {
+  const p = new TriggerPolicy();
+  p.requested('b', 3, 1_000);
+  p.edited('a', 1_500);
+  expect(p.onCursorMove('a', 3, 2_000)).toBe(true);
+});
+
+test('nothing triggers within 5 s of a rejection, edit pause included', () => {
+  const p = new TriggerPolicy();
+  p.edited('a', 1_000);
+  p.rejected(2_000);
+  expect(p.onCursorMove('a', 3, 4_000)).toBe(false);
+  expect(p.afterPause(4_000)).toBe(false);
+  p.edited('a', 5_000);
+  expect(p.onCursorMove('a', 3, 6_000)).toBe(false);
+  expect(p.afterPause(6_000)).toBe(false);
+  expect(p.onCursorMove('a', 3, 8_000)).toBe(true);
+  expect(REJECTION_COOLDOWN_MS).toBe(5_000);
+});
+
+test('afterPause is true outside a rejection cooldown', () => {
+  const p = new TriggerPolicy();
+  expect(p.afterPause(0)).toBe(true);
+  expect(p.afterPause(1_000)).toBe(true);
+  p.rejected(10_000);
+  expect(p.afterPause(12_000)).toBe(false);
+  expect(p.afterPause(16_000)).toBe(true);
+});

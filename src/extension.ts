@@ -13,6 +13,8 @@ import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/loca
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { createLog } from './log';
+import { RecentSnippets } from './nextEdit/history';
+import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
@@ -76,8 +78,16 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   const ring = new ExtraContextRing();
   const inflight = new InFlight();
   const excluded = (doc: vscode.TextDocument): boolean => settings.fim.disableInFiles.some((pattern) => vscode.languages.match({ pattern }, doc) > 0);
+  // Files completions may not use: no extra context, Next Edit history, snippet or request comes from them.
+  const offLimits = (doc: vscode.TextDocument): boolean => settings.fim.disableInLanguages.includes(doc.languageId) || excluded(doc);
+  const snippets = new RecentSnippets();
   // Extra context only comes from files completions are allowed in (the tracker also limits it to workspace files).
-  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || settings.fim.disableInLanguages.includes(doc.languageId) || excluded(doc)));
+  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || offLimits(doc), snippets));
+  const backoff = (id: string): ErrorBackoff => {
+    let b = backoffs.get(id);
+    if (!b) backoffs.set(id, (b = new ErrorBackoff()));
+    return b;
+  };
 
   const provider = new FimProvider({
     getSettings: () => settings,
@@ -90,11 +100,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     log,
     snoozedUntil,
     capabilities,
-    backoff: (id) => {
-      let b = backoffs.get(id);
-      if (!b) backoffs.set(id, (b = new ErrorBackoff()));
-      return b;
-    },
+    backoff,
     debouncer: (id) => {
       let d = debouncers.get(id);
       if (!d) {
@@ -109,6 +115,21 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     },
   });
   sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
+
+  const nextEdit = new NextEditController({
+    getSettings: () => settings,
+    getBackend: (id) => backends.get(id),
+    capabilities,
+    backoff,
+    isLocal,
+    log,
+    snoozedUntil,
+    snippets,
+    isExcluded: offLimits,
+    // FIM's detected model first, so the same server is not asked twice.
+    detectedModel: (b, signal) => Promise.resolve(provider.detectedModel(b.config.id) ?? b.detectModel(signal)),
+  });
+  sub(nextEdit);
 
   const panelDeps: BackendsPanelDeps = {
     context,
@@ -168,6 +189,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
+    nextEdit.reset();
     // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
     provider.clearError();
     provider.forgetLogged();

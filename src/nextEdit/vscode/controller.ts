@@ -1,0 +1,422 @@
+import * as vscode from 'vscode';
+import type { ErrorBackoff } from '../../backends/backoff';
+import { classifyError } from '../../backends/http';
+import { inferHostFlavor } from '../../backends/hostFlavor';
+import { MissingApiKeyError } from '../../backends/mistral';
+import type { ChatMessage, FimBackend } from '../../backends/types';
+import { nextEditModel, resolveNextEdit } from '../../completion/effective';
+import { describeFailure, recordBackendFailure } from '../../completion/requestStatus';
+import { EFFORT_NONE_REJECTED, thinkingBlocked } from '../../completion/route';
+import { ThinkingError } from '../../completion/stream';
+import type { Settings } from '../../config/settings';
+import type { Log } from '../../log';
+import type { Capabilities } from '../../models/capabilities';
+import { SNIPPETS_BUDGET_CHARS, type NextEditInput } from '../formats/chatXtab';
+import { EditHistory, type RecentSnippets } from '../history';
+import { editableRegion } from '../region';
+import { runNextEdit, type NextEditResult } from '../request';
+import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
+
+export interface NextEditDeps {
+  getSettings(): Settings;
+  getBackend(id: string): FimBackend | undefined;
+  capabilities: Capabilities;
+  backoff(id: string): ErrorBackoff;
+  isLocal(baseUrl: string): Promise<boolean>;
+  log: Log;
+  snoozedUntil(): number;
+  snippets: RecentSnippets;
+  /** Files completions may not use (fim.disableInFiles, fim.disableInLanguages): no history, snippet or request. */
+  isExcluded(doc: vscode.TextDocument): boolean;
+  /** The model a backend without a configured one serves. */
+  detectedModel(backend: FimBackend, signal: AbortSignal): Promise<string | undefined>;
+}
+
+type Timer = ReturnType<typeof setTimeout>;
+
+/**
+ * Decides when to ask for a Next Edit, sends at most one request per document version and holds the latest result
+ * for the inline completion provider. Also records the edit history of the documents Next Edit may read.
+ */
+export class NextEditController implements vscode.Disposable {
+  /** VS Code's inline-edit UI is available (set from the registration probe). */
+  native = false;
+  private readonly disposables: vscode.Disposable[] = [];
+  private readonly policy = new TriggerPolicy();
+  private readonly history = new EditHistory();
+  private readonly models = new WeakMap<FimBackend, string>();
+  private readonly inflight = new Map<string, { version: number; ctl: AbortController }>();
+  private result: NextEditResult | undefined;
+  /** The version and cursor line each document was last asked about, so a repeated trigger does not ask again. */
+  private readonly asked = new Map<string, { version: number; line: number }>();
+  /** The version and time of each document's last edit (not undo/redo) in the active editor. */
+  private readonly lastChange = new Map<string, { version: number; at: number }>();
+  private readonly selectionVersions = new Map<string, number>();
+  private readonly pauseTimers = new Map<string, Timer>();
+  private readonly chainTimers = new Map<string, Timer>();
+  private readonly idleTimers = new Map<string, { timer: Timer; doc: vscode.TextDocument }>();
+  private readonly logged = new Set<string>();
+  private readonly notified = new Set<string>();
+
+  constructor(private readonly d: NextEditDeps) {
+    for (const doc of vscode.workspace.textDocuments) this.opened(doc);
+    this.disposables.push(
+      vscode.workspace.onDidOpenTextDocument((doc) => this.opened(doc)),
+      vscode.workspace.onDidCloseTextDocument((doc) => this.closed(doc)),
+      vscode.workspace.onDidChangeTextDocument((e) => this.changed(e)),
+      vscode.window.onDidChangeTextEditorSelection((e) => this.selectionChanged(e)),
+      vscode.window.onDidChangeActiveTextEditor((e) => {
+        if (e) this.selectionVersions.set(e.document.uri.toString(), e.document.version);
+      }),
+    );
+  }
+
+  /** The result to show at `pos`: a ghost text only at the cursor it was computed for, an inline edit only with the native UI. */
+  itemFor(doc: vscode.TextDocument, pos: vscode.Position): NextEditResult | undefined {
+    const r = this.result;
+    if (!r || r.uri !== doc.uri.toString() || r.version !== doc.version) return undefined;
+    if (r.show.kind === 'ghost') return pos.line === r.cursor.line && pos.character === r.cursor.character ? r : undefined;
+    return this.native ? r : undefined;
+  }
+
+  /** FIM's outcome for a document version. FIM wins: only an empty one lets Next Edit ask, after the edit pause. */
+  fimResult(uri: string, version: number, shown: boolean): void {
+    if (shown || this.chainTimers.has(uri)) return;
+    // Only FIM's answer for the latest edit arms a request, not one after a cursor move or an undo.
+    const change = this.lastChange.get(uri);
+    if (change?.version !== version) return;
+    this.schedulePause(uri, version, change.at + EDIT_PAUSE_MS - Date.now());
+  }
+
+  /** A Next Edit item was accepted; its change event has already run. Asks again shortly, so repeated Tabs walk through a change. */
+  accepted(): void {
+    this.result = undefined;
+    const doc = vscode.window.activeTextEditor?.document;
+    if (!doc || !this.eligible(doc)) return;
+    const uri = doc.uri.toString();
+    this.flush(doc);
+    this.clearTimer(this.pauseTimers, uri);
+    this.clearTimer(this.chainTimers, uri);
+    this.chainTimers.set(
+      uri,
+      setTimeout(() => {
+        this.chainTimers.delete(uri);
+        const current = vscode.window.activeTextEditor?.document;
+        if (current?.uri.toString() === uri) this.trigger(current);
+      }, CHAIN_DELAY_MS),
+    );
+  }
+
+  rejected(): void {
+    this.policy.rejected(Date.now());
+    this.result = undefined;
+  }
+
+  /** Forgets everything planned or recorded under the old settings; a newly excluded file must not keep diffs that would be sent. */
+  reset(): void {
+    this.clear();
+    this.logged.clear();
+    for (const doc of vscode.workspace.textDocuments) this.opened(doc);
+  }
+
+  dispose(): void {
+    this.clear();
+    for (const d of this.disposables) d.dispose();
+  }
+
+  private clear(): void {
+    for (const f of this.inflight.values()) f.ctl.abort();
+    this.inflight.clear();
+    this.result = undefined;
+    for (const t of [...this.pauseTimers.values(), ...this.chainTimers.values()]) clearTimeout(t);
+    for (const { timer } of this.idleTimers.values()) clearTimeout(timer);
+    this.pauseTimers.clear();
+    this.chainTimers.clear();
+    this.idleTimers.clear();
+    this.asked.clear();
+    this.lastChange.clear();
+    this.history.clear();
+    this.d.snippets.clear();
+  }
+
+  /** Workspace files and unsaved files that completions may use, as for extra context. */
+  private eligible(doc: vscode.TextDocument): boolean {
+    const { scheme } = doc.uri;
+    const inWorkspace = scheme === 'file' && vscode.workspace.getWorkspaceFolder(doc.uri) !== undefined;
+    return (scheme === 'untitled' || inWorkspace) && !this.d.isExcluded(doc);
+  }
+
+  private path(doc: vscode.TextDocument): string {
+    return vscode.workspace.asRelativePath(doc.uri, false);
+  }
+
+  private opened(doc: vscode.TextDocument): void {
+    if (!this.eligible(doc)) return;
+    this.history.open(this.path(doc), doc.getText());
+    this.selectionVersions.set(doc.uri.toString(), doc.version);
+  }
+
+  private closed(doc: vscode.TextDocument): void {
+    const uri = doc.uri.toString();
+    this.cancel(uri);
+    this.clearTimer(this.chainTimers, uri);
+    const idle = this.idleTimers.get(uri);
+    if (idle) clearTimeout(idle.timer);
+    this.idleTimers.delete(uri);
+    this.asked.delete(uri);
+    this.lastChange.delete(uri);
+    this.selectionVersions.delete(uri);
+    this.history.close(this.path(doc));
+  }
+
+  private changed(e: vscode.TextDocumentChangeEvent): void {
+    const doc = e.document;
+    // First, and silently: the log is a document too, so logging about its changes would loop.
+    if (e.contentChanges.length === 0 || !this.eligible(doc)) return;
+    const uri = doc.uri.toString();
+    this.cancel(uri);
+    this.restartIdle(doc);
+    const reason = e.reason;
+    if (reason === vscode.TextDocumentChangeReason.Undo || reason === vscode.TextDocumentChangeReason.Redo) {
+      this.clearTimer(this.chainTimers, uri);
+      return;
+    }
+    if (vscode.window.activeTextEditor?.document !== doc) return;
+    const now = Date.now();
+    this.policy.edited(uri, now);
+    this.lastChange.set(uri, { version: doc.version, at: now });
+    // A language or file FIM is disabled in is not eligible here, so only these settings leave FIM inactive for the document.
+    const s = this.d.getSettings();
+    if (!s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
+  }
+
+  private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
+    const doc = e.textEditor.document;
+    if (!this.eligible(doc)) return;
+    const uri = doc.uri.toString();
+    const seen = this.selectionVersions.get(uri);
+    this.selectionVersions.set(uri, doc.version);
+    // Typing moves the cursor too: a selection event in a new version was caused by an edit.
+    if (seen !== doc.version) return;
+    const K = vscode.TextEditorSelectionChangeKind;
+    if (e.kind !== K.Keyboard && e.kind !== K.Mouse && e.kind !== K.Command) return;
+    if (this.policy.onCursorMove(uri, e.selections[0].active.line, Date.now())) this.trigger(doc);
+  }
+
+  /** Aborts the document's request and drops its result and pending pause: they belong to an older version. */
+  private cancel(uri: string): void {
+    this.inflight.get(uri)?.ctl.abort();
+    this.inflight.delete(uri);
+    if (this.result?.uri === uri) this.result = undefined;
+    this.clearTimer(this.pauseTimers, uri);
+  }
+
+  private restartIdle(doc: vscode.TextDocument): void {
+    const uri = doc.uri.toString();
+    const idle = this.idleTimers.get(uri);
+    if (idle) clearTimeout(idle.timer);
+    this.idleTimers.set(uri, { doc, timer: setTimeout(() => this.flush(doc), HISTORY_IDLE_MS) });
+  }
+
+  /** Commits the document's edits to the history now. */
+  private flush(doc: vscode.TextDocument): void {
+    const uri = doc.uri.toString();
+    const idle = this.idleTimers.get(uri);
+    if (idle) clearTimeout(idle.timer);
+    this.idleTimers.delete(uri);
+    this.history.commit(this.path(doc), doc.getText());
+  }
+
+  private schedulePause(uri: string, version: number, delayMs: number): void {
+    this.clearTimer(this.pauseTimers, uri);
+    const timer = setTimeout(() => {
+      this.pauseTimers.delete(uri);
+      const doc = vscode.window.activeTextEditor?.document;
+      if (doc?.uri.toString() !== uri || doc.version !== version || !this.policy.afterPause(Date.now())) return;
+      this.trigger(doc);
+    }, Math.max(0, delayMs));
+    this.pauseTimers.set(uri, timer);
+  }
+
+  private clearTimer(timers: Map<string, Timer>, uri: string): void {
+    const t = timers.get(uri);
+    if (t !== undefined) clearTimeout(t);
+    timers.delete(uri);
+  }
+
+  private trigger(doc: vscode.TextDocument): void {
+    this.request(doc).catch((err: unknown) => this.d.log.error('next edit failed', err));
+  }
+
+  /** The active editor when it shows `doc` with one empty selection. */
+  private editorFor(doc: vscode.TextDocument): vscode.TextEditor | undefined {
+    const e = vscode.window.activeTextEditor;
+    return e?.document === doc && e.selections.length === 1 && e.selection.isEmpty ? e : undefined;
+  }
+
+  /** Sends one request when every check passes; never more than one per document version and cursor line. */
+  private async request(doc: vscode.TextDocument): Promise<void> {
+    const s = this.d.getSettings();
+    const uri = doc.uri.toString();
+    const version = doc.version;
+    if (this.inflight.get(uri)?.version === version || (this.result?.uri === uri && this.result.version === version)) return;
+    const editor = this.editorFor(doc);
+    if (!editor) return;
+    const asked = this.asked.get(uri);
+    if (asked?.version === version && asked.line === editor.selection.active.line) return;
+    if (!s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
+    const backend = this.d.getBackend(s.nextEdit.backendId);
+    if (!backend) return;
+    const id = backend.config.id;
+    if (!backend.routes().chat) {
+      this.once(`route:${id}`, () => this.d.log.info(`next edit: backend "${id}" has no chat completions route; Next Edit needs one`));
+      return;
+    }
+    const backoff = this.d.backoff(id);
+    if (!backoff.canRequest()) return;
+
+    // Registered before the first await, so a change aborts it.
+    const ctl = new AbortController();
+    this.inflight.get(uri)?.ctl.abort();
+    this.inflight.set(uri, { version, ctl });
+    let model: string | undefined;
+    const flavor = inferHostFlavor(backend.config);
+    try {
+      if (s.privacy.localOnly && !(await this.d.isLocal(backend.config.baseUrl))) {
+        this.once(`local:${id}:${backend.config.baseUrl}`, () => this.d.log.warn(`next edit blocked: backend "${id}" (${backend.config.baseUrl}) is not local and privacy.localOnly is on`));
+        return;
+      }
+      model = await this.model(backend, ctl.signal);
+      if (ctl.signal.aborted || this.d.getSettings() !== s) return;
+      if (model === undefined && flavor === 'openrouter') {
+        // OpenRouter would pick the payer's default model, so code would go to a model the user never chose.
+        this.once(`model:${id}`, () => this.d.log.warn(`next edit: backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
+        return;
+      }
+      const values = resolveNextEdit(backend.config, model, s);
+      const learned = this.d.capabilities.get(id, model);
+      const blocked = thinkingBlocked(values.thinking, flavor, learned);
+      if (blocked) {
+        const why = blocked === 'cannotDisable' ? 'cannot turn thinking off' : 'keeps thinking';
+        this.once(`thinking:${blocked}:${id}:${model ?? ''}`, () => this.d.log.info(`next edit: backend "${id}": ${model ?? 'the model'} ${why}; no Next Edit requests to it`));
+        return;
+      }
+      // The cursor may have moved while the checks above awaited.
+      const at = this.editorFor(doc)?.selection.active;
+      if (!at) return;
+
+      for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
+      this.flush(doc);
+      const path = this.path(doc);
+      const lines = doc.getText().split(/\r?\n/);
+      // Other files' diffs and snippets go out only with extra context, as for FIM.
+      const extra = values.extraContext;
+      const input: NextEditInput = {
+        path,
+        lines,
+        cursor: { line: at.line, character: at.character },
+        region: editableRegion(at.line, lines.length),
+        history: this.history.entries(extra ? undefined : (p) => p === path),
+        snippets: extra ? this.d.snippets.pick(path, SNIPPETS_BUDGET_CHARS) : [],
+      };
+      const started = Date.now();
+      this.policy.requested(uri, at.line, started);
+      this.asked.set(uri, { version, line: at.line });
+      const log = this.d.log;
+      const result = await runNextEdit({
+        backend,
+        values,
+        flavor,
+        model,
+        snapshot: { uri, version, input },
+        rejected: learned.rejected,
+        signal: ctl.signal,
+        onRejected: (fields) => this.rejectedFields(id, model, fields),
+        ...(s.debug.logPrompts
+          ? { onPrompt: (m: ChatMessage[]) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
+          : {}),
+      });
+      backoff.recordSuccess();
+      log.debug(
+        `next edit ${id} model=${model ?? '?'} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
+          `→ ${result ? result.show.kind : 'no edit'} in ${Date.now() - started} ms`,
+      );
+      if (!result || ctl.signal.aborted) return;
+      if (doc.version !== version || vscode.window.activeTextEditor?.document !== doc) {
+        log.debug('next edit: result dropped, the document or editor changed');
+        return;
+      }
+      if (result.show.kind === 'edit' && !this.native) {
+        log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
+        return;
+      }
+      this.result = result;
+      void vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+    } catch (err) {
+      // A newer change, a settings change or dispose aborted it: nothing to record.
+      if (ctl.signal.aborted) return;
+      this.failed(err, backend, model, s.nextEdit.timeoutMs, s.debug.logPrompts);
+    } finally {
+      if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
+    }
+  }
+
+  private failed(err: unknown, backend: FimBackend, model: string | undefined, timeoutMs: number, logPrompts: boolean): void {
+    const id = backend.config.id;
+    if (err instanceof ThinkingError) {
+      // Configuration, not a backend failure: the gate stops the next request, so no backoff.
+      this.d.capabilities.sawThinking(id, model);
+      this.d.log.debug(`next edit ${id}: ${model ?? 'the model'} reasoned with thinking off`);
+      this.notifyOnce(`thinking:${id}`, `AI Autocomplete: Next Edit stopped for "${id}": ${model ?? 'the model'} keeps thinking.`);
+      return;
+    }
+    const cls = classifyError(err);
+    if (cls.kind === 'abort') return;
+    this.models.delete(backend); // the server may have restarted with another model
+    if (err instanceof MissingApiKeyError) {
+      // Configuration too, and FIM does not back off for it either.
+      this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
+      this.notifyOnce(`error:${id}:key`, `AI Autocomplete: Next Edit request to "${id}" failed (no API key).`);
+      return;
+    }
+    const { detail, warn } = recordBackendFailure(this.d.backoff(id), id, err, cls, logPrompts, timeoutMs);
+    if (warn) this.d.log.warn(`next edit: ${warn}`);
+    else this.d.log.debug(`next edit: ${detail}`);
+    // Error messages can quote server output, so the raw one is logged only with logPrompts.
+    if (logPrompts && err instanceof Error) this.d.log.debug(`next edit ${id}: raw error: ${err.message}`);
+    const what = describeFailure(err, cls, timeoutMs);
+    this.notifyOnce(`error:${id}:${what}`, `AI Autocomplete: Next Edit request to "${id}" failed (${what}).`);
+  }
+
+  private rejectedFields(id: string, model: string | undefined, fields: string[]): void {
+    const added = this.d.capabilities.reject(id, model, fields);
+    const m = model ?? 'the model';
+    if (added.includes(EFFORT_NONE_REJECTED)) this.d.log.info(`backend "${id}": ${m} must reason (the server rejected reasoning effort "none"); Next Edit is off for it`);
+    const dropped = added.filter((f) => f !== EFFORT_NONE_REJECTED);
+    if (dropped.length > 0) this.d.log.info(`backend "${id}": the server rejected ${dropped.join(', ')} for ${m}; sending without them`);
+  }
+
+  /** The configured Next Edit model, else the detected one (remembered per backend instance once found). */
+  private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
+    const cfg = backend.config;
+    if (cfg.nextEditModel !== undefined || cfg.fimModel !== undefined) return nextEditModel(cfg, undefined);
+    let detected = this.models.get(backend);
+    if (detected === undefined) {
+      detected = await this.d.detectedModel(backend, signal);
+      if (detected !== undefined && !signal.aborted) this.models.set(backend, detected);
+    }
+    return nextEditModel(cfg, detected);
+  }
+
+  private notifyOnce(key: string, text: string): void {
+    if (this.notified.has(key)) return;
+    this.notified.add(key);
+    void vscode.window.showWarningMessage(text, 'Show Log').then((c) => c && vscode.commands.executeCommand('aiAutocomplete.showLog'));
+  }
+
+  private once(key: string, log: () => void): void {
+    if (this.logged.has(key)) return;
+    this.logged.add(key);
+    log();
+  }
+}

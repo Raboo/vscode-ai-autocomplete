@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { COMPLETION_CLOSE, COMPLETION_OPEN, CURSOR_MARKER, HOLE_FILLER_SYSTEM, HoleFillerAnswer, holeFillerMessages, type HoleFillerInput } from '../../src/completion/holeFiller';
+import { COMPLETION_CLOSE, COMPLETION_OPEN, CURSOR_MARKER, HOLE_FILLER_SYSTEM, HoleFillerAnswer, holeFillerMessages, PIN_BACK_LINES, stableUserChars, type HoleFillerInput } from '../../src/completion/holeFiller';
 
 const input: HoleFillerInput = {
   prefix: 'function add(a: number, b: number): number {\n  return ',
@@ -134,5 +134,25 @@ describe('HoleFillerAnswer', () => {
 
   test('an empty completion is empty', () => {
     expect(new HoleFillerAnswer('x = ').update('<COMPLETION></COMPLETION>', true)).toBe('');
+  });
+});
+
+describe('stableUserChars', () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}\n`).join('');
+  test('stops PIN_BACK_LINES above the cursor line', () => {
+    const prefix = `${lines(10)}  const x = `;
+    const m = holeFillerMessages({ ...input, extra: [], prefix, suffix: ';' });
+    const chars = stableUserChars(m);
+    const user = m[1]!.content;
+    const kept = user.slice(0, chars);
+    expect(PIN_BACK_LINES).toBe(4);
+    // The kept text ends right after a line break, and the next 4 lines plus the cursor line follow.
+    expect(kept.endsWith('line 5\n')).toBe(true);
+    expect(user.slice(chars)).toBe(`line 6\nline 7\nline 8\nline 9\n  const x = ${CURSOR_MARKER};\n</file>\n${user.split('\n').pop()}`);
+  });
+  test('is 0 near the top of the file', () => {
+    const m = holeFillerMessages({ ...input, extra: [], prefix: 'one\ntwo\nth', suffix: '' });
+    expect(stableUserChars(m)).toBe(0);
+    expect(stableUserChars([])).toBe(0);
   });
 });

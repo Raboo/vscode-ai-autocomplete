@@ -203,6 +203,19 @@ describe('buildChatRequest', () => {
     fim: resolveFim({ id: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:1', fimMode: 'auto', headers: {}, ...backend }, id, SETTINGS).values,
     flavor, model: id, input, rejected: new Set(), signal, ...over,
   });
+  test('buildChatRequest pins only on strata', () => {
+    const long = { ...input, prefix: 'a\nb\nc\nd\ne\nf\ng\nh', suffix: '' } as HoleFillerInput;
+    const strata = buildChatRequest(plan('Qwen3.8-Flash', { input: long }));
+    const pin = strata.extraBody.strata_prefix as { message: number; chars: number };
+    expect(pin.message).toBe(1);
+    expect(pin.chars).toBeGreaterThan(0);
+    expect(pin.chars).toBeLessThan(strata.messages[1]!.content.length);
+    expect(buildChatRequest(plan('Qwen3.8-Flash', { input: long, rejected: new Set(['strata_prefix']) })).extraBody).not.toHaveProperty('strata_prefix');
+    expect(buildChatRequest(plan('Qwen3.8-Flash')).extraBody).not.toHaveProperty('strata_prefix');
+    for (const flavor of ['llamacpp', 'openrouter', 'generic'] as HostFlavor[]) {
+      expect(buildChatRequest(plan('Qwen3.8-Flash', { input: long }, flavor)).extraBody).not.toHaveProperty('strata_prefix');
+    }
+  });
   test('Qwen3.8 on Strata', () => {
     const r = buildChatRequest(plan('Qwen3.8-Flash'));
     expect(r.maxTokens).toBe(80);

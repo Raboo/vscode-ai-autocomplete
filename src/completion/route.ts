@@ -1,7 +1,7 @@
 import type { Learned } from '../models/capabilities';
 import type { StatusAction } from './requestStatus';
 import type { ChatRequest, FimRequest, RouteCaps } from '../backends/types';
-import { COMPLETION_CLOSE, holeFillerMessages, type HoleFillerInput } from './holeFiller';
+import { COMPLETION_CLOSE, holeFillerMessages, stableUserChars, type HoleFillerInput } from './holeFiller';
 import { thinkingFields } from '../models/thinking';
 import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
@@ -188,6 +188,9 @@ export function chatStops(fim: Pick<FimValues, 'backendStop'>): string[] {
   return [...new Set([COMPLETION_CLOSE, ...fim.backendStop])];
 }
 
+/** Strata's request field that pins the start of a message as a cache checkpoint; optional, so a server that rejects it is retried without it. */
+export const STRATA_PIN_FIELD = 'strata_prefix';
+
 const SAMPLING_WIRE = { temperature: 'temperature', topP: 'top_p', topK: 'top_k', presencePenalty: 'presence_penalty' } as const;
 
 export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
@@ -206,14 +209,17 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
       if (all[k] !== undefined && !rejected.has(SAMPLING_WIRE[k])) sampling[k] = all[k];
     }
   }
+  const messages = holeFillerMessages(input, tf.systemSuffix);
+  // Strata resumes a hybrid-model prompt only at message boundaries unless the stable start is pinned as a cache checkpoint.
+  const pinChars = p.flavor === 'strata' && !rejected.has(STRATA_PIN_FIELD) ? stableUserChars(messages) : 0;
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
-    messages: holeFillerMessages(input, tf.systemSuffix),
+    messages,
     maxTokens: budget,
     stop: chatStops(fim),
     sampling,
     thinking,
-    extraBody: fim.extraBody,
+    extraBody: pinChars > 0 ? { [STRATA_PIN_FIELD]: { message: 1, chars: pinChars }, ...fim.extraBody } : fim.extraBody,
     signal: p.signal,
     timeoutMs: fim.timeoutMs,
     ...(onRejected ? { onRejected } : {}),

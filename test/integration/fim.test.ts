@@ -48,7 +48,7 @@ async function showAtEnd(doc: vscode.TextDocument): Promise<vscode.TextEditor> {
   return editor;
 }
 
-const openSource = async (): Promise<vscode.TextEditor> => showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content: SOURCE }));
+const openSource = async (content = SOURCE): Promise<vscode.TextEditor> => showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content }));
 
 /** URIs of the documents VS Code asked for inline completions, recorded by a probe provider the suite registers. */
 const asked = new Set<string>();
@@ -229,7 +229,7 @@ suite('FIM inline completion', () => {
     // Qwen3 templates prefill an empty think block with thinking off, and some servers stream it as content.
     await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { content: ['<think>\n\n</think>\n\n<COMPLETION>a + b;'] } }, async (m) => {
       await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
-      const editor = await openSource();
+      const editor = await openSource(`${'// a comment line\n'.repeat(8)}${SOURCE}`);  // long enough for a pin: it stops 4 lines above the cursor
 
       await trigger(editor);
       assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
@@ -243,6 +243,9 @@ suite('FIM inline completion', () => {
       assert.equal(body.reasoning_effort, 'none');
       assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
       assert.deepEqual(body.stop, ['</COMPLETION>']);
+      const pin = body.strata_prefix as { message: number; chars: number };
+      assert.equal(pin.message, 1);
+      assert.ok(pin.chars > 0, JSON.stringify(pin));
       const messages = body.messages as { role: string; content: string }[];
       assert.equal(messages[0].role, 'system');
       assert.ok(messages[1].content.includes('<|cursor|>'), JSON.stringify(messages[1]));

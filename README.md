@@ -105,6 +105,8 @@ With the cursor after only indentation, a chat model often types the indentation
 { "id": "strata", "kind": "openai", "hostFlavor": "strata", "baseUrl": "http://127.0.0.1:8080/v1" }
 ```
 
+On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes.
+
 **OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request and then treated like one that cannot turn thinking off. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
 
 ```jsonc

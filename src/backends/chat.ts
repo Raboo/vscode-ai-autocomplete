@@ -4,6 +4,8 @@ import { parseSse } from './sse';
 import type { ChatEvent, ChatRequest } from './types';
 
 export const SAMPLING_FIELDS: readonly string[] = ['temperature', 'top_p', 'top_k', 'presence_penalty'];
+/** Optional body fields a server may reject, besides the thinking and sampling ones. */
+export const OPTIONAL_FIELDS: readonly string[] = ['strata_prefix'];
 export const RETRY_STATUSES: readonly number[] = [400, 422];
 
 const HOSTED_MAX_STOPS = 4;
@@ -43,7 +45,7 @@ export async function* streamOpenAiChat(url: string, headers: Record<string, str
     if (!(err instanceof HttpError) || !RETRY_STATUSES.includes(err.status)) {
       throw err;
     }
-    const sent = [...THINKING_FIELDS, ...SAMPLING_FIELDS].filter((f) => f in body);
+    const sent = [...THINKING_FIELDS, ...SAMPLING_FIELDS, ...OPTIONAL_FIELDS].filter((f) => f in body);
     let drop = rejectedFields(err.bodyText, sent);
     if (drop.length === 0) {
       drop = THINKING_FIELDS.filter((f) => f in body);

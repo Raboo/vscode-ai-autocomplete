@@ -120,6 +120,17 @@ describe('streamOpenAiChat', () => {
     expect(onRejected).toHaveBeenCalledWith(['top_k']);
   });
 
+  test('a 400 naming strata_prefix drops that field', async () => {
+    let n = 0;
+    m = await startMockHttp(() => (n++ === 0 ? { status: 400, json: { error: 'unknown field strata_prefix' } } : ok()));
+    const onRejected = vi.fn();
+    await run(req({ onRejected, extraBody: { strata_prefix: { message: 1, chars: 10 } } }));
+    expect(m.requests[0].body.strata_prefix).toEqual({ message: 1, chars: 10 });
+    expect('strata_prefix' in m.requests[1].body).toBe(false);
+    expect(m.requests[1].body.chat_template_kwargs).toBeDefined();
+    expect(onRejected).toHaveBeenCalledWith(['strata_prefix']);
+  });
+
   test('a 400 the retry does not fix teaches nothing', async () => {
     m = await startMockHttp(() => ({ status: 400, json: { error: { type: 'exceed_context_size_error' } } }));
     const onRejected = vi.fn();

@@ -27,6 +27,24 @@ export function holeFillerMessages(i: HoleFillerInput, systemSuffix?: string): C
   return [{ role: 'system', content: system }, { role: 'user', content: user }];
 }
 
+export const PIN_BACK_LINES = 4;
+
+/**
+ * Characters of the user message that stay the same while the user types near the cursor: everything before the start
+ * of the line PIN_BACK_LINES above the cursor line (0 when there is none). Counted in code points, as Strata counts them.
+ */
+export function stableUserChars(messages: ChatMessage[]): number {
+  const user = messages[1]?.content ?? '';
+  // The marker also appears in the closing instruction, so look only before the end of the file block.
+  const cursor = user.lastIndexOf(CURSOR_MARKER, user.lastIndexOf('\n</file>\n'));
+  if (cursor < 0) return 0;
+  let start = user.lastIndexOf('\n', cursor - 1) + 1;
+  for (let i = 0; i < PIN_BACK_LINES && start > 0; i++) start = user.lastIndexOf('\n', start - 2) + 1;
+  if (start <= 0) return 0;
+  const head = user.slice(0, start);
+  return /[\ud800-\udbff]/.test(head) ? [...head].length : start;
+}
+
 /** Extracts the inserted text from the visible (reasoning-free) chat output. */
 export class HoleFillerAnswer {
   private readonly linePrefix: string;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { buildFimWindow, ExtraContextRing } from '../../src/completion/context';
+import { contextCaps } from '../../src/completion/effective';
 
 const doc = (n: number, w = 10) => Array.from({ length: n }, (_, i) => String(i).padStart(w, '0'));
 const OPTS = { prefixLines: 200, suffixLines: 60, maxPrefixChars: 8000, maxSuffixChars: 2500 };
@@ -88,9 +89,39 @@ describe('stepped prefix window', () => {
     const wide = Array.from({ length: 100 }, () => 'x'.repeat(99)).join('\n'); // 100 chars per line
     const w = buildFimWindow(wide, 50 * 100 + 3, { ...o, maxPrefixChars: 450 });
     expect(w.prefix.length).toBeLessThanOrEqual(450);
-    expect(w.startLine % 2).toBe(0);
     expect(w.prefix.startsWith('x'.repeat(99) + '\n')).toBe(true);
     expect(w.startLine).toBe(46);
+  });
+
+  test('when the cap binds, every whole line that fits is kept, not only whole steps', () => {
+    const wide = Array.from({ length: 100 }, () => 'x'.repeat(99)).join('\n'); // 100 chars per line
+    const w = buildFimWindow(wide, 50 * 100 + 3, { ...o, maxPrefixChars: 550 });
+    expect(w.startLine).toBe(45); // 5 lines + 3 chars = 503 fit; a step-aligned start (46) would drop one
+    expect(w.prefix).toBe(wide.slice(45 * 100, 50 * 100 + 3));
+  });
+
+  test('stepped window never drops every line that fits', () => {
+    // prefixLines 1000 (step 250), 40-char lines, the default cap: no step-aligned start fits, but 205 lines do.
+    const cap = contextCaps(4700).maxPrefixChars;
+    const lines = doc(1300, 39);
+    const text = lines.join('\n');
+    const offset = 1210 * 40;
+    const w = buildFimWindow(text, offset, { prefixLines: 1000, suffixLines: 2, maxPrefixChars: cap, maxSuffixChars: 2500 });
+    expect(cap).toBe(8225);
+    expect(w.startLine).toBe(1005);
+    expect(w.prefix).toBe(text.slice(1005 * 40, offset));
+    expect(w.prefix.length + 40).toBeGreaterThan(cap); // one more line would not fit
+  });
+
+  test('200-char lines at the default prefixLines and cap keep the lines that fit', () => {
+    const cap = contextCaps(4700).maxPrefixChars;
+    const lines = doc(1300, 200);
+    const text = lines.join('\n');
+    const offset = 1201 * 201 + 4; // just past a step boundary (step 50)
+    const w = buildFimWindow(text, offset, { prefixLines: 200, suffixLines: 60, maxPrefixChars: cap, maxSuffixChars: 2500 });
+    expect(w.startLine).toBe(1161); // 40 whole lines above the cursor line fit
+    expect(w.prefix).toBe(text.slice(1161 * 201, offset));
+    expect(w.prefix.length).toBeLessThanOrEqual(cap);
   });
 
   test('stepped window keeps the cursor line', () => {

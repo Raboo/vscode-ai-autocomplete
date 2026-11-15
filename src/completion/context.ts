@@ -42,11 +42,21 @@ export function buildFimWindow(text: string, offset: number, o: FimWindowOptions
   // The start moves in steps of a quarter of prefixLines, so the prompt start stays the same for many keystrokes (server prompt caches).
   const step = Math.max(1, Math.floor(o.prefixLines / 4));
   let startLine = Math.max(0, Math.floor((cursorLine - o.prefixLines) / step) * step);
-  while (startLine < cursorLine && cursor - starts[startLine] > o.maxPrefixChars) startLine = Math.min(cursorLine, startLine + step);
   let startOffset = starts[startLine];
   if (cursor - startOffset > o.maxPrefixChars) {
-    // Only the cursor line is left and it alone is over the cap: cut inside it.
-    startOffset = cursor - o.maxPrefixChars;
+    // The cap binds: keep every whole line that fits. A step-aligned start could leave only the cursor line.
+    let cut = cursor - o.maxPrefixChars;
+    if (cut < starts[cursorLine]) {
+      // Cut point is above the cursor line: drop the partial leading line.
+      let l = lineAt(starts, cut);
+      if (starts[l] < cut) l++;
+      startLine = l;
+      cut = starts[l];
+    } else {
+      // The cursor line alone is over the cap: cut inside it.
+      startLine = cursorLine;
+    }
+    startOffset = cut;
   }
 
   let endLine = Math.min(last, cursorLine + o.suffixLines);

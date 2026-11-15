@@ -113,7 +113,7 @@
   - `export function nextEditModel(backend: BackendConfig, detected: string | undefined): string | undefined`;
   - `export function resolveNextEdit(backend: BackendConfig, model: string | undefined, s: Settings): FimValues`, which returns `resolveFim`'s values with `sampling` replaced by `NEXT_EDIT_SAMPLING` (unless `samplingParams === 'omit'`) and `timeoutMs` set to `s.nextEdit.timeoutMs`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `settings.test.ts`:
 - `nextEdit defaults: enabled, no backend, 10 s`: an empty source gives `{ enabled: true, timeoutMs: 10000 }` and no `backendId`.
@@ -128,12 +128,12 @@ In `effective.test.ts`:
   - with `nextEditModel: 'qwen3-8b'`: `thinking` is that preset's `'templateKwarg:enable_thinking'`.
 - `resolveNextEdit keeps omitted sampling omitted`: a preset with `samplingParams: 'omit'` keeps it.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/settings.test.ts test/unit/effective.test.ts`
 Expected: FAIL (`nextEdit` undefined, `resolveNextEdit` not exported).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - **`parseSettings`:** read `nextEdit.enabled` (resource, default `true`), `nextEdit.backend` (resource; no fallback to the first backend; the problem text above) and `nextEdit.timeoutMs` (resource, default `DEFAULT_NEXT_EDIT_TIMEOUT_MS`, kept only when an integer in 500–60000, the same limits as `FIM_LIMITS.timeoutMs`).
 - **package.json:**
@@ -142,12 +142,12 @@ Expected: FAIL (`nextEdit` undefined, `resolveNextEdit` not exported).
   - `aiAutocomplete.nextEdit.timeoutMs`: integer 500–60000, default `10000`, "Deadline for one Next Edit request.".
 - **`resolveNextEdit`:** when `backend.nextEditModel` is set and differs from `backend.fimModel`, resolve with `{ ...backend, fim: backend.fim?.extraBody ? { extraBody: backend.fim.extraBody } : undefined }`; otherwise resolve with `backend` as is.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit/settings.test.ts test/unit/effective.test.ts`, then `npm run typecheck`
 Expected: PASS, no type errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/config/settings.ts src/completion/effective.ts package.json test/unit/settings.test.ts test/unit/effective.test.ts

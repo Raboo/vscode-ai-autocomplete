@@ -88,6 +88,23 @@ describe('HoleFillerAnswer', () => {
     expect(new HoleFillerAnswer('  return ').update('<COMPLETION>ret', true)).toBe('ret');
   });
 
+  test('a partial closing tag is held back while streaming, never shown and retracted', () => {
+    const a = new HoleFillerAnswer('');
+    expect(a.update('<COMPLETION>a<', false)).toBe('a');
+    expect(a.update('<COMPLETION>a</COMPL', false)).toBe('a');
+    expect(a.update('<COMPLETION>a</COMPLETION', false)).toBe('a');
+    expect(a.update('<COMPLETION>a</COMPLETION>', false)).toBe('a');
+    expect(a.update('<COMPLETION>a</COMPL', true)).toBe('a</COMPL');
+    expect(a.update('<COMPLETION>a </b', false)).toBe('a </b');
+  });
+
+  test('a partial opening tag is never shown', () => {
+    const a = new HoleFillerAnswer('');
+    for (const v of ['<', '<COMP', '<COMPLETION', 'x <COMPLETIO']) expect(a.update(v, false)).toBe('');
+    expect(a.update('<COMPLETION>', false)).toBe('');
+    expect(a.update('<COMPLETION>a', false)).toBe('a');
+  });
+
   test('an empty completion is empty', () => {
     expect(new HoleFillerAnswer('x = ').update('<COMPLETION></COMPLETION>', true)).toBe('');
   });

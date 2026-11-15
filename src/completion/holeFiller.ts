@@ -46,6 +46,8 @@ export class HoleFillerAnswer {
       if (close >= 0) {
         answer = answer.slice(0, close);
         complete = true;
+      } else if (!done) {
+        answer = answer.slice(0, answer.length - partialCloseLength(answer));
       }
     } else if (done) {
       answer = visible.endsWith(COMPLETION_CLOSE) ? visible.slice(0, -COMPLETION_CLOSE.length) : visible;
@@ -63,4 +65,12 @@ export class HoleFillerAnswer {
     if (!complete && p.startsWith(t)) return '';
     return answer;
   }
+}
+
+/** Length of the longest suffix of `text` that is a proper prefix of the closing tag. */
+function partialCloseLength(text: string): number {
+  for (let n = Math.min(COMPLETION_CLOSE.length - 1, text.length); n > 0; n--) {
+    if (COMPLETION_CLOSE.startsWith(text.slice(text.length - n))) return n;
+  }
+  return 0;
 }

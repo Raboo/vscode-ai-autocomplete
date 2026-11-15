@@ -70,6 +70,7 @@ export function explainUnsupported(
   mode: FimMode,
   why: NoRoute,
   chatPossible: boolean,
+  kind?: BackendKind,
 ): { onceKey: string; log: string; status?: string; action?: StatusAction } {
   if (model === undefined) {
     return {
@@ -86,6 +87,15 @@ export function explainUnsupported(
       onceKey,
       log: `backend "${backendId}": prompt mode (fimMode) "${mode}" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`,
       status: `${backendId}: ${noRouteText(why, mode)}`,
+      action,
+    };
+  }
+  if (kind === 'mistral') {
+    // Mistral's completion endpoint serves Codestral models only, and it has no chat route here: a template cannot help.
+    return {
+      onceKey,
+      log: `model "${model}" cannot complete through Mistral's FIM endpoint: choose a Codestral model in AI Autocomplete: Manage Backends`,
+      status: `${backendId}: choose a Codestral model`,
       action,
     };
   }

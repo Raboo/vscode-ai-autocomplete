@@ -2,17 +2,22 @@ import * as vscode from 'vscode';
 import type { ErrorBackoff } from '../backends/backoff';
 import { classifyError, type ErrorClass } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
-import type { FimBackend, FimRequest } from '../backends/types';
+import { inferHostFlavor } from '../backends/hostFlavor';
+import type { FimBackend } from '../backends/types';
+import type { FimMode } from '../types';
 import type { Settings } from '../config/settings';
 import type { Log } from '../log';
+import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capabilities';
+import { thinkingNote } from '../ui/statusModel';
 import type { SuggestionCache } from './cache';
 import { buildFimWindow, type ExtraContextRing } from './context';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
+import { collectCompletion, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
-import { buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute } from './route';
+import { buildChatRequest, buildFimRequest, chatStops, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
 const MAX_LINES = 16;
@@ -31,6 +36,10 @@ export interface FimDeps {
   status: StatusSink;
   log: Log;
   snoozedUntil(): number;
+  capabilities: Capabilities;
+  /** Shows (or, with undefined, clears) the status bar warning for a model that still thinks. */
+  thinking(note: string | undefined): void;
+  notify(message: string): void;
 }
 
 /** A request that passed every check and is about to be sent. */
@@ -38,7 +47,11 @@ interface Job {
   backend: FimBackend;
   backoff: ErrorBackoff;
   debouncer: Debouncer;
-  req: FimRequest;
+  planned: PlannedRequest;
+  model: string | undefined;
+  mode: FimMode;
+  /** Another prompt route would remain if this one were learned as missing. */
+  hasFallback: boolean;
   ctl: AbortController;
   uri: string;
   prefix: string;
@@ -67,6 +80,8 @@ function withRetry(detail: string, backoff: ErrorBackoff): string {
 export class FimProvider implements vscode.InlineCompletionItemProvider {
   private readonly models = new WeakMap<FimBackend, string>();
   private readonly logged = new Set<string>();
+  /** Backend and model pairs already notified about; kept across forgetLogged() so a Save on the Backends page does not notify again. */
+  private readonly notified = new Set<string>();
   /** Backends whose last request failed, with the failure's status detail. */
   private readonly failing = new Map<string, string>();
   private readonly requests: RequestStatus;
@@ -182,39 +197,59 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if (!(await debouncer.wait(signal))) return [];
 
     const model = await this.model(backend, signal);
-    if (signal.aborted) return [];
+    if (signal.aborted || this.d.getSettings() !== s) return [];
+    if (model === undefined && inferHostFlavor(backend.config) === 'openrouter') {
+      // OpenRouter would pick the payer's default model, so code would go to a model the user never chose.
+      this.once(`model:${id}`, () => this.d.log.warn(`backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
+      this.requests.report({ state: 'error', detail: `${id}: choose a model`, action: { command: 'aiAutocomplete.manageBackends', args: [{ focus: id }] } });
+      return [];
+    }
     const fim = resolveFim(backend.config, model, s).values;
     const { kind, fimMode } = backend.config;
-    // The chat route stays off until the provider streams it.
-    const routeCaps = { ...backend.routes(), chat: false };
+    const learned = this.d.capabilities.get(id, model);
+    const routeCaps = usableRoutes(backend.routes(), learned.failedRoutes);
     const route = planRoute(kind, routeCaps, fim, fimMode);
     if (route === 'unsupported') {
       // Only a detected model id is remembered, so an undetected one is probed again on the next request.
-      const why = explainUnsupported(id, model, fimMode, whyNoRoute(routeCaps, fimMode), false);
+      const why = explainUnsupported(id, model, fimMode, whyNoRoute(routeCaps, fimMode), backend.routes().chat, kind);
       this.once(why.onceKey, () => this.d.log.warn(why.log));
       if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];
     }
-    if (route === 'chat') return []; // unreachable while chat is off above; narrows the type until Task 8
 
     const filePath = vscode.workspace.asRelativePath(doc.uri, false);
     const extra = fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars) : [];
     const multiline = shouldCompleteMultiline(fim.multiline, linePrefix, lineSuffix, doc.languageId);
     // Not linked to the VS Code token: a newer keystroke may join this request. It is aborted by a newer request for this uri.
     const ctl = new AbortController();
-    const req = buildFimRequest({
-      route,
-      fim,
-      model,
-      multiline,
-      signal: ctl.signal,
-      input: { prefix: win.prefix, suffix: win.suffix, filePath, repoName: vscode.workspace.getWorkspaceFolder(doc.uri)?.name ?? '', extra },
-    });
+    const input = { prefix: win.prefix, suffix: win.suffix, filePath, repoName: vscode.workspace.getWorkspaceFolder(doc.uri)?.name ?? '', extra };
+    let planned: PlannedRequest;
+    let stop = fim.stop;
+    if (route === 'chat') {
+      if (fim.thinking === 'cannotDisable') this.warnCannotDisable(id, model);
+      const req = buildChatRequest({
+        fim,
+        flavor: inferHostFlavor(backend.config),
+        model,
+        input: { ...input, languageId: doc.languageId, multiline },
+        rejected: learned.rejected,
+        signal: ctl.signal,
+        onRejected: (fields) => {
+          const added = this.d.capabilities.reject(id, model, fields);
+          if (added.length > 0) this.d.log.info(`backend "${id}": the server rejected ${added.join(', ')} for ${model ?? 'the model'}; sending without them`);
+        },
+      });
+      planned = { route: 'chat', req, linePrefix };
+      stop = chatStops(fim);
+    } else {
+      planned = { route, req: buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input }) };
+    }
+    const hasFallback = planRoute(kind, usableRoutes(backend.routes(), new Set<FimRoute>([...learned.failedRoutes, route])), fim, fimMode) !== 'unsupported';
     const post: PostCtx = { linePrefix, lineSuffix, prevLine: pos.line > 0 ? doc.lineAt(pos.line - 1).text : '', suffix: win.suffix };
     const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
 
     this.d.inflight.abortAll(uri);
-    const result = this.run({ backend, backoff, debouncer, req, ctl, uri, prefix: win.prefix, suffix: win.suffix, stop: fim.stop, multiline, post, eol, logPrompts: s.debug.logPrompts });
+    const result = this.run({ backend, backoff, debouncer, planned, model, mode: fimMode, hasFallback, ctl, uri, prefix: win.prefix, suffix: win.suffix, stop, multiline, post, eol, logPrompts: s.debug.logPrompts });
     this.d.inflight.add(uri, win.prefix, win.suffix, result, ctl);
     const text = await result;
     return text === undefined || signal.aborted ? [] : this.items(text, spot);
@@ -227,31 +262,31 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const started = Date.now();
     try {
       this.requests.begin();
-      // Client-side stops use the full preset list; backends may cap the list they send (ruling R2).
+      // Client-side stops are the request's own list (the full preset list on FIM routes; backends may cap what they send, ruling R2).
       const acc = new CompletionAccumulator({ stop: j.stop, multiline: j.multiline, maxLines: MAX_LINES, suffix: j.suffix });
-      let stoppedEarly = false;
-      for await (const chunk of j.backend.streamFim(j.req)) {
-        if (acc.push(chunk)) {
-          stoppedEarly = true;
-          break;
-        }
-      }
-      if (stoppedEarly) j.ctl.abort();
+      const collected = await collectCompletion(j.backend, j.planned, acc, j.ctl);
+      const { stoppedEarly, timedOut } = collected;
       const ms = Date.now() - started;
-      const completion = postprocess(acc.text, j.post);
+      const completion = postprocess(collected.text, j.post);
       const text = completion === undefined ? '' : planInsertion(completion, j.eol);
       this.d.cache.add(j.uri, j.prefix, j.suffix, text);
       j.debouncer.recordLatency(ms);
       j.backoff.recordSuccess();
       if (this.failing.delete(id)) this.d.log.info(`backend "${id}" is responding again`);
       this.d.log.debug(
-        `fim ${id} ${j.req.payload.route} model=${j.req.model ?? '?'} prefix=${j.prefix.length} suffix=${j.suffix.length} ` +
-          `→ ${text.length} chars in ${ms} ms${stoppedEarly ? ' (stopped early)' : ''}`,
+        `fim ${id} ${j.planned.route} model=${j.model ?? '?'} prefix=${j.prefix.length} suffix=${j.suffix.length} ` +
+          `→ ${text.length} chars in ${ms} ms${stoppedEarly ? ' (stopped early)' : ''}${timedOut ? ' (timed out; complete lines shown)' : ''}`,
       );
       if (j.logPrompts) {
-        this.d.log.debug(`fim prompt: ${JSON.stringify(j.req.payload)}`);
-        this.d.log.debug(`fim completion: raw ${JSON.stringify(acc.text)} → shown ${JSON.stringify(text)}`);
+        this.d.log.debug(`fim prompt: ${JSON.stringify(j.planned.route === 'chat' ? j.planned.req.messages : j.planned.req.payload)}`);
+        this.d.log.debug(`fim completion: raw ${JSON.stringify(collected.text)} → shown ${JSON.stringify(text)}`);
       }
+      if (collected.thinking && this.d.capabilities.sawThinking(id, j.model, ms)) {
+        this.d.log.warn(`backend "${id}": ${j.model ?? 'the model'} still thinks with thinking off (${ms} ms); completions will be slow`);
+      }
+      // Re-read: the latency learned before the request is stale. Another backend or model has its own entry, so it clears the warning.
+      const thinkingMs = this.d.capabilities.get(id, j.model).thinkingMs;
+      this.d.thinking(thinkingMs !== undefined ? thinkingNote(j.model, thinkingMs) : undefined);
       outcome = { state: 'idle' };
       return text;
     } catch (err) {
@@ -271,7 +306,15 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
       return { state: 'error', detail: `Set API key for ${id}` };
     }
-    const { detail, warn } = recordBackendFailure(j.backoff, id, err, cls, j.logPrompts, j.req.timeoutMs);
+    if (j.mode === 'auto' && j.planned.route !== 'chat' && isRouteMissing(err) && j.hasFallback) {
+      // A server without this endpoint is not failing: the next request takes the next prompt route.
+      this.d.capabilities.failRoute(id, j.model, j.planned.route);
+      this.once(`missing:${id}:${j.model ?? ''}:${j.planned.route}`, () =>
+        this.d.log.info(`backend "${id}": no ${j.planned.route} endpoint for ${j.model ?? 'the model'}; the next request uses the next prompt route`),
+      );
+      return { state: 'idle' };
+    }
+    const { detail, warn } = recordBackendFailure(j.backoff, id, err, cls, j.logPrompts, j.planned.req.timeoutMs);
     if (warn) this.d.log.warn(warn);
     else this.d.log.debug(detail);
     // Error messages can quote server output, so the raw one is logged only with logPrompts.
@@ -292,6 +335,16 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       this.d.log.info(`backend "${backend.config.id}": detected model ${detected}`);
     }
     return detected;
+  }
+
+  /** A model that cannot turn thinking off is slow on the chat route: tell the user once per backend and model. */
+  private warnCannotDisable(id: string, model: string | undefined): void {
+    const key = JSON.stringify([id, model ?? null]);
+    if (this.notified.has(key)) return;
+    this.notified.add(key);
+    const who = model ?? 'This model';
+    this.d.log.warn(`backend "${id}": ${who} cannot turn thinking off; completions will be slow`);
+    this.d.notify(`AI Autocomplete: ${who} cannot turn thinking off, so completions will be slow. A coder model, or a model that can turn thinking off, fits autocomplete better.`);
   }
 
   private items(text: string, at: Spot): vscode.InlineCompletionItem[] {

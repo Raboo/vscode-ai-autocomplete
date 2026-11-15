@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ErrorBackoff } from './backends/backoff';
 import { createBackend } from './backends/index';
+import { Capabilities } from './models/capabilities';
 import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
 import { ExtraContextRing } from './completion/context';
@@ -31,6 +32,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   let settings = readSettings().settings;
   let backends = new Map<string, FimBackend>();
+  const capabilities = new Capabilities();
   const backoffs = new Map<string, ErrorBackoff>();
   const debouncers = new Map<string, Debouncer>();
   const isLocal = memoizeIsLocal((url) => isLocalEndpoint(url), IS_LOCAL_TTL_MS);
@@ -63,6 +65,8 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     for (const b of backoffs.values()) b.reset();
     debouncers.clear();
     isLocal.clear();
+    capabilities.clear();
+    status.setThinking(undefined);
     return r.problems;
   };
 
@@ -86,6 +90,9 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     status,
     log,
     snoozedUntil,
+    capabilities,
+    thinking: (n) => status.setThinking(n),
+    notify: (m) => void vscode.window.showWarningMessage(m),
     backoff: (id) => {
       let b = backoffs.get(id);
       if (!b) backoffs.set(id, (b = new ErrorBackoff()));

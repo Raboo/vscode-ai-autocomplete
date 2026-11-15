@@ -152,6 +152,16 @@ describe('explainUnsupported', () => {
       action,
     });
   });
+  test('on Mistral a model with no template is told to choose a Codestral model, not a template', () => {
+    const action = { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'mistral' }] };
+    expect(explainUnsupported('mistral', 'devstral-small', 'auto', 'template', false, 'mistral')).toEqual({
+      onceKey: 'route:mistral:devstral-small',
+      log: 'model "devstral-small" cannot complete through Mistral\'s FIM endpoint: choose a Codestral model in AI Autocomplete: Manage Backends',
+      status: 'mistral: choose a Codestral model',
+      action,
+    });
+    expect(explainUnsupported('mistral', 'devstral-small', 'native', 'mode', false, 'mistral').status).toBe('mistral: prompt mode "native" does not work with this server');
+  });
   test('a prompt mode the server cannot use names the mode, not the template', () => {
     const action = { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'lm' }] };
     expect(explainUnsupported('lm', 'qwen2.5-coder-7b', 'native', 'mode', false)).toEqual({

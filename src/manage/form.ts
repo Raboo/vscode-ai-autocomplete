@@ -237,8 +237,8 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
     topK: { text: num(values.sampling.topK), source: sources.topK },
     maxTokens: { text: num(values.maxTokens), source: sources.maxTokens },
     debounceMs: values.debounceMs === null ? { text: 'auto', source: sources.debounceMs, hint: ADAPTIVE } : { text: String(values.debounceMs), source: sources.debounceMs },
-    // The chat route has its own timeout (longer for a model that cannot turn thinking off) and stop list; the typed values replace them as they replace the FIM ones.
-    timeoutMs: { text: num(!chat ? values.timeoutMs : values.thinking === 'cannotDisable' ? values.reasoningTimeoutMs : values.chatTimeoutMs), source: sources.timeoutMs },
+    // The chat route has its own stop list; the typed value replaces it as it replaces the FIM one.
+    timeoutMs: { text: num(values.timeoutMs), source: sources.timeoutMs },
     stop: { text: (chat ? chatStops(values) : values.stop).join('\n'), source: sources.stop },
     headers: { text: '', source: 'builtin' },
     extraBody: { text: Object.keys(values.extraBody).length > 0 ? JSON.stringify(values.extraBody) : '', source: sources.extraBody },

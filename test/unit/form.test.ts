@@ -144,16 +144,14 @@ describe('form model', () => {
     expect(view(on, 'template').disabledReason).toBe('the chat prompt does not use a template');
   });
 
-  test('chat route: Timeout and Stop show the chat values, and the stop warning counts them', () => {
+  test('chat route: Stop shows the chat list, Timeout is the one deadline, and the stop warning counts them', () => {
     const vs = fieldViews(or(), 'z-ai/glm-5', settings(), []);
-    expect(view(vs, 'timeoutMs').value).toBe('15000');
+    expect(view(vs, 'timeoutMs').value).toBe('5000');
     expect(view(vs, 'stop').value).toBe('</COMPLETION>');
     expect(formWarnings(or(), 'z-ai/glm-5', settings()).join()).not.toContain('4 stop sequences');
     const four = or({ changed: { fimMode: 'chat', stop: 'a\nb\nc\nd' } });
     expect(formWarnings(four, 'z-ai/glm-5', settings())).toContain('only the first 4 stop sequences are sent');
     expect(view(fieldViews(or({ changed: { fimMode: 'chat', timeoutMs: '9000' } }), 'z-ai/glm-5', settings(), []), 'timeoutMs')).toMatchObject({ value: '9000', isDefault: false });
-    // A model that cannot turn thinking off gets room to reason, and a longer timeout.
-    expect(view(fieldViews(or(), 'gpt-oss-20b', settings(), []), 'timeoutMs').value).toBe('30000');
   });
 
   test('the stop warning counts the chat list, not the FIM one; the template mismatch is skipped on the chat route', () => {

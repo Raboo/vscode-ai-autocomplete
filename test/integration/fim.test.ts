@@ -226,7 +226,8 @@ suite('FIM inline completion', () => {
   };
 
   test('ghost text from a chat model on Strata, thinking off', async () => {
-    await withMock({ alias: 'qwen3.8-flash-next-iq3_s' }, async (m) => {
+    // Qwen3 templates prefill an empty think block with thinking off, and some servers stream it as content.
+    await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { content: ['<think>\n\n</think>\n\n<COMPLETION>a + b;'] } }, async (m) => {
       await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
       const editor = await openSource();
 
@@ -246,40 +247,43 @@ suite('FIM inline completion', () => {
       assert.equal(messages[0].role, 'system');
       assert.ok(messages[1].content.includes('<|cursor|>'), JSON.stringify(messages[1]));
       assert.equal(posts(m, '/v1/completions').length + posts(m, '/infill').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
-      assert.ok(!api.status.current().includes('[thinking]'), `status: ${api.status.current()}`);
+      assert.ok(!api.status.current().includes('keeps thinking'), `status: ${api.status.current()}`);
     });
   });
 
-  test('a model that thinks anyway still completes and the status bar warns', async () => {
+  test('a model that keeps thinking fails, and Retry now asks again', async () => {
     await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['Let me think.'] } }, async (m) => {
       await useStrata(m.baseUrl, 'qwen3.8-flash-next-iq3_s');
       const editor = await openSource();
 
       await trigger(editor);
-      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+      assert.ok(await waitFor(() => api.status.current().includes('keeps thinking'), 5000), `status: ${api.status.current()}`);
+      assert.equal(posts(m, '/v1/chat/completions').length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+      // Ghost text only reaches the document on commit, so commit before checking that none was shown.
+      await commit();
+      assert.equal(editor.document.getText(), SOURCE);
 
-      assert.ok(editor.document.getText().endsWith('return a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
-      assert.ok(await waitFor(() => api.status.current().includes('[thinking]'), 2000), `status: ${api.status.current()}`);
+      // The model is blocked: no request goes out.
+      await trigger(editor);
+      await sleep(500);
+      assert.equal(posts(m, '/v1/chat/completions').length, 1, `mock saw ${JSON.stringify(m.requests)}`);
+      assert.ok(api.status.current().includes('keeps thinking'), `status: ${api.status.current()}`);
+
+      await vscode.commands.executeCommand('aiAutocomplete.retry');
+      await trigger(editor);
+      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
     });
   });
 
-  test('a model that thinks until the timeout shows the thinking note, and the next request gets room to reason', async () => {
-    await withMock({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['Let me think.'], stallMs: 3000 } }, async (m) => {
-      const backend = { id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, fimModel: 'qwen3.8-flash-next-iq3_s', fim: { timeoutMs: 1000 } };
-      await configure({ backends: [backend], 'fim.backend': BACKEND_ID });
+  test('a model that cannot turn thinking off sends nothing', async () => {
+    await withMock({ alias: 'gpt-oss-20b' }, async (m) => {
+      await useStrata(m.baseUrl, 'gpt-oss-20b');
       const editor = await openSource();
 
       await trigger(editor);
-      assert.ok(await waitFor(() => api.status.current().includes('timed out') && api.status.current().includes('[thinking]'), 5000), `status: ${api.status.current()}`);
-      const first = posts(m, '/v1/chat/completions');
-      assert.equal(first.length, 1, `mock saw ${JSON.stringify(m.requests)}`);
-
-      // After the 2 s backoff, the next request asks for 1024 more tokens.
-      await sleep(2500);
-      await trigger(editor);
-      assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
-      const [a, b] = posts(m, '/v1/chat/completions').map((r) => r.body?.max_tokens as number);
-      assert.equal(b, a + 1024, `max_tokens ${a} then ${b}`);
+      assert.ok(await waitFor(() => api.status.current().includes('cannot turn thinking off'), 5000), `status: ${api.status.current()}`);
+      await sleep(300);
+      assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
     });
   });
 
@@ -391,35 +395,5 @@ suite('FIM inline completion', () => {
       assert.equal(second.length, 1, `mock saw ${JSON.stringify(m.requests)}`);
       assert.ok(!('chat_template_kwargs' in (second[0].body ?? {})), JSON.stringify(second[0].body));
     });
-  });
-
-  test('a model that cannot turn thinking off warns once, and not again after a settings change', async () => {
-    const warnings: string[] = [];
-    const real = vscode.window.showWarningMessage;
-    (vscode.window as { showWarningMessage: unknown }).showWarningMessage = (m: string) => {
-      warnings.push(m);
-      return Promise.resolve(undefined);
-    };
-    try {
-      await withMock({ alias: 'gpt-oss-20b' }, async (m) => {
-        await useStrata(m.baseUrl, 'gpt-oss-20b');
-        const editor = await openSource();
-
-        await trigger(editor);
-        assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
-        const cannot = () => warnings.filter((w) => w.includes('gpt-oss-20b') && w.includes('cannot turn thinking off'));
-        assert.ok(await waitFor(() => cannot().length >= 1, 2000), `warnings: ${JSON.stringify(warnings)}`);
-        await sleep(500);
-
-        // A settings change makes every once-only log line appear again, but not this notification.
-        await configure({ 'fim.disableInLanguages': [] });
-        await trigger(editor);
-        assert.ok(await waitFor(() => posts(m, '/v1/chat/completions').length >= 2, 5000), `mock saw ${JSON.stringify(m.requests)}`);
-        await sleep(500);
-        assert.equal(cannot().length, 1, `warnings: ${JSON.stringify(warnings)}`);
-      });
-    } finally {
-      (vscode.window as { showWarningMessage: unknown }).showWarningMessage = real;
-    }
   });
 });

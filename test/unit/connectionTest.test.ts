@@ -318,21 +318,19 @@ describe('explainFailure', () => {
       expect((await run(m)).res.steps[1]).toMatchObject({ state: 'warn' });
     });
 
-    test('the slow warning compares against the chat timeout', async () => {
+    test('the slow warning compares against the one 5 s deadline', async () => {
       const clock = { t: 0 };
-      const f = fake({ config: chatCfg, caps, clock, streamCost: 6000, chatEvents: ev('<COMPLETION>a + b;') });
-      const { res } = await run(f, { now: () => clock.t });
-      expect(res.steps[2]).toMatchObject({ state: 'ok' }); // 6 s is over the FIM timeout of 5 s but under the chat timeout of 15 s
-      // A model that cannot turn thinking off gets 30 s.
-      const slow = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, clock, streamCost: 20000, chatEvents: ev('<COMPLETION>a + b;') });
-      expect((await run(slow, { now: () => clock.t })).res.steps[2]).toMatchObject({ state: 'ok' });
+      const f = fake({ config: chatCfg, caps, clock, streamCost: 3000, chatEvents: ev('<COMPLETION>a + b;') });
+      expect((await run(f, { now: () => clock.t })).res.steps[2]).toMatchObject({ state: 'ok' });
+      const slow = fake({ config: chatCfg, caps, clock, streamCost: 6000, chatEvents: ev('<COMPLETION>a + b;') });
+      expect((await run(slow, { now: () => clock.t })).res.steps[2]).toMatchObject({ state: 'warn' });
     });
 
     test('the context step counts the chat request\'s own max tokens', async () => {
-      const info = { models: ['gpt-oss-20b'], contextWindows: { 'gpt-oss-20b': 5000 } };
+      const info = { models: ['gpt-oss-20b'], contextWindows: { 'gpt-oss-20b': 4750 } };
       const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, info, chatEvents: ev('<COMPLETION>a + b;') });
       const { res } = await run(f);
-      expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 1104 is more than the server's 5000" });
+      expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 80 is more than the server's 4750" });
     });
 
     test('context step ignores inherited keys', async () => {

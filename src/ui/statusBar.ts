@@ -23,7 +23,6 @@ export class StatusBar implements StatusSink, vscode.Disposable {
   private last: { state: RequestState; detail?: string; action?: StatusAction } = { state: 'idle' };
   private shown: LastStatus = { state: 'idle' };
   private locked = false;
-  private thinking: string | undefined;
   private accepted = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,8 +37,7 @@ export class StatusBar implements StatusSink, vscode.Disposable {
 
   /** Text form of the displayed state, e.g. "idle" or "error: <detail>". */
   current(): string {
-    const text = this.shown.detail ? `${this.shown.state}: ${this.shown.detail}` : this.shown.state;
-    return this.thinking !== undefined ? `${text} [thinking]` : text;
+    return this.shown.detail ? `${this.shown.state}: ${this.shown.detail}` : this.shown.state;
   }
 
   /** The displayed state. */
@@ -49,13 +47,6 @@ export class StatusBar implements StatusSink, vscode.Disposable {
 
   set(state: RequestState, detail?: string, action?: StatusAction): void {
     this.last = { state, detail, action };
-    this.refresh();
-  }
-
-  /** Shows a warning icon and a tooltip line while a model still thinks; undefined clears it. */
-  setThinking(note: string | undefined): void {
-    if (this.thinking === note) return;
-    this.thinking = note;
     this.refresh();
   }
 
@@ -77,11 +68,10 @@ export class StatusBar implements StatusSink, vscode.Disposable {
     // An action belongs only to a shown error, not to disabled or snoozed.
     const action = this.shown.state === 'error' && this.last.state === 'error' ? this.last.action : undefined;
     this.item.command = action ? { command: action.command, arguments: action.args, title: 'Open' } : 'aiAutocomplete.menu';
-    this.item.text = (this.locked ? '$(lock) ' : '') + TEXT[this.shown.state] + (this.thinking !== undefined ? ' $(warning)' : '');
+    this.item.text = (this.locked ? '$(lock) ' : '') + TEXT[this.shown.state];
     const lines = [`AI Autocomplete: ${this.shown.state}`];
     if (this.shown.detail) lines.push(this.shown.detail);
     if (this.locked) lines.push('Local only: requests go to loopback or private-network hosts only');
-    if (this.thinking !== undefined) lines.push(`Thinking: ${this.thinking}`);
     lines.push(`Accepted this session: ${this.accepted}`);
     this.item.tooltip = lines.join('\n');
     if (this.timer) clearTimeout(this.timer);

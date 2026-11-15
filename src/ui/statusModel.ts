@@ -9,11 +9,6 @@ export function displayState(enabled: boolean, snoozedUntil: number, now: number
   return last;
 }
 
-/** The status bar warning for a model that still thinks although thinking was asked off. */
-export function thinkingNote(model: string | undefined, ms: number): string {
-  return `${model ?? 'the model'} still thinks before answering (last thinking completion ${ms} ms); choose a model that can turn thinking off`;
-}
-
 /** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */
 export interface MenuEntry { label: string; id: string }
 

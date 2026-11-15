@@ -5,7 +5,7 @@ import { HttpError } from '../../src/backends/http';
 describe('Capabilities', () => {
   test('learns per backend and model, reports only what is new, and clears', () => {
     const c = new Capabilities();
-    expect(c.get('a', 'm')).toEqual({ rejected: new Set(), failedRoutes: new Set() });
+    expect(c.get('a', 'm')).toEqual({ rejected: new Set(), failedRoutes: new Set(), thinks: false });
     expect(c.reject('a', 'm', ['top_k', 'thinking'])).toEqual(['top_k', 'thinking']);
     expect(c.reject('a', 'm', ['top_k', 'reasoning'])).toEqual(['reasoning']);
     expect(c.get('a', 'm').rejected).toEqual(new Set(['top_k', 'thinking', 'reasoning']));
@@ -16,27 +16,29 @@ describe('Capabilities', () => {
     expect(c.failRoute('a', 'm', 'native')).toBe(false);
     expect(c.get('a', 'm').failedRoutes).toEqual(new Set(['native']));
     c.clear();
-    expect(c.get('a', 'm')).toEqual({ rejected: new Set(), failedRoutes: new Set() });
+    expect(c.get('a', 'm')).toEqual({ rejected: new Set(), failedRoutes: new Set(), thinks: false });
   });
-  test('forgetRoutes clears the failed routes of one backend only', () => {
+  test('forgetLearned clears thinks and failed routes, keeps rejected fields', () => {
     const c = new Capabilities();
     c.failRoute('a', 'm', 'native');
     c.failRoute('a', undefined, 'template');
     c.failRoute('b', 'm', 'native');
     c.reject('a', 'm', ['top_k']);
-    c.sawThinking('a', 'm', 500);
-    c.forgetRoutes('a');
+    c.sawThinking('a', 'm');
+    c.sawThinking('b', 'm');
+    c.forgetLearned('a');
     expect(c.get('a', 'm').failedRoutes.size).toBe(0);
     expect(c.get('a', undefined).failedRoutes.size).toBe(0);
+    expect(c.get('a', 'm').thinks).toBe(false);
     expect(c.get('a', 'm').rejected).toEqual(new Set(['top_k']));
-    expect(c.get('a', 'm').thinkingMs).toBe(500);
     expect(c.get('b', 'm').failedRoutes).toEqual(new Set(['native']));
+    expect(c.get('b', 'm').thinks).toBe(true);
   });
-  test('sawThinking is true once and keeps the latest latency', () => {
+  test('sawThinking is true once', () => {
     const c = new Capabilities();
-    expect(c.sawThinking('a', 'm', 900)).toBe(true);
-    expect(c.sawThinking('a', 'm', 400)).toBe(false);
-    expect(c.get('a', 'm').thinkingMs).toBe(400);
+    expect(c.sawThinking('a', 'm')).toBe(true);
+    expect(c.sawThinking('a', 'm')).toBe(false);
+    expect(c.get('a', 'm').thinks).toBe(true);
   });
   test('usableRoutes drops failed routes', () => {
     const caps = { native: true, template: true, chat: true, nativeChatModels: true };

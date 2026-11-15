@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildChatRequest, buildFimRequest, chatStops, chatThinking, EFFORT_NONE_REJECTED, explainUnsupported, noRouteText, planInsertion, planRoute, whyNoRoute, type ChatRequestPlan, type FimRoute } from '../../src/completion/route';
+import { buildChatRequest, buildFimRequest, chatStops, chatThinking, EFFORT_NONE_REJECTED, explainUnsupported, noRouteText, planInsertion, planRoute, thinkingBlocked, whyNoRoute, type ChatRequestPlan, type FimRoute } from '../../src/completion/route';
 import { usableRoutes } from '../../src/models/capabilities';
 import type { RouteCaps } from '../../src/backends/types';
 import type { HoleFillerInput } from '../../src/completion/holeFiller';
@@ -209,7 +209,7 @@ describe('buildChatRequest', () => {
     expect(r.stop).toEqual(['</COMPLETION>']);
     expect(r.thinking).toEqual({ reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } });
     expect(r.sampling).toEqual({ temperature: 0.2, topP: 0.8, topK: 20, presencePenalty: 0 });
-    expect(r.timeoutMs).toBe(15000);
+    expect(r.timeoutMs).toBe(5000);
     expect(r.model).toBe('Qwen3.8-Flash');
     expect(r.messages[0]!.role).toBe('system');
     expect(buildChatRequest(plan('Qwen3.8-Flash', { input: { ...input, multiline: true } })).maxTokens).toBe(160);
@@ -217,7 +217,7 @@ describe('buildChatRequest', () => {
   test('cannotDisable budget, omitted sampling, rejected fields, soft switch, backend stops', () => {
     const multi = { ...input, multiline: true };
     const g = buildChatRequest(plan('gpt-oss-20b', { input: multi }, 'llamacpp'));
-    expect(g.maxTokens).toBe(1184);
+    expect(g.maxTokens).toBe(160);
     expect(g.thinking).toEqual({ reasoning_effort: 'low' });
     expect(buildChatRequest(plan('kimi-k2')).sampling).toEqual({});
     const r = buildChatRequest(plan('Qwen3.8-Flash', { rejected: new Set(['chat_template_kwargs', 'top_k']) }));
@@ -227,10 +227,12 @@ describe('buildChatRequest', () => {
     expect(buildChatRequest(plan('Qwen3.8-Flash', {}, 'strata', { fim: { stop: ['X', '</COMPLETION>'] } })).stop).toEqual(['</COMPLETION>', 'X']);
     expect(chatStops({ backendStop: ['X'] })).toEqual(['</COMPLETION>', 'X']);
   });
-  test('a request with the reasoning allowance waits 30 s, unless the backend sets its own timeout', () => {
-    expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp')).timeoutMs).toBe(30000);
+  test('chat requests use the FIM deadline and no allowance', () => {
+    expect(buildChatRequest(plan('Qwen3.8-Flash')).timeoutMs).toBe(5000);
+    expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp')).timeoutMs).toBe(5000);
     expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp', { fim: { timeoutMs: 2000 } })).timeoutMs).toBe(2000);
-    expect(buildChatRequest(plan('Qwen3.8-Flash')).timeoutMs).toBe(15000);
+    expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp')).maxTokens).toBe(80);
+    expect(buildChatRequest(plan('Qwen3.8-Flash')).maxTokens).toBe(80);
   });
   test('onRejected is passed through', () => {
     const onRejected = (): void => undefined;
@@ -247,30 +249,39 @@ describe('buildChatRequest', () => {
       r.onRejected!(['reasoning', 'top_p']);
       expect(learned).toEqual([[EFFORT_NONE_REJECTED, 'top_p']]);
     });
-    test('afterwards it sends effort "low" with the reasoning allowance and 30 s', () => {
+    test('afterwards it sends effort "low" with no allowance and the FIM deadline', () => {
       const r = gemini({ rejected: new Set([EFFORT_NONE_REJECTED]) });
       expect(r.thinking).toEqual({ reasoning: { effort: 'low' } });
-      expect(r.maxTokens).toBe(80 + 1024);
-      expect(r.timeoutMs).toBe(30000);
+      expect(r.maxTokens).toBe(80);
+      expect(r.timeoutMs).toBe(5000);
       expect(chatThinking('templateKwarg:enable_thinking', 'openrouter', new Set([EFFORT_NONE_REJECTED]))).toBe('cannotDisable');
       expect(chatThinking('templateKwarg:enable_thinking', 'openrouter', new Set())).toBe('templateKwarg:enable_thinking');
       expect(chatThinking('templateKwarg:enable_thinking', 'strata', new Set([EFFORT_NONE_REJECTED]))).toBe('templateKwarg:enable_thinking');
     });
-    test('if "low" is rejected too, reasoning is dropped and the allowance stays', () => {
+    test('if "low" is rejected too, reasoning is dropped', () => {
       const learned: string[][] = [];
       const low = gemini({ rejected: new Set([EFFORT_NONE_REJECTED]), onRejected: (f) => learned.push(f) });
       low.onRejected!(['reasoning']);
       expect(learned).toEqual([['reasoning']]);
       const r = gemini({ rejected: new Set([EFFORT_NONE_REJECTED, 'reasoning']) });
       expect(r.thinking).toEqual({});
-      expect(r.maxTokens).toBe(80 + 1024);
     });
   });
 
-  test('a model seen thinking anyway gets the reasoning allowance and 30 s, with its thinking fields unchanged', () => {
-    const r = buildChatRequest(plan('Qwen3.8-Flash', { thinksAnyway: true }));
-    expect(r.maxTokens).toBe(80 + 1024);
-    expect(r.timeoutMs).toBe(30000);
-    expect(r.thinking).toEqual({ reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } });
+  describe('thinkingBlocked', () => {
+    const none = { rejected: new Set<string>(), failedRoutes: new Set<FimRoute>(), thinks: false };
+    test('a cannotDisable strategy blocks', () => {
+      expect(thinkingBlocked('cannotDisable', 'strata', none)).toBe('cannotDisable');
+    });
+    test('OpenRouter after effort "none" was rejected blocks as cannotDisable', () => {
+      expect(thinkingBlocked('templateKwarg:enable_thinking', 'openrouter', { ...none, rejected: new Set([EFFORT_NONE_REJECTED]) })).toBe('cannotDisable');
+    });
+    test('a model learned to keep thinking blocks', () => {
+      expect(thinkingBlocked('templateKwarg:enable_thinking', 'strata', { ...none, thinks: true })).toBe('keepsThinking');
+    });
+    test('otherwise nothing blocks', () => {
+      expect(thinkingBlocked('templateKwarg:enable_thinking', 'strata', none)).toBeUndefined();
+      expect(thinkingBlocked('templateKwarg:enable_thinking', 'strata', { ...none, rejected: new Set([EFFORT_NONE_REJECTED]) })).toBeUndefined();
+    });
   });
 });

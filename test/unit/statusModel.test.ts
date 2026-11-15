@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { displayState, menuEntries, thinkingNote } from '../../src/ui/statusModel';
+import { displayState, menuEntries } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -69,9 +69,4 @@ describe('memoizeIsLocal', () => {
     await m('http://local');
     expect(calls).toBe(4);
   });
-});
-
-test('thinkingNote names the model and the latency', () => {
-  expect(thinkingNote('Qwen3.8', 950)).toBe('Qwen3.8 still thinks before answering (last thinking completion 950 ms); choose a model that can turn thinking off');
-  expect(thinkingNote(undefined, 10)).toMatch(/^the model still thinks/);
 });

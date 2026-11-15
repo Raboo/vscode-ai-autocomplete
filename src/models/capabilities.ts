@@ -3,11 +3,11 @@ import { HttpError } from '../backends/http';
 import type { RouteCaps } from '../backends/types';
 import type { FimRoute } from '../completion/route';
 
-export interface Learned { rejected: ReadonlySet<string>; failedRoutes: ReadonlySet<FimRoute>; thinkingMs?: number }
+export interface Learned { rejected: ReadonlySet<string>; failedRoutes: ReadonlySet<FimRoute>; thinks: boolean }
 
-interface Entry { rejected: Set<string>; failedRoutes: Set<FimRoute>; thinkingMs?: number }
+interface Entry { rejected: Set<string>; failedRoutes: Set<FimRoute>; thinks: boolean }
 
-const EMPTY: Learned = { rejected: new Set(), failedRoutes: new Set() };
+const EMPTY: Learned = { rejected: new Set(), failedRoutes: new Set(), thinks: false };
 
 export class Capabilities {
   private readonly entries = new Map<string, Entry>();
@@ -20,7 +20,7 @@ export class Capabilities {
     const k = this.key(backendId, model);
     let e = this.entries.get(k);
     if (!e) {
-      e = { rejected: new Set(), failedRoutes: new Set() };
+      e = { rejected: new Set(), failedRoutes: new Set(), thinks: false };
       this.entries.set(k, e);
     }
     return e;
@@ -50,17 +50,21 @@ export class Capabilities {
     return true;
   }
 
-  /** True the first time; the latest latency is kept. */
-  sawThinking(backendId: string, model: string | undefined, ms: number): boolean {
+  /** Remembers that the model reasoned with thinking off; true the first time. */
+  sawThinking(backendId: string, model: string | undefined): boolean {
     const e = this.entry(backendId, model);
-    const first = e.thinkingMs === undefined;
-    e.thinkingMs = ms;
+    const first = !e.thinks;
+    e.thinks = true;
     return first;
   }
 
-  /** Forgets the routes learned as missing for one backend (rejected fields and thinking latency stay). */
-  forgetRoutes(backendId: string): void {
-    for (const [k, e] of this.entries) if ((JSON.parse(k) as [string, string | null])[0] === backendId) e.failedRoutes.clear();
+  /** Forgets the routes learned as missing and the models learned to keep thinking, for one backend (rejected fields stay). */
+  forgetLearned(backendId: string): void {
+    for (const [k, e] of this.entries) {
+      if ((JSON.parse(k) as [string, string | null])[0] !== backendId) continue;
+      e.failedRoutes.clear();
+      e.thinks = false;
+    }
   }
 
   clear(): void {

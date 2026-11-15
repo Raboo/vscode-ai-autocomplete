@@ -1,3 +1,4 @@
+import type { Learned } from '../models/capabilities';
 import type { StatusAction } from './requestStatus';
 import type { ChatRequest, FimRequest, RouteCaps } from '../backends/types';
 import { COMPLETION_CLOSE, holeFillerMessages, type HoleFillerInput } from './holeFiller';
@@ -11,7 +12,6 @@ export type FimRoute = 'native' | 'template' | 'chat';
 const SINGLE_LINE_MAX_TOKENS = 48;
 const TIME_MAX_PREDICT_MS = 500;
 export const CHAT_OVERHEAD_TOKENS = 32;
-export const REASONING_ALLOWANCE_TOKENS = 1024;
 
 /**
  * Picks how a FIM prompt is sent:
@@ -44,8 +44,8 @@ export function planRoute(
   }
 }
 
-/** Why planRoute found no route: a prompt mode this server cannot use, or a model without a FIM template. */
-export type NoRoute = 'mode' | 'template';
+/** Why planRoute found no route: a prompt mode this server cannot use, a model without a FIM template, or a model that thinks. */
+export type NoRoute = 'mode' | 'template' | 'thinking';
 
 /** Why planRoute returned 'unsupported' for these inputs. */
 export function whyNoRoute(caps: RouteCaps, mode: FimMode): NoRoute {
@@ -59,6 +59,8 @@ export function noRouteText(why: NoRoute, mode: FimMode, kind?: BackendKind): st
       return `prompt mode "${mode}" does not work with this server`;
     case 'template':
       return kind === 'mistral' ? noRouteFix(false, kind) : 'no completion template';
+    case 'thinking':
+      return 'cannot turn thinking off';
   }
 }
 
@@ -157,8 +159,6 @@ export interface ChatRequestPlan {
   model: string | undefined;
   input: HoleFillerInput;
   rejected: ReadonlySet<string>;
-  /** The model was seen thinking with thinking off this session: it gets the reasoning allowance. */
-  thinksAnyway?: boolean;
   signal: AbortSignal;
   onRejected?(fields: string[]): void;
 }
@@ -174,6 +174,15 @@ export function chatThinking(strategy: ThinkingStrategy, flavor: HostFlavor, rej
   return flavor === 'openrouter' && rejected.has(EFFORT_NONE_REJECTED) ? 'cannotDisable' : strategy;
 }
 
+/**
+ * True when the chat route must not be used for this model: a cannotDisable strategy (an OpenRouter model that rejected
+ * effort "none" included), or a model learned to keep thinking. Autocomplete needs an answer in 5 s, so neither is asked.
+ */
+export function thinkingBlocked(strategy: ThinkingStrategy, flavor: HostFlavor, learned: Learned): 'cannotDisable' | 'keepsThinking' | undefined {
+  if (chatThinking(strategy, flavor, learned.rejected) === 'cannotDisable') return 'cannotDisable';
+  return learned.thinks ? 'keepsThinking' : undefined;
+}
+
 /** The chat stop rule: the closing tag, then the backend's own stops, deduplicated. Shared with the Backends page form. */
 export function chatStops(fim: Pick<FimValues, 'backendStop'>): string[] {
   return [...new Set([COMPLETION_CLOSE, ...fim.backendStop])];
@@ -187,8 +196,6 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
   const tf = thinkingFields(strategy, p.flavor);
   const thinking = Object.fromEntries(Object.entries(tf.body).filter(([k]) => !rejected.has(k)));
   const budget = (input.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS)) + CHAT_OVERHEAD_TOKENS;
-  // A model that reasons anyway needs room for it, and time.
-  const allowance = strategy === 'cannotDisable' || p.thinksAnyway === true;
   const effortNone = (thinking.reasoning as { effort?: unknown } | undefined)?.effort === 'none';
   const report = p.onRejected;
   const onRejected = report && effortNone ? (fields: string[]) => report(fields.map((f) => (f === 'reasoning' ? EFFORT_NONE_REJECTED : f))) : report;
@@ -202,13 +209,13 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
     messages: holeFillerMessages(input, tf.systemSuffix),
-    maxTokens: budget + (allowance ? REASONING_ALLOWANCE_TOKENS : 0),
+    maxTokens: budget,
     stop: chatStops(fim),
     sampling,
     thinking,
     extraBody: fim.extraBody,
     signal: p.signal,
-    timeoutMs: allowance ? fim.reasoningTimeoutMs : fim.chatTimeoutMs,
+    timeoutMs: fim.timeoutMs,
     ...(onRejected ? { onRejected } : {}),
   };
 }

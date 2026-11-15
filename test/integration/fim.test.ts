@@ -8,6 +8,7 @@ import { startMockServer, type MockServer } from './mockServer';
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
   status: { current(): string; set(state: 'idle'): void };
+  secrets: { set(id: string, v: string): Promise<void>; delete(id: string): Promise<void> };
 }
 
 const SOURCE = 'function add(a: number, b: number) {\n  return ';
@@ -287,6 +288,32 @@ suite('FIM inline completion', () => {
       assert.ok(await waitFor(() => api.status.current().includes('cannot turn thinking off'), 5000), `status: ${api.status.current()}`);
       await sleep(300);
       assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
+    });
+  });
+
+  test('an OpenRouter model that rejects effort "none" and then reasons cannot turn thinking off', async () => {
+    await withMock({ alias: 'google/gemini-2.5-pro', rejectField: 'reasoning', chat: { reasoning: ['Let me think.'] } }, async (m) => {
+      await api.secrets.set(BACKEND_ID, 'test-key'); // OpenRouter sends no code without a key
+      try {
+        await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.baseUrl}/v1`, fimModel: 'google/gemini-2.5-pro' }], 'fim.backend': BACKEND_ID });
+        const editor = await openSource();
+
+        // The first trigger already says so: the server rejected turning reasoning off, so no other switch can help.
+        await trigger(editor);
+        assert.ok(await waitFor(() => api.status.current().includes('cannot turn thinking off'), 5000), `status: ${api.status.current()}`);
+        const chats = posts(m, '/v1/chat/completions');
+        assert.equal(chats.length, 2, `mock saw ${JSON.stringify(m.requests)}`);
+        assert.ok('reasoning' in (chats[0].body ?? {}));
+        assert.ok(!('reasoning' in (chats[1].body ?? {})), JSON.stringify(chats[1].body));
+
+        // The model is blocked: no request goes out.
+        await trigger(editor);
+        await sleep(500);
+        assert.equal(posts(m, '/v1/chat/completions').length, 2, `mock saw ${JSON.stringify(m.requests)}`);
+        assert.ok(api.status.current().includes('cannot turn thinking off'), `status: ${api.status.current()}`);
+      } finally {
+        await api.secrets.delete(BACKEND_ID);
+      }
     });
   });
 

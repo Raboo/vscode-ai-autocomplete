@@ -8,6 +8,8 @@ import { nullLog } from '../../src/log';
 import { THINKING_LABELS } from '../../src/models/thinking';
 import type { BackendConfig } from '../../src/types';
 import type { TestStep } from '../../src/manage/protocol';
+import { OpenRouterBackend } from '../../src/backends/openrouter';
+import { startMockHttp } from './helpers/mockHttp';
 
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
@@ -366,6 +368,30 @@ describe('explainFailure', () => {
       expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'fail']]);
       expect(res.steps[1]).toMatchObject({ text: 'Model gpt-oss-20b cannot turn thinking off', hint: 'autocomplete needs a model that answers without thinking; choose another model' });
       expect(f.streamChat).not.toHaveBeenCalled();
+    });
+
+    test('an OpenRouter model that rejects effort "none" and then reasons cannot turn thinking off, with no probe', async () => {
+      // A real OpenRouter backend: the server rejects `reasoning`, the retry without it streams reasoning.
+      const m = await startMockHttp(({ url, body }) => {
+        if (url.endsWith('/models')) return { json: { data: [{ id: 'google/gemini-2.5-pro', reasoning: { mandatory: false } }] } };
+        if (body && 'reasoning' in body) return { status: 400, json: { error: { message: 'Reasoning is mandatory for this endpoint and cannot be disabled.' } } };
+        return { sse: ['{"choices":[{"delta":{"reasoning":"Let me think."}}]}', '{"choices":[{"delta":{"content":"<COMPLETION>a + b;"},"finish_reason":"stop"}]}', '[DONE]'] };
+      });
+      try {
+        const config: BackendConfig = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.url}/api/v1`, fimMode: 'auto', headers: {}, fimModel: 'google/gemini-2.5-pro' };
+        const backend = new OpenRouterBackend(config, async () => 'k');
+        const res = await runConnectionTest({ backend, settings: SETTINGS, localOnly: false, isLocal: async () => true, signal: new AbortController().signal, log: nullLog, now: () => 0 }, () => {});
+        expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'ok'], ['thinking', 'fail']]);
+        expect(res.steps[2]).toEqual({
+          id: 'thinking', state: 'fail', ms: 0, text: 'Model google/gemini-2.5-pro cannot turn thinking off',
+          hint: 'autocomplete needs a model that answers without thinking; choose another model',
+        });
+        // the rejected request and its retry; no probe, since every switch sends the same `reasoning` field on OpenRouter
+        const chats = m.requests.filter((r) => r.url.endsWith('/chat/completions'));
+        expect(chats.map((r) => 'reasoning' in r.body)).toEqual([true, false]);
+      } finally {
+        await m.close();
+      }
     });
 
     test('a mandatory-reasoning OpenRouter model fails at the model step', async () => {

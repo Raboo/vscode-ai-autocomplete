@@ -20,6 +20,7 @@ export const PROBE_TIMEOUT_MS = 10000;
 /** The switches the probe tries, in order: every strategy that sends something. */
 const THINKING_PROBES: readonly ThinkingStrategy[] = THINKING_STRATEGIES.filter((t) => t !== 'none' && t !== 'cannotDisable');
 const LIST_TIMEOUT_MS = 5000;
+const CANNOT_DISABLE_HINT = 'autocomplete needs a model that answers without thinking; choose another model';
 const MAX_LINES = 16;
 const SHOWN_CHARS = 80;
 
@@ -157,7 +158,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         || (info.thinkingMandatory ?? []).includes(model);
       if (cannotDisable) {
         const text = `Model ${model} cannot turn thinking off`;
-        emit({ id: 'model', state: 'fail', text, hint: 'autocomplete needs a model that answers without thinking; choose another model' }, stageStart, text);
+        emit({ id: 'model', state: 'fail', text, hint: CANNOT_DISABLE_HINT }, stageStart, text);
         return result;
       }
       emit({ id: 'model', state: 'ok', text: `Model ${model} (chat prompt)` }, stageStart);
@@ -226,9 +227,15 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       if (!(err instanceof ThinkingError)) throw err;
       // The model reasons: no completion step. Say so, then look for a switch that works.
       stage = 'thinking';
+      const ms = now() - stageStart; // until the thinking was seen, not the probe
+      if (rejected.has(EFFORT_NONE_REJECTED)) {
+        // OpenRouter rejected effort "none", and every switch sends that same field there: the model must reason.
+        const text = `Model ${model} cannot turn thinking off`;
+        emit({ id: 'thinking', state: 'fail', text, hint: CANNOT_DISABLE_HINT, ms }, undefined, text);
+        return result;
+      }
       const label = THINKING_LABELS[values.thinking];
       const text = `${model} keeps thinking with the "${label}" switch`;
-      const ms = now() - stageStart; // until the thinking was seen, not the probe
       const probed = await probe();
       emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}), ms }, undefined, text);
       return result;

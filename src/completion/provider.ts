@@ -302,8 +302,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const id = j.backend.config.id;
     if (err instanceof ThinkingError) {
       // Configuration, not a backend failure: the next request is blocked before sending, so no backoff and nothing cached.
-      this.d.capabilities.sawThinking(id, j.model);
-      return this.reportThinking(id, j.model, 'keepsThinking', j.thinking);
+      // An OpenRouter model that rejected effort "none" during this request must reason: no other switch can help.
+      const why = thinkingBlocked(j.thinking, inferHostFlavor(j.backend.config), this.d.capabilities.get(id, j.model)) ?? 'keepsThinking';
+      if (why === 'keepsThinking') this.d.capabilities.sawThinking(id, j.model);
+      return this.reportThinking(id, j.model, why, j.thinking);
     }
     // Our own controller is only aborted by a newer request or an early stop: that is a cancel, never a failure.
     const cls: ErrorClass = j.ctl.signal.aborted ? { kind: 'abort' } : classifyError(err);

@@ -390,7 +390,7 @@ Why these rows:
 - **`stripThinking(text, finish)`** is `push(text)` then `end(finish)`.
 - **`postprocess`** runs `stripThinking` on its input first, so FIM routes strip reasoning too. A result that is blank after stripping is `undefined`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   test('thinkingFields matches the golden file for every flavor × strategy', () => {
     // Object.keys(fixture) equals HOST_FLAVORS (as sets); for each flavor and each THINKING_STRATEGIES entry: toEqual(fixture[flavor][strategy])
@@ -416,10 +416,10 @@ Why these rows:
   // postprocess.test.ts
   test('reasoning is stripped before the other rules', () => { /* '<think>x</think>a + b;' → 'a + b;'; '<think>x</think>' → undefined */ });
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/thinking.test.ts test/unit/postprocess.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** `thinking.ts`, the fixture (by hand from the table) and the `postprocess` change.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: thinking-off request fields per host and a reasoning filter`.
+- [x] **Step 2: Run** `npx vitest run test/unit/thinking.test.ts test/unit/postprocess.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** `thinking.ts`, the fixture (by hand from the table) and the `postprocess` change.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: thinking-off request fields per host and a reasoning filter`.
 
 ### Task 3: Chat transport and route capabilities
 

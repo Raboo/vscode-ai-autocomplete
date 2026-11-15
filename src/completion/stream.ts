@@ -23,10 +23,10 @@ export async function collectCompletion(
   ctl: AbortController,
 ): Promise<Collected> {
   let stopped = false;
-  let thinking = false;
+  const seen = { thinking: false }; // updated as the chat stream goes, so a timeout keeps it
   try {
     if (p.route === 'chat') {
-      ({ stopped, thinking } = await collectChat(backend.streamChat(p.req), new HoleFillerAnswer(p.linePrefix), acc, ctl));
+      stopped = await collectChat(backend.streamChat(p.req), new HoleFillerAnswer(p.linePrefix), acc, ctl, seen);
     } else {
       for await (const chunk of backend.streamFim(p.req)) {
         if (acc.push(chunk)) {
@@ -40,9 +40,9 @@ export async function collectCompletion(
     const text = acc.text;
     const nl = text.lastIndexOf('\n');
     if (!isTimeout(err) || nl < 0) throw err;
-    return { text: text.slice(0, nl), stoppedEarly: stopped, thinking, timedOut: true };
+    return { text: text.slice(0, nl), stoppedEarly: stopped, thinking: seen.thinking, timedOut: true };
   }
-  return { text: acc.text, stoppedEarly: stopped, thinking, timedOut: false };
+  return { text: acc.text, stoppedEarly: stopped, thinking: seen.thinking, timedOut: false };
 }
 
 async function collectChat(
@@ -50,7 +50,8 @@ async function collectChat(
   answer: HoleFillerAnswer,
   acc: CompletionAccumulator,
   ctl: AbortController,
-): Promise<{ stopped: boolean; thinking: boolean }> {
+  seen: { thinking: boolean },
+): Promise<boolean> {
   const filter = new ReasoningFilter();
   // Only answers that extend the previous one reach `acc`: a shorter one (visible shrank on a bare closing tag) waits for the end.
   let fed = '';
@@ -59,6 +60,7 @@ async function collectChat(
   for await (const ev of events) {
     if (ev.type === 'reasoning') {
       filter.reasoning(ev.text);
+      seen.thinking = filter.thinking;
       continue;
     }
     if (ev.type === 'finish') {
@@ -67,6 +69,7 @@ async function collectChat(
       break;
     }
     filter.push(ev.text);
+    seen.thinking = filter.thinking;
     const next = answer.update(filter.visible, false);
     if (!next.startsWith(fed)) continue;
     fed = next;
@@ -80,5 +83,6 @@ async function collectChat(
     if (!finished) filter.end();
     stopped = acc.replace(answer.update(filter.visible, true));
   }
-  return { stopped, thinking: filter.thinking };
+  seen.thinking = filter.thinking;
+  return stopped;
 }

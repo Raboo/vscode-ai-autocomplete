@@ -1,6 +1,8 @@
 // Final cleanup of a completion before it is shown as ghost text.
 // Written from the ideas in Continue's postprocessing; no upstream code is copied.
 
+import { stripThinking } from '../models/thinking';
+
 export interface PostCtx {
   linePrefix: string;
   lineSuffix: string;
@@ -29,7 +31,7 @@ const toLf = (s: string): string => s.replace(/\r\n/g, '\n');
 
 /** Accepts raw document text (CRLF allowed); the result uses `\n` line breaks. */
 export function postprocess(rawInput: string, ctxInput: PostCtx): string | undefined {
-  const raw = toLf(rawInput);
+  const raw = toLf(stripThinking(rawInput).text);
   const c: PostCtx = {
     linePrefix: toLf(ctxInput.linePrefix),
     lineSuffix: toLf(ctxInput.lineSuffix),

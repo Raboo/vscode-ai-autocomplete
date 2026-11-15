@@ -46,3 +46,10 @@ describe('toInsertion', () => {
   test('empty rest of line', () =>
     expect(toInsertion('foo', '')).toEqual({ insertText: 'foo', replaceToEndOfLine: false }));
 });
+
+describe('postprocess reasoning', () => {
+  test('reasoning is stripped before the other rules', () => {
+    expect(postprocess('<think>x</think>a + b;', ctx())).toBe('a + b;');
+    expect(postprocess('<think>x</think>', ctx())).toBeUndefined();
+  });
+});

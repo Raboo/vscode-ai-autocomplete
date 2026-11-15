@@ -74,6 +74,13 @@ describe('streamOpenAiChat', () => {
     ]);
   });
 
+  test('a delta with reasoning and reasoning_details for the same text yields one reasoning event', async () => {
+    m = await startMockHttp(() =>
+      ok('{"choices":[{"delta":{"reasoning":"same","reasoning_details":[{"text":"same"}]}}]}'),
+    );
+    expect(await run(req())).toEqual([{ type: 'reasoning', text: 'same' }]);
+  });
+
   test('hosted drops top_k, keeps 4 stops; empty stop and unset sampling are not sent', async () => {
     m = await startMockHttp(() => ok());
     await run(req({ stop: ['1', '2', '3', '4', '5'] }), true);

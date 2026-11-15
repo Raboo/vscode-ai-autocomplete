@@ -82,7 +82,8 @@ function* deltaEvents(delta: Record<string, unknown>): Generator<ChatEvent> {
       yield { type: 'reasoning', text: v };
     }
   }
-  const details = delta.reasoning_details;
+  // OpenRouter sends the same text as `reasoning` and `reasoning_details`: the plain string wins.
+  const details = typeof delta.reasoning === 'string' || typeof delta.reasoning_content === 'string' ? undefined : delta.reasoning_details;
   if (Array.isArray(details) && details.length > 0) {
     const text = details
       .map((d) => {

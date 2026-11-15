@@ -729,7 +729,7 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
 - `explainUnsupported` callers pass `chatPossible: false` in this task, because the chat route is still forced off and the log must not advise a mode that fails. Tasks 8 (provider) and 9 (connection test and page) switch it to `backend.routes().chat`.
 - Until Task 9, prompt mode `chat` therefore reports `prompt mode "chat" does not work with this server` in the connection test and on the page. The rewritten `connectionTest.test.ts:93-97` and `pageState.test.ts:38-53` cases assert that interim text, and Task 9 changes them again.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   const LLAMA: RouteCaps = { native: true, template: true, chat: true, nativeChatModels: false };
   const LMSTUDIO = { native: false, template: true, chat: true, nativeChatModels: false };
@@ -771,10 +771,10 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
     // 404 with body 'model "x" not found, try pulling it first' → false; 404 with body '{"error":{"message":"not found"}}' → true
   });
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/route.test.ts test/unit/capabilities.test.ts test/unit/connectionTest.test.ts test/unit/pageState.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the route changes, `buildChatRequest`, `capabilities.ts` and the caller updates.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: chat route planning, chat requests and learned capabilities`.
+- [x] **Step 2: Run** `npx vitest run test/unit/route.test.ts test/unit/capabilities.test.ts test/unit/connectionTest.test.ts test/unit/pageState.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the route changes, `buildChatRequest`, `capabilities.ts` and the caller updates.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: chat route planning, chat requests and learned capabilities`.
 
 ### Task 7: Collect any route's stream
 

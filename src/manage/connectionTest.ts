@@ -1,18 +1,24 @@
 import { HttpError, StreamError } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import type { FimBackend, ServerInfo } from '../backends/types';
-import type { Settings } from '../config/settings';
+import { THINKING_STRATEGIES, type Settings } from '../config/settings';
 import { resolveFim, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
-import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, noRouteFix, noRouteText, planRoute, whyNoRoute } from '../completion/route';
-import { collectCompletion, type Collected, type PlannedRequest } from '../completion/stream';
+import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, noRouteFix, noRouteText, planRoute, thinkingBlocked, whyNoRoute } from '../completion/route';
+import { collectCompletion, ThinkingError, type Collected, type PlannedRequest } from '../completion/stream';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
 import type { TemplateInput } from '../models/templates';
+import { THINKING_LABELS } from '../models/thinking';
+import type { ThinkingStrategy } from '../types';
 import type { TestStep } from './protocol';
 
 export const TEST_TIMEOUT_MS = 30_000;
+/** Each thinking probe request waits this long; a model that cannot stop thinking would otherwise run to the test's 30 s. */
+export const PROBE_TIMEOUT_MS = 10000;
+/** The switches the probe tries, in order: every strategy that sends something. */
+const THINKING_PROBES: readonly ThinkingStrategy[] = THINKING_STRATEGIES.filter((t) => t !== 'none' && t !== 'cannotDisable');
 const LIST_TIMEOUT_MS = 5000;
 const MAX_LINES = 16;
 const SHOWN_CHARS = 80;
@@ -92,7 +98,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
 
     const stream = async (p: PlannedRequest, ctl: AbortController, stop: string[]): Promise<Collected> => {
       const acc = new CompletionAccumulator({ stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
-      return collectCompletion(backend, p, acc, ctl);
+      // As in the provider: on the chat route a model that thinks fails the request at once.
+      return collectCompletion(backend, p, acc, ctl, { failOnThinking: p.route === 'chat' });
     };
     const makeCtl = (): AbortController => {
       const ctl = new AbortController();
@@ -144,18 +151,49 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     }
     // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
     const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
-    const cannotDisable = values.thinking === 'cannotDisable' || (info.thinkingMandatory ?? []).includes(model);
+    const flavor = inferHostFlavor(cfg);
     if (route === 'chat') {
-      emit({
-        id: 'model', state: cannotDisable ? 'warn' : 'ok', text: `Model ${model} (chat prompt)`,
-        ...(cannotDisable ? { hint: 'this model cannot turn thinking off, so completions are slow' } : {}),
-      }, stageStart);
+      const cannotDisable = thinkingBlocked(values.thinking, flavor, { rejected: new Set(), failedRoutes: new Set(), thinks: false }) === 'cannotDisable'
+        || (info.thinkingMandatory ?? []).includes(model);
+      if (cannotDisable) {
+        const text = `Model ${model} cannot turn thinking off`;
+        emit({ id: 'model', state: 'fail', text, hint: 'autocomplete needs a model that answers without thinking; choose another model' }, stageStart, text);
+        return result;
+      }
+      emit({ id: 'model', state: 'ok', text: `Model ${model} (chat prompt)` }, stageStart);
     } else {
       emit({
         id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
         ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
       }, stageStart);
     }
+
+    const chatRequest = (v: typeof values, c: AbortController, onRejected?: (fields: string[]) => void) => buildChatRequest({
+      fim: v, flavor, model, input: { ...SAMPLE, languageId: 'typescript', multiline: false }, rejected: new Set(), signal: c.signal, ...(onRejected ? { onRejected } : {}),
+    });
+
+    /**
+     * Tries the other thinking switches on the sample; returns the hint for the thinking step. Never changes settings.
+     * OpenRouter sends the same field for every switch, so there is nothing to try.
+     */
+    const probe = async (): Promise<string | undefined> => {
+      if (flavor === 'openrouter') return undefined;
+      for (const strategy of THINKING_PROBES) {
+        if (strategy === values.thinking) continue;
+        if (i.signal.aborted) break;
+        const pctl = makeCtl();
+        const req = chatRequest({ ...values, thinking: strategy }, pctl);
+        const acc = new CompletionAccumulator({ stop: req.stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
+        try {
+          const c = await collectCompletion(backend, { route: 'chat', req: { ...req, timeoutMs: PROBE_TIMEOUT_MS }, linePrefix: POST.linePrefix }, acc, pctl, { failOnThinking: true });
+          if ((postprocess(c.text, { ...POST, chat: true }) ?? '') !== '') return `choose "${THINKING_LABELS[strategy]}" as the Thinking switch`;
+        } catch (err) {
+          // Still thinking, rejected or timed out: this switch does not help, try the next.
+          i.log.debug(`connection test probe ${strategy}: ${err instanceof ThinkingError ? 'still thinking' : explainFailure(err).text}`);
+        }
+      }
+      return 'no thinking switch turned it off; choose another model';
+    };
 
     // 3. completion
     stage = 'completion';
@@ -167,18 +205,27 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     let limit = values.timeoutMs; // the timeout the editor's request would use; the test itself waits longer
     let maxTokens = values.maxTokens;
     if (route === 'chat') {
-      const req = buildChatRequest({
-        fim: values, flavor: inferHostFlavor(cfg), model, input: { ...SAMPLE, languageId: 'typescript', multiline: false },
-        rejected: new Set(), signal: ctl.signal, onRejected: (fields) => fields.forEach((f) => rejected.add(f)),
-      });
+      const req = chatRequest(values, ctl, (fields) => fields.forEach((f) => rejected.add(f)));
       planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix };
       stop = req.stop; // the request's own list, as in the provider
       limit = req.timeoutMs;
-      maxTokens = req.maxTokens; // with the chat overhead and any reasoning allowance
+      maxTokens = req.maxTokens; // with the chat overhead
     } else {
       planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
     }
-    const collected = await stream(planned, ctl, stop);
+    let collected: Collected;
+    try {
+      collected = await stream(planned, ctl, stop);
+    } catch (err) {
+      if (!(err instanceof ThinkingError)) throw err;
+      // The model reasons: no completion step. Say so, then look for a switch that works.
+      stage = 'thinking';
+      const label = THINKING_LABELS[values.thinking];
+      const text = `${model} keeps thinking with the "${label}" switch`;
+      const probed = await probe();
+      emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}) }, stageStart, text);
+      return result;
+    }
     const text = postprocess(collected.text, { ...POST, chat: route === 'chat' }) ?? '';
     const elapsed = now() - stageStart;
     if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
@@ -193,18 +240,13 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       emit({ id: 'completion', state: 'ok', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"` }, stageStart);
     }
 
-    // 3b. thinking (chat route only)
+    // 3b. thinking (chat route only; a model that thinks failed above)
     if (route === 'chat') {
       stage = 'thinking';
       stageStart = now();
       const names = [...rejected].map((f) => (f === EFFORT_NONE_REJECTED ? 'reasoning effort "none"' : f));
       const rej = names.length > 0 ? `the server rejected ${names.join(', ')}; they are left out` : undefined;
-      if (collected.thinking) {
-        emit({ id: 'thinking', state: 'warn', text: 'the model still thinks with thinking off',
-          hint: ['completions take longer; choose a model that can turn thinking off, or set the Thinking switch', rej].filter(Boolean).join('; ') }, stageStart);
-      } else {
-        emit({ id: 'thinking', state: 'ok', text: 'Thinking is off', ...(rej ? { hint: rej } : {}) }, stageStart);
-      }
+      emit({ id: 'thinking', state: 'ok', text: 'Thinking is off', ...(rej ? { hint: rej } : {}) }, stageStart);
     }
 
     // 4. context

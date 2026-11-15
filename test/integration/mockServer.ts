@@ -26,8 +26,9 @@ export interface MockOptions {
   /**
    * What `POST /v1/chat/completions` streams; default content `['<COMPLETION>a + b;']` (real servers drop the stop string) and finish `stop`.
    * `stallMs` waits that long after the reasoning before the content, like a model that keeps thinking.
+   * `reasoningUnlessBody` skips the reasoning when the request body has all of those fields (a thinking switch that works).
    */
-  chat?: { reasoning?: string[]; content?: string[]; finish?: string; stallMs?: number };
+  chat?: { reasoning?: string[]; reasoningUnlessBody?: Record<string, unknown>; content?: string[]; finish?: string; stallMs?: number };
   /** `POST /infill` answers 501 and `POST /completion` streams `a + b;`. */
   infill501?: boolean;
   /** `POST /v1/chat/completions` answers 400 "Unrecognized request argument supplied: <field>" while the body has that field. */
@@ -74,7 +75,8 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
             const chat = o.chat ?? {};
             const delta = (d: Record<string, unknown>, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ delta: d, finish_reason: finish }] })}\n\n`;
             res.writeHead(200, { 'content-type': 'text/event-stream' });
-            for (const r of chat.reasoning ?? []) res.write(delta({ reasoning_content: r }));
+            const switchedOff = chat.reasoningUnlessBody !== undefined && body !== undefined && Object.entries(chat.reasoningUnlessBody).every(([k, v]) => body[k] === v);
+            if (!switchedOff) for (const r of chat.reasoning ?? []) res.write(delta({ reasoning_content: r }));
             const rest = (): void => {
               for (const c of chat.content ?? ['<COMPLETION>a + b;']) res.write(delta({ content: c }));
               res.write(delta({}, chat.finish ?? 'stop'));

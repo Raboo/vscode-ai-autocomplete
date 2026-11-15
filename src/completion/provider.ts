@@ -4,9 +4,10 @@ import { classifyError, HttpError, type ErrorClass } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { FimBackend } from '../backends/types';
-import type { FimMode } from '../types';
+import type { FimMode, ThinkingStrategy } from '../types';
 import type { Settings } from '../config/settings';
 import type { Log } from '../log';
+import { THINKING_LABELS } from '../models/thinking';
 import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capabilities';
 import type { SuggestionCache } from './cache';
 import { buildFimWindow, type ExtraContextRing } from './context';
@@ -46,7 +47,7 @@ interface Job {
   planned: PlannedRequest;
   model: string | undefined;
   /** The thinking switch in use, named in the log when the model keeps thinking. */
-  thinking: string;
+  thinking: ThinkingStrategy;
   mode: FimMode;
   /** Another prompt route would remain if this one were learned as missing. */
   hasFallback: boolean;
@@ -345,13 +346,13 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   }
 
   /** Logs (once per backend and model) a model the chat route cannot use because of thinking; returns the status to show. */
-  private reportThinking(id: string, model: string | undefined, why: 'cannotDisable' | 'keepsThinking', label: string): Outcome {
+  private reportThinking(id: string, model: string | undefined, why: 'cannotDisable' | 'keepsThinking', strategy: ThinkingStrategy): Outcome {
     const m = model ?? 'the model';
     const key = `thinking:${why}:${id}:${model ?? ''}`;
     if (why === 'cannotDisable') {
       this.once(key, () => this.d.log.warn(`model "${m}" cannot turn thinking off: autocomplete needs a model that answers without thinking; choose another model in AI Autocomplete: Manage Backends`));
     } else {
-      this.once(key, () => this.d.log.warn(`backend "${id}": ${m} keeps thinking with the "${label}" thinking switch: choose another switch or another model in AI Autocomplete: Manage Backends`));
+      this.once(key, () => this.d.log.warn(`backend "${id}": ${m} keeps thinking with the "${THINKING_LABELS[strategy]}" thinking switch: choose another switch or another model in AI Autocomplete: Manage Backends`));
     }
     const outcome: Outcome = {
       state: 'error',

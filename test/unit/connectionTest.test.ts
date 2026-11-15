@@ -1,16 +1,17 @@
 import { describe, expect, test, vi } from 'vitest';
-import { completionServed, explainFailure, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
+import { completionServed, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from '../../src/backends/types';
 import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
 import { parseSettings } from '../../src/config/settings';
 import { nullLog } from '../../src/log';
+import { THINKING_LABELS } from '../../src/models/thinking';
 import type { BackendConfig } from '../../src/types';
 import type { TestStep } from '../../src/manage/protocol';
 
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
-interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void; failAfter?: Error }
+interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void; chatFor?: (r: ChatRequest) => ChatEvent[]; failAfter?: Error }
 function fake(o: FakeOpts = {}) {
   const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, ...o.config };
   const listModels = vi.fn(async (): Promise<ServerInfo> => {
@@ -34,7 +35,7 @@ function fake(o: FakeOpts = {}) {
   const streamChat = vi.fn((req: ChatRequest) => {
     chatRequests.push(req);
     o.onChat?.(req);
-    const ev = o.chatEvents ?? [];
+    const ev = o.chatFor ? o.chatFor(req) : (o.chatEvents ?? []);
     return (async function* () {
       if (o.clock) o.clock.t += o.streamCost ?? 0;
       if (ev instanceof Error) throw ev;
@@ -288,11 +289,38 @@ describe('explainFailure', () => {
       expect(f.streamFim).not.toHaveBeenCalled();
     });
 
-    test('a model that thinks anyway gets a thinking warning', async () => {
+    test('a model that keeps thinking fails the thinking step and the probe suggests a switch', async () => {
+      const f = fake({ config: chatCfg, caps, chatFor: (r) => (r.thinking.reasoning_effort === 'none' ? ev('<COMPLETION>a + b;') : [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a + b;')]) });
+      const { res } = await run(f);
+      expect(res.steps.map((s) => s.id)).toEqual(['reach', 'model', 'thinking']);
+      expect(res.steps[2]).toEqual({
+        id: 'thinking', state: 'fail', ms: 0, text: `Qwen3.8-Flash-Next keeps thinking with the "${THINKING_LABELS['templateKwarg:enable_thinking']}" switch`,
+        hint: `choose "${THINKING_LABELS.reasoningEffortNone}" as the Thinking switch`,
+      });
+      // the first request is the real one; the probe tries the other switches in order and stops at the first success
+      expect(f.chatRequests.map((r) => r.thinking)).toEqual([
+        { chat_template_kwargs: { enable_thinking: false } }, { chat_template_kwargs: { thinking: false } }, { chat_template_kwargs: { thinking_mode: 'disabled' } },
+        { chat_template_kwargs: { thinking_budget: 0 } }, { reasoning_effort: 'none' },
+      ]);
+      expect(f.chatRequests[0]!.timeoutMs).toBe(TEST_TIMEOUT_MS);
+      expect(f.chatRequests.slice(1).every((r) => r.timeoutMs === PROBE_TIMEOUT_MS)).toBe(true);
+    });
+
+    test('the probe reports when no switch works', async () => {
       const f = fake({ config: chatCfg, caps, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a + b;')] });
       const { res } = await run(f);
-      expect(res.steps[3]).toMatchObject({ id: 'thinking', state: 'warn', text: 'the model still thinks with thinking off',
-        hint: 'completions take longer; choose a model that can turn thinking off, or set the Thinking switch' });
+      expect(res.steps[2]).toMatchObject({ id: 'thinking', state: 'fail', hint: 'no thinking switch turned it off; choose another model' });
+      expect(f.chatRequests).toHaveLength(1 + 6); // the real request, then every probed switch but the current one
+      expect(res.steps.some((s) => s.id === 'completion')).toBe(false);
+    });
+
+    test('OpenRouter skips the probe', async () => {
+      const config = { kind: 'openai' as const, hostFlavor: 'openrouter' as const, baseUrl: 'https://openrouter.ai/api/v1', fimModel: 'google/gemini-2.5-pro' };
+      const f = fake({ config, caps: { native: false, template: false }, info: { models: ['google/gemini-2.5-pro'], contextWindows: {} }, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a;')] });
+      const { res } = await run(f);
+      expect(res.steps.find((s) => s.id === 'thinking')).toMatchObject({ state: 'fail' });
+      expect(res.steps.find((s) => s.id === 'thinking')!.hint).toBeUndefined();
+      expect(f.chatRequests).toHaveLength(1);
     });
 
     test('rejected fields are named in the thinking hint', async () => {
@@ -309,13 +337,20 @@ describe('explainFailure', () => {
       expect(res.steps.find((s) => s.id === 'thinking')).toMatchObject({ hint: 'the server rejected reasoning effort "none"; they are left out' });
     });
 
-    test('a cannotDisable model warns at the model step and still runs the completion', async () => {
-      const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, chatEvents: [{ type: 'reasoning', text: 'x' }, ...ev('<COMPLETION>a + b;')] });
+    test('a cannotDisable model fails at the model step', async () => {
+      const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, chatEvents: ev('<COMPLETION>a + b;') });
       const { res } = await run(f);
-      expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'Model gpt-oss-20b (chat prompt)', hint: 'this model cannot turn thinking off, so completions are slow' });
-      expect(res.steps[2]).toMatchObject({ id: 'completion', state: 'ok' });
-      const m = fake({ config: { ...chatCfg, fimModel: 'z-ai/glm-5' }, caps, info: { models: ['z-ai/glm-5'], contextWindows: {}, thinkingMandatory: ['z-ai/glm-5'] }, chatEvents: ev('<COMPLETION>a;') });
-      expect((await run(m)).res.steps[1]).toMatchObject({ state: 'warn' });
+      expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'fail']]);
+      expect(res.steps[1]).toMatchObject({ text: 'Model gpt-oss-20b cannot turn thinking off', hint: 'autocomplete needs a model that answers without thinking; choose another model' });
+      expect(f.streamChat).not.toHaveBeenCalled();
+    });
+
+    test('a mandatory-reasoning OpenRouter model fails at the model step', async () => {
+      const config = { kind: 'openai' as const, hostFlavor: 'openrouter' as const, baseUrl: 'https://openrouter.ai/api/v1', fimModel: 'z-ai/glm-5' };
+      const f = fake({ config, caps: { native: false, template: false }, info: { models: ['z-ai/glm-5'], contextWindows: {}, thinkingMandatory: ['z-ai/glm-5'] }, chatEvents: ev('<COMPLETION>a;') });
+      const { res } = await run(f);
+      expect(res.steps.map((s) => [s.id, s.state, s.text])).toEqual([['reach', 'ok', 'Server answered in 0 ms (1 models)'], ['model', 'fail', 'Model z-ai/glm-5 cannot turn thinking off']]);
+      expect(f.streamChat).not.toHaveBeenCalled();
     });
 
     test('the slow warning compares against the one 5 s deadline', async () => {
@@ -327,8 +362,8 @@ describe('explainFailure', () => {
     });
 
     test('the context step counts the chat request\'s own max tokens', async () => {
-      const info = { models: ['gpt-oss-20b'], contextWindows: { 'gpt-oss-20b': 4750 } };
-      const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, info, chatEvents: ev('<COMPLETION>a + b;') });
+      const info = { models: [chatCfg.fimModel], contextWindows: { [chatCfg.fimModel]: 4750 } };
+      const f = fake({ config: chatCfg, caps, info, chatEvents: ev('<COMPLETION>a + b;') });
       const { res } = await run(f);
       expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 80 is more than the server's 4750" });
     });

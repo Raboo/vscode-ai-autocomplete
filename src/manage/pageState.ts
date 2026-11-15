@@ -40,12 +40,12 @@ function planFor(cfg: BackendConfig, model: string, s: Settings): { route: FimRo
   return route === 'unsupported' ? { why: whyNoRoute(caps, cfg.fimMode) } : { route, cannotDisable: values.thinking === 'cannotDisable' };
 }
 
-/** The model list's tag for `model`: "ready", "chat prompt" (", always thinks" when thinking cannot be turned off), or why the backend has no route for it. */
+/** The model list's tag for `model`: "ready", "chat prompt" (", cannot turn thinking off" when it cannot be turned off), or why the backend has no route for it. */
 export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkingMandatory = false): string {
   const p = planFor(cfg, model, s);
   if ('why' in p) return noRouteText(p.why, cfg.fimMode, cfg.kind);
   if (p.route !== 'chat') return 'ready';
-  return p.cannotDisable || thinkingMandatory ? 'chat prompt, always thinks' : 'chat prompt';
+  return p.cannotDisable || thinkingMandatory ? 'chat prompt, cannot turn thinking off' : 'chat prompt';
 }
 
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
@@ -56,7 +56,7 @@ function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings
     // Mistral's FIM endpoint serves Codestral models only: a template cannot help there.
     return cfg.kind === 'mistral' ? `This model cannot complete through Mistral's FIM endpoint; ${noRouteFix(false, cfg.kind)}` : 'No completion template for this model';
   }
-  return p.route === 'chat' && p.cannotDisable ? 'This model cannot turn thinking off' : undefined;
+  return p.route === 'chat' && p.cannotDisable ? 'This model cannot turn thinking off; completions are disabled' : undefined;
 }
 
 export function buildPageState(i: PageInputs): PageState {

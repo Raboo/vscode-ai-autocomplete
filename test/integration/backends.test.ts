@@ -197,22 +197,21 @@ suite('Backends page', () => {
     }
   });
 
-  test('testForm on Strata runs the chat route and reports thinking', async () => {
-    const strata = await startMockServer({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['hm'] } });
+  test('testForm on a chat model that keeps thinking fails and the probe names a working switch', async () => {
+    // The mock reasons unless the body has reasoning_effort "none"; the generic flavor sends it only with that switch.
+    const strata = await startMockServer({ alias: 'qwen3.8-flash-next-iq3_s', chat: { reasoning: ['hm'], reasoningUnlessBody: { reasoning_effort: 'none' } } });
     try {
       const panel = await open();
-      const form = await draft(panel, { type: 'strata', baseUrl: `${strata.baseUrl}/v1` });
+      const form = await draft(panel, { type: 'other', baseUrl: `${strata.baseUrl}/v1`, changed: { fimMode: 'chat', thinking: 'templateKwarg:enable_thinking' } });
 
       await panel.handle({ type: 'testForm', form });
-      assert.ok(await waitFor(() => panel.lastState()?.edit?.testing === false, 15_000), 'the test did not finish');
+      assert.ok(await waitFor(() => panel.lastState()?.edit?.testing === false, 30_000), 'the test did not finish');
 
       const steps = panel.lastState()!.edit!.test ?? [];
-      const by = (id: string) => steps.find((s) => s.id === id);
-      assert.equal(by('model')?.state, 'ok', JSON.stringify(steps));
-      assert.equal(by('model')?.text, 'Model qwen3.8-flash-next-iq3_s (chat prompt)');
-      assert.equal(by('completion')?.state, 'ok', JSON.stringify(steps));
-      assert.equal(by('thinking')?.state, 'warn', JSON.stringify(steps));
-      assert.ok(steps.every((s) => s.state === 'ok' || s.state === 'warn'), JSON.stringify(steps));
+      assert.deepEqual(steps.map((s) => [s.id, s.state]), [['reach', 'ok'], ['model', 'ok'], ['thinking', 'fail']], JSON.stringify(steps));
+      assert.equal(steps[1]!.text, 'Model qwen3.8-flash-next-iq3_s (chat prompt)');
+      assert.equal(steps[2]!.text, 'qwen3.8-flash-next-iq3_s keeps thinking with the "enable_thinking: false (Qwen3, GLM, Gemma 4, Nemotron 3)" switch');
+      assert.equal(steps[2]!.hint, 'choose "reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)" as the Thinking switch');
     } finally {
       await strata.close();
     }

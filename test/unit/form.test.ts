@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldViews, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
+import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
@@ -144,6 +144,19 @@ describe('form model', () => {
     expect(view(on, 'template').disabledReason).toBe('the chat prompt does not use a template');
   });
 
+  test('the Thinking field carries readable labels', () => {
+    const v = view(fieldViews(or(), 'z-ai/glm-5', settings(), []), 'thinking');
+    expect(v.options).toContain('reasoningEffortNone');
+    expect(v.optionLabels!.reasoningEffortNone).toBe(THINKING_LABELS.reasoningEffortNone);
+    expect(THINKING_LABELS.reasoningEffortNone).toBe('reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)');
+    expect(Object.keys(v.optionLabels!).sort()).toEqual([...v.options!].sort());
+    expect(view(fieldViews(form(), 'qwen2.5-coder-7b', settings(), []), 'template').optionLabels).toBeUndefined();
+  });
+
+  test('the chat route shows the 5 s deadline', () => {
+    expect(view(fieldViews(or({ changed: { fimMode: 'chat' } }), 'z-ai/glm-5', settings(), []), 'timeoutMs').value).toBe('5000');
+  });
+
   test('chat route: Stop shows the chat list, Timeout is the one deadline, and the stop warning counts them', () => {
     const vs = fieldViews(or(), 'z-ai/glm-5', settings(), []);
     expect(view(vs, 'timeoutMs').value).toBe('5000');
@@ -164,9 +177,9 @@ describe('form model', () => {
   });
 
   test('formWarnings flags a chat model that cannot turn thinking off', () => {
-    expect(formWarnings(or(), 'gpt-oss-20b', settings())).toContain('gpt-oss-20b cannot turn thinking off, so completions will be slow');
+    expect(formWarnings(or(), 'gpt-oss-20b', settings())).toContain('gpt-oss-20b cannot turn thinking off; completions are disabled');
     expect(formWarnings(or(), 'z-ai/glm-5', settings())).toEqual([]);
-    expect(formWarnings(or({ changed: { fimMode: 'chat', thinking: 'cannotDisable' } }), 'z-ai/glm-5', settings())).toContain('z-ai/glm-5 cannot turn thinking off, so completions will be slow');
+    expect(formWarnings(or({ changed: { fimMode: 'chat', thinking: 'cannotDisable' } }), 'z-ai/glm-5', settings())).toContain('z-ai/glm-5 cannot turn thinking off; completions are disabled');
   });
 
   test('fieldViews shows a changed field with its default in the hint', () => {

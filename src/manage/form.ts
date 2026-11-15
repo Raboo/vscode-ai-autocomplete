@@ -4,6 +4,7 @@ import { resolveFim, templateMismatch, type ValueSource } from '../completion/ef
 import { chatStops, planRoute } from '../completion/route';
 import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
+import { THINKING_LABELS } from '../models/thinking';
 import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
 import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
 import { SERVER_TYPES, serverTypeOf, suggestId } from './serverTypes';
@@ -11,6 +12,7 @@ import { SERVER_TYPES, serverTypeOf, suggestId } from './serverTypes';
 const FIM_MODES: string[] = [...FIM_MODE_LIST];
 const MULTILINE: string[] = [...MULTILINE_LIST];
 const THINKING: string[] = [...THINKING_STRATEGIES];
+export { THINKING_LABELS };
 
 export interface FieldError { field: ErrorField; message: string }
 
@@ -262,6 +264,7 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
     return {
       field, label: LABELS[field], value: text ?? d.text, isDefault: text === undefined, hint,
       ...(options[field] ? { options: options[field] } : {}),
+      ...(field === 'thinking' ? { optionLabels: { ...THINKING_LABELS } } : {}),
       ...(disabled[field] ? { disabledReason: disabled[field] } : {}),
       ...(error ? { error } : {}),
     };
@@ -282,7 +285,7 @@ export function formWarnings(f: BackendForm, model: string | undefined, s: Setti
   if (mismatch && model !== undefined && route !== 'native' && route !== 'chat') {
     out.push(`${model}'s own template is ${mismatch.own}; reset Template unless you mean to override it`);
   }
-  if (route === 'chat' && model !== undefined && values.thinking === 'cannotDisable') out.push(`${model} cannot turn thinking off, so completions will be slow`);
+  if (route === 'chat' && model !== undefined && values.thinking === 'cannotDisable') out.push(`${model} cannot turn thinking off; completions are disabled`);
   return out;
 }
 

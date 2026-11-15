@@ -5,6 +5,19 @@ import type { HostFlavor, ThinkingStrategy } from '../types';
 /** Every top-level request field `thinkingFields` can set. On a 400/422 the chat retry drops those the body names, or all of them when it names none. */
 export const THINKING_FIELDS: readonly string[] = ['chat_template_kwargs', 'reasoning_effort', 'reasoning', 'thinking'];
 
+/** What the Backends page and the logs call each strategy. */
+export const THINKING_LABELS: Record<ThinkingStrategy, string> = {
+  none: "Model doesn't think (send nothing)",
+  'templateKwarg:enable_thinking': 'enable_thinking: false (Qwen3, GLM, Gemma 4, Nemotron 3)',
+  'templateKwarg:thinking': 'thinking: false (DeepSeek V3.1/V3.2, Kimi K2.5, Granite 3.3)',
+  'templateKwarg:thinking_mode=disabled': 'thinking_mode: disabled (MiniMax M3)',
+  'templateKwarg:thinking_budget=0': 'thinking_budget: 0 (Seed-OSS)',
+  reasoningEffortNone: 'reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)',
+  'systemSoftSwitch:/no_think': '/no_think in the system prompt (Nemotron Nano v2, early Qwen3)',
+  vendorThinkingDisabled: 'thinking: {type: disabled} (DeepSeek, Z.ai, Moonshot APIs)',
+  cannotDisable: "Can't be turned off (completions disabled)",
+};
+
 export interface ThinkingFields { body: Record<string, unknown>; systemSuffix?: string }
 
 const STRATA_BODY = { reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } };

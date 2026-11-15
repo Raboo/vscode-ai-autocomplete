@@ -22,7 +22,7 @@ export type StepId = 'reach' | 'model' | 'completion' | 'thinking' | 'context';
 export interface TestStep { id: StepId; state: 'ok' | 'warn' | 'fail'; text: string; hint?: string; ms?: number }
 export interface FieldView {
   field: FormField; label: string; value: string; isDefault: boolean; hint: string;
-  options?: string[]; disabledReason?: string; error?: string;
+  options?: string[]; /** value → label, for the option text when the value is not readable. */ optionLabels?: Record<string, string>; disabledReason?: string; error?: string;
 }
 export type Dot = 'grey' | 'green' | 'yellow' | 'red' | 'lock';
 export interface CardView {
@@ -31,7 +31,7 @@ export interface CardView {
 }
 export interface EditView {
   cardId: string | null; form: BackendForm; keyMode: 'no' | 'optional' | 'yes'; keyStored: boolean; fields: FieldView[];
-  /** `tag` is "ready", "chat prompt" (with ", always thinks" for a model that cannot turn thinking off), or why the backend has no route for that model. */
+  /** `tag` is "ready", "chat prompt" (with ", cannot turn thinking off" for a model that cannot do so), or why the backend has no route for that model. */
   models?: { id: string; tag: string }[]; modelsError?: string; errors: { field: ErrorField; message: string }[]; warnings: string[];
   testing: boolean; test?: TestStep[];
 }

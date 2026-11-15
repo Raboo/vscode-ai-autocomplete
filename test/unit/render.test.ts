@@ -64,6 +64,15 @@ describe('backends page render', () => {
     expect(renderPage(state({ edit: edit() }), ui({ advancedOpen: true }))).toMatch(/<details[^>]*id="advanced"[^>]*\sopen/);
   });
 
+  test('select options use optionLabels and escape them', () => {
+    const evil = '<b>x</b>';
+    const html = renderPage(state({ edit: edit({ fields: FIELDS.map((f) => field(f, f === 'thinking' ? { options: ['none', 'cannotDisable'], optionLabels: { none: 'Readable none', cannotDisable: evil } } : {})) }) }), ui());
+    const sel = fieldHtml(html, 'thinking');
+    expect(sel).toContain('<option value="none" selected>Readable none</option>');
+    expect(sel).toContain('<option value="cannotDisable">&lt;b&gt;x&lt;/b&gt;</option>');
+    expect(sel).not.toContain('<b>');
+  });
+
   test('the thinking control has id f-thinking in the Prompt section', () => {
     const html = renderPage(state({ edit: edit() }), ui());
     expect(count(html, 'id="f-thinking"')).toBe(1);

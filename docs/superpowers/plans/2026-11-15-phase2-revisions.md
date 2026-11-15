@@ -171,7 +171,7 @@
   - `formWarnings` uses `<model> cannot turn thinking off; completions are disabled`.
   - Timeout shows `values.timeoutMs` on every route.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   // connectionTest.test.ts
   test('a cannotDisable model fails at the model step', () => { /* chat family with thinking cannotDisable → model fail 'Model x cannot turn thinking off'; no completion step */ });
@@ -189,13 +189,13 @@
   test('select options use optionLabels and escape them', () => {});
   // pageState.test.ts: the tag and warning texts above.
   ```
-- [ ] **Step 2: Run** the focused tests. Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Rewrite the integration test** `testForm on Strata runs the chat route and reports thinking`:
+- [x] **Step 2: Run** the focused tests. Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Rewrite the integration test** `testForm on Strata runs the chat route and reports thinking`:
   - the mock answers with reasoning unless the body has `reasoning_effort: 'none'`;
   - the steps are reach ok, model ok, then thinking fail with the probe hint naming `reasoning_effort: none`.
-- [ ] **Step 5: Run the full check and** `npm run test:integration`. Expected: PASS.
-- [ ] **Step 6: Commit.** `feat: the connection test fails thinking models and suggests a thinking switch`.
+- [x] **Step 5: Run the full check and** `npm run test:integration`. Expected: PASS.
+- [x] **Step 6: Commit.** `feat: the connection test fails thinking models and suggests a thinking switch`.
 
 ### Task 3: Prompt-cache-friendly context
 

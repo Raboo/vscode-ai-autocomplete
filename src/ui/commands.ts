@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
 import { readSettings } from '../config/vscodeSettings';
@@ -121,5 +124,29 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       d.status.setStats(accepted);
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),
+    reg('enableNativeNextEdit', async () => {
+      const manual = async () => {
+        await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
+        void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
+      };
+      const path = argvPath(vscode.env.appName, homedir(), process.env);
+      if (!path) return manual();
+      try {
+        const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT') return '';
+          throw err;
+        });
+        const next = withProposedApiOptIn(text, EXTENSION_ID);
+        if (next === undefined) {
+          void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI is already enabled. If Next Edit still shows only ghost text, quit and reopen VS Code.');
+          return;
+        }
+        await writeFile(path, next, 'utf8');
+        void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI enabled. Quit and reopen VS Code to finish.');
+      } catch (err) {
+        d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);
+        return manual();
+      }
+    }),
   ];
 }

@@ -358,6 +358,7 @@ export class NextEditController implements vscode.Disposable {
       }
       if (result.show.kind === 'edit' && !this.native) {
         log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
+        this.offerNativeUi();
         return;
       }
       this.result = result;
@@ -369,6 +370,16 @@ export class NextEditController implements vscode.Disposable {
     } finally {
       if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
     }
+  }
+
+  private offeredNative = false;
+
+  private offerNativeUi(): void {
+    if (this.offeredNative) return;
+    this.offeredNative = true;
+    void vscode.window
+      .showInformationMessage('AI Autocomplete has a Next Edit suggestion that needs VS Code\'s inline-edit UI.', 'Enable', 'Not now')
+      .then((pick) => (pick === 'Enable' ? vscode.commands.executeCommand('aiAutocomplete.enableNativeNextEdit') : undefined));
   }
 
   private failed(err: unknown, backend: FimBackend, model: string | undefined, timeoutMs: number, logPrompts: boolean): void {

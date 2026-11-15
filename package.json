@@ -230,6 +230,26 @@
           "scope": "resource",
           "markdownDescription": "Enable inline fill-in-the-middle completions."
         },
+        "aiAutocomplete.nextEdit.enabled": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Show Next Edit suggestions when a Next Edit backend is chosen."
+        },
+        "aiAutocomplete.nextEdit.backend": {
+          "type": "string",
+          "scope": "resource",
+          "default": "",
+          "description": "Backend for Next Edit suggestions (an id from aiAutocomplete.backends). Empty: Next Edit is off."
+        },
+        "aiAutocomplete.nextEdit.timeoutMs": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 500,
+          "maximum": 60000,
+          "default": 10000,
+          "description": "Deadline for one Next Edit request."
+        },
         "aiAutocomplete.fim.backend": {
           "type": "string",
           "scope": "resource",

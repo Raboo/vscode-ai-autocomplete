@@ -1,3 +1,4 @@
+import { DEFAULT_NEXT_EDIT_TIMEOUT_MS } from '../completion/effective';
 import { TEMPLATES } from '../models/templates';
 import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
 
@@ -7,6 +8,7 @@ export interface Settings {
     enabled: boolean; backendId?: string; debounceMs: number | null; multiline: Multiline; maxTokens: number;
     prefixLines: number; suffixLines: number; extraContext: boolean; disableInLanguages: string[]; disableInFiles: string[]; skipMidWord: boolean;
   };
+  nextEdit: { enabled: boolean; backendId?: string; timeoutMs: number };
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
@@ -238,6 +240,18 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     else problems.push(`aiAutocomplete.fim.backend: no backend with id "${requested}"${backendId ? `, using "${backendId}"` : ''}`);
   }
 
+  // Unlike fim.backend, no fallback: Next Edit stays off until a backend is chosen.
+  const nextEditRequested = resource<unknown>('nextEdit.backend', undefined);
+  let nextEditBackendId: string | undefined;
+  if (typeof nextEditRequested === 'string' && nextEditRequested !== '') {
+    if (backends.some((b) => b.id === nextEditRequested)) nextEditBackendId = nextEditRequested;
+    else problems.push(`aiAutocomplete.nextEdit.backend: no backend with id "${nextEditRequested}"; Next Edit is off`);
+  }
+  const nextEditTimeout = resource<unknown>('nextEdit.timeoutMs', DEFAULT_NEXT_EDIT_TIMEOUT_MS);
+  const tl = FIM_LIMITS.timeoutMs;
+  const nextEditTimeoutOk = typeof nextEditTimeout === 'number' && Number.isInteger(nextEditTimeout) && nextEditTimeout >= tl.min && nextEditTimeout <= (tl.max as number);
+  if (!nextEditTimeoutOk && nextEditTimeout !== DEFAULT_NEXT_EDIT_TIMEOUT_MS) problems.push(`aiAutocomplete.nextEdit.timeoutMs: expected ${limitText(tl)}, ignored`);
+
   const multiline = resource<string>('fim.multiline', 'auto');
   const num = (key: string, d: number): number => {
     const v = resource<unknown>(key, d);
@@ -263,6 +277,11 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       disableInLanguages: strs('fim.disableInLanguages', ['plaintext']),
       disableInFiles: unionStrs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
       skipMidWord: resource('fim.skipMidWord', true),
+    },
+    nextEdit: {
+      enabled: resource('nextEdit.enabled', true),
+      ...(nextEditBackendId !== undefined ? { backendId: nextEditBackendId } : {}),
+      timeoutMs: nextEditTimeoutOk ? nextEditTimeout : DEFAULT_NEXT_EDIT_TIMEOUT_MS,
     },
     privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,

@@ -38,6 +38,12 @@ export async function useBackend(id: string): Promise<void> {
   await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
 }
 
+/** Selects the Next Edit backend ("" turns Next Edit off), in the same place `useBackend` writes. */
+async function useNextEditBackend(id: string): Promise<void> {
+  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
+}
+
 /** The command argument as OpenOptions; anything else opens the page as it is. */
 function openOptions(arg: unknown): OpenOptions {
   if (typeof arg !== 'object' || arg === null) return {};
@@ -63,7 +69,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length);
+      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length, readSettings().settings.nextEdit.backendId);
       const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
@@ -95,6 +101,21 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('selectBackend', async () => {
       const id = await pickBackend('Select the completion backend');
       if (id) await useBackend(id);
+    }),
+    reg('selectNextEditBackend', async () => {
+      const ids = readSettings().settings.backends.map((b) => b.id);
+      if (ids.length === 0) {
+        void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
+        return;
+      }
+      const OFF = 'Off';
+      const current = readSettings().settings.nextEdit.backendId;
+      const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+        [...ids.map((id) => ({ label: id, ...(id === current ? { description: 'current' } : {}) })), { label: OFF, ...(current === undefined ? { description: 'current' } : {}) }],
+        { placeHolder: 'Select the Next Edit backend' },
+      );
+      if (!pick) return;
+      await useNextEditBackend(pick.label === OFF ? '' : pick.label);
     }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
     reg('setApiKey', async () => {

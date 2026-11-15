@@ -14,6 +14,8 @@ export interface BackendForm {
   baseUrl: string;
   /** '' = auto-detect. */
   model: string;
+  /** '' = the completion model. */
+  nextEditModel: string;
   /** Text as typed; a checkbox is 'true' or 'false'. */
   changed: Partial<Record<FormField, string>>;
 }

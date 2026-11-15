@@ -140,6 +140,7 @@ function commit(el: Control): void {
   else if (el.id === 'f-id') next.id = text;
   else if (el.id === 'f-url') next.baseUrl = text;
   else if (el.id === 'f-model') next.model = text;
+  else if (el.id === 'f-nextEditModel') next.nextEditModel = text;
   else if (el.id.startsWith('f-') && FIELDS.has(el.id.slice(2))) {
     const field = el.id.slice(2) as FormField;
     if (text.trim() === '') delete next.changed[field];

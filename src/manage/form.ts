@@ -46,7 +46,7 @@ export function knownChanged(changed: Record<string, unknown>): BackendForm['cha
 
 export function newForm(type: ServerTypeId, taken: readonly string[]): BackendForm {
   const t = typeInfo(type);
-  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', changed: {} };
+  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', changed: {} };
 }
 
 /**
@@ -83,7 +83,8 @@ export function entryToForm(raw: Record<string, unknown>): BackendForm {
     if (hs.length > 0) changed.headers = hs.join('\n');
   }
   return { ...(id ? { originalId: id } : {}), type: serverTypeOf({ kind, ...(flavor ? { hostFlavor: flavor } : {}), baseUrl }), id, baseUrl,
-    model: typeof raw.fimModel === 'string' ? raw.fimModel : '', changed };
+    model: typeof raw.fimModel === 'string' ? raw.fimModel : '',
+    nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', changed };
 }
 
 function parseHeaders(text: string): { headers: Record<string, string>; bad: boolean } {
@@ -164,6 +165,8 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
   out.baseUrl = f.baseUrl.trim();
   if (f.model.trim() !== '') out.fimModel = f.model.trim();
   else delete out.fimModel;
+  if (f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
+  else delete out.nextEditModel;
 
   const fim: Record<string, unknown> = isObj(original?.fim) ? { ...original.fim } : {};
   for (const k of FIM_KEYS) delete fim[k];

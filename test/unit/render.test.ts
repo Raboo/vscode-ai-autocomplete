@@ -15,7 +15,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   id: 'local', typeLabel: 'llama.cpp', baseUrl: 'http://127.0.0.1:8012', modelDetected: false, inUse: false, keyStored: false, dot: 'grey', ...over,
 });
 const edit = (over: Partial<EditView> = {}): EditView => ({
-  cardId: 'lm', form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {} },
+  cardId: 'lm', form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} },
   keyMode: 'optional', keyStored: false, fields: FIELDS.map((f) => field(f)), errors: [], warnings: [], testing: false, ...over,
 });
 const state = (over: Partial<PageState> = {}): PageState => ({
@@ -42,7 +42,7 @@ describe('backends page render', () => {
     const step: TestStep = { id: 'reach', state: 'fail', text: evil, hint: evil, ms: 3 };
     const html = renderPage(state({
       cards: [card({ model: evil, test: [step], warning: evil }), card({ id: 'lm', typeLabel: evil, baseUrl: evil })],
-      edit: edit({ form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: evil, model: evil, changed: { temperature: evil } },
+      edit: edit({ form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: evil, model: evil, nextEditModel: evil, changed: { temperature: evil } },
         models: [{ id: evil, tag: 'ready' }, { id: `${evil}2`, tag: evil }], modelsError: evil, test: [step], warnings: [evil],
         errors: [{ field: 'id', message: evil }],
         fields: FIELDS.map((f) => field(f, f === 'temperature' ? { value: evil, isDefault: false, hint: evil, error: evil } : f === 'template' ? { options: [evil] } : {})) }),
@@ -56,7 +56,7 @@ describe('backends page render', () => {
 
   test('every form control has a stable id', () => {
     const html = renderPage(state({ edit: edit() }), ui());
-    for (const id of [...FIELDS.map((f) => `f-${f}`), 'f-id', 'f-type', 'f-url', 'f-model', 'f-key']) {
+    for (const id of [...FIELDS.map((f) => `f-${f}`), 'f-id', 'f-type', 'f-url', 'f-model', 'f-nextEditModel', 'f-key']) {
       expect(count(html, `id="${id}"`), id).toBe(1);
     }
     // the Advanced fields stay in the DOM while the section is collapsed
@@ -165,6 +165,14 @@ describe('backends page render', () => {
     expect(testing).toMatch(/<button[^>]*data-action="save"[^>]*\sdisabled/);
   });
 
+  test('the card shows a Next Edit model field whose placeholder is the completion model', () => {
+    const html = renderPage(state({ edit: edit({ form: { ...edit().form, model: 'qwen3.8', nextEditModel: 'edit-1' } }) }), ui());
+    expect(html).toMatch(/<input[^>]*id="f-nextEditModel"[^>]*value="edit-1"[^>]*list="f-model-list"[^>]*placeholder="same as the completion model \(qwen3\.8\)"/);
+    const evil = renderPage(state({ edit: edit({ form: { ...edit().form, model: '"><b>x', nextEditModel: '"><i>y' } }) }), ui());
+    expect(evil).not.toContain('<b>x');
+    expect(evil).not.toContain('<i>y');
+  });
+
   test('model combo box lists the server models with their tags', () => {
     const html = renderPage(state({ edit: edit({ models: [{ id: 'qwen2.5-coder', tag: 'ready' }, { id: 'zeta', tag: 'no completion template' }] }) }), ui());
     expect(html).toMatch(/<input[^>]*id="f-model"[^>]*list="f-model-list"/);
@@ -175,14 +183,14 @@ describe('backends page render', () => {
 
   test('markup has no inline styles or event handlers (the page CSP forbids them)', () => {
     const html = renderPage(state({ cards: [card({ inUse: true, keyStored: true, warning: 'w', dot: 'lock', test: [{ id: 'reach', state: 'ok', text: 'ok' }] })],
-      edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', changed: {} }, warnings: ['w'] }) }), ui());
+      edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', changed: {} }, warnings: ['w'] }) }), ui());
     expect(html).not.toMatch(/\sstyle=/i);
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).not.toContain('<script');
   });
 
   test('a new backend renders its form on a new card', () => {
-    const html = renderPage(state({ edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', changed: {} } }) }), ui());
+    const html = renderPage(state({ edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', changed: {} } }) }), ui());
     expect(count(html, 'id="f-id"')).toBe(1);
     expect(html).toContain('value="lmstudio"');
     // both saved cards stay collapsed, and a new card offers no Remove

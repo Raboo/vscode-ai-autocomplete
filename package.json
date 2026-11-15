@@ -375,6 +375,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.selectNextEditBackend",
+        "title": "Select Next Edit Backend",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.manageBackends",
         "title": "Manage Backends",
         "category": "AI Autocomplete"

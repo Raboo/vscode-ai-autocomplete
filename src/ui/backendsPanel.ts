@@ -46,7 +46,7 @@ function asForm(v: unknown): BackendForm | undefined {
   if (!isObj(v) || typeof v.type !== 'string' || !TYPES.has(v.type) || typeof v.id !== 'string' || typeof v.baseUrl !== 'string'
     || typeof v.model !== 'string' || !isObj(v.changed)) return undefined;
   return { ...(typeof v.originalId === 'string' ? { originalId: v.originalId } : {}), type: v.type as ServerTypeId, id: v.id, baseUrl: v.baseUrl, model: v.model,
-    changed: knownChanged(v.changed) };
+    nextEditModel: typeof v.nextEditModel === 'string' ? v.nextEditModel : '', changed: knownChanged(v.changed) };
 }
 
 function pageHtml(w: vscode.Webview, extensionUri: vscode.Uri): string {

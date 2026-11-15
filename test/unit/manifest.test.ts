@@ -19,7 +19,7 @@ test('webview bundle is built and packaged', () => {
 });
 test('commands are categorised and the accepted commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
-  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
+  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
   expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
   expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
   expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.nextEditAccepted', when: 'false' });

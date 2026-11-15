@@ -995,7 +995,7 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
 
 **Fold-in:** test 1's fixed `await sleep(300)` before `commit()` becomes a poll. A helper `commitWhen(editor, cond)` retries `commit()` every 50 ms until the text matches or 5 s pass. This is the follow-up "Integration test 1 waits a fixed 300 ms".
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   ```ts
   // fim.test.ts
   test('ghost text from a chat model on Strata, thinking off', async () => {
@@ -1028,9 +1028,9 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
     // → steps reach ok, model ok 'Model qwen3.8-flash-next-iq3_s (chat prompt)', completion ok, thinking warn
   });
   ```
-- [ ] **Step 2: Run** `npm run test:integration`. Expected: the new tests pass. If one fails, the defect is in Tasks 3–9: fix it there in this task's commit, and say so in the report.
-- [ ] **Step 3: Run the full check.** Expected: PASS.
-- [ ] **Step 4: Commit.** `test: chat route integration tests`.
+- [x] **Step 2: Run** `npm run test:integration`. Expected: the new tests pass. If one fails, the defect is in Tasks 3–9: fix it there in this task's commit, and say so in the report.
+- [x] **Step 3: Run the full check.** Expected: PASS.
+- [x] **Step 4: Commit.** `test: chat route integration tests`.
 
 ### Task 11: Docs and handoff
 

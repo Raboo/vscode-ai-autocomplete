@@ -320,7 +320,7 @@ current_file_path: {path}
 
 `stableChars` is the user-message character count, in code points as for `stableUserChars`, up to the start of the line `PIN_BACK_LINES` lines above `<|code_to_edit|>` inside the current-file block. It is 0 when that line is the block's first line.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `the user message has the blocks in order`: with snippets, history and a 30-line file, the indexes of `<|recently_viewed_code_snippets|>`, `<|current_file_content|>`, `<|edit_diff_history|>` and the last `<|code_to_edit|>` increase.
 - `empty history and snippets leave their blocks out`.
@@ -338,21 +338,21 @@ current_file_path: {path}
 - `parse ignores text after the closing fence`.
 - `chatXtabDone is true after the closing fence or a no-change answer, false mid-fence`.
 
-- [ ] **Step 2: Run it and see it fail**
+- [x] **Step 2: Run it and see it fail**
 
 Run: `npx vitest run test/unit/nextEdit/chatXtab.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement** `chatXtabMessages`, `parseChatXtab` and `chatXtabDone`.
+- [x] **Step 3: Implement** `chatXtabMessages`, `parseChatXtab` and `chatXtabDone`.
 
 The opening fence is the first line starting with ```` ``` ````. The closing fence is the next line that is ```` ``` ```` after optional whitespace. Body lines are everything between, split on `\r?\n`.
 
-- [ ] **Step 4: Run it and see it pass**
+- [x] **Step 4: Run it and see it pass**
 
 Run: `npx vitest run test/unit/nextEdit/chatXtab.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/nextEdit/formats/chatXtab.ts test/unit/nextEdit/chatXtab.test.ts

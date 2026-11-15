@@ -216,7 +216,7 @@ These ideas come from Twinny (MIT), `src/extension/utils.ts` `prefixWindowStep` 
   - `pick()` remembers the keys (`path:startLine`) it returned last time. Those that are still eligible and fit come first, in the same order. New chunks are appended newest-last, while the budget lasts;
   - the result keeps that order instead of being re-sorted.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   test('the window start moves in steps', () => { /* prefixLines 8 (step 2): cursor lines 20 and 21 → same startLine 12; line 22 → 14 */ });
   test('stepped window respects the char cap', () => {});
@@ -226,10 +226,10 @@ These ideas come from Twinny (MIT), `src/extension/utils.ts` `prefixWindowStep` 
   test('pick keeps earlier picks in order when the budget shrinks', () => {});
   ```
   Then update the existing `context.test.ts` window assertions that assumed `startLine = cursorLine - prefixLines`.
-- [ ] **Step 2: Run** `npx vitest run test/unit/context.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run the full check and** `npm run test:integration`. Expected: PASS.
-- [ ] **Step 5: Commit.** `perf: keep the prompt start stable for server prompt caches`.
+- [x] **Step 2: Run** `npx vitest run test/unit/context.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run the full check and** `npm run test:integration`. Expected: PASS.
+- [x] **Step 5: Commit.** `perf: keep the prompt start stable for server prompt caches`.
 
 ### Task 4: Docs
 

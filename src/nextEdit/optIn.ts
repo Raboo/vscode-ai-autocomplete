@@ -1,4 +1,4 @@
-import { applyEdits, modify, parse } from 'jsonc-parser';
+import { applyEdits, modify, parse, ParseErrorCode, type ParseError } from 'jsonc-parser';
 import { join } from 'node:path';
 
 export const EXTENSION_ID = 'raboo.ai-autocomplete';
@@ -17,9 +17,13 @@ export function argvPath(appName: string, home: string, env: { VSCODE_PORTABLE?:
   return dir ? join(home, dir, 'argv.json') : undefined;
 }
 
-/** The argv.json text with `id` in "enable-proposed-api" (comments kept), or undefined when it is already listed. */
+/** The argv.json text with `id` in "enable-proposed-api" (comments kept), or undefined when it is already listed. Throws when the text is not a JSONC object, so a damaged file is never rewritten. */
 export function withProposedApiOptIn(text: string, id: string): string | undefined {
-  const root = (parse(text, [], { allowTrailingComma: true }) ?? {}) as Record<string, unknown>;
+  const errors: ParseError[] = [];
+  const parsed: unknown = parse(text, errors, { allowTrailingComma: true });
+  if (errors.some((e) => e.error !== ParseErrorCode.ValueExpected || parsed !== undefined)) throw new Error('argv.json does not parse');
+  if (parsed !== undefined && (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))) throw new Error('argv.json is not an object');
+  const root = (parsed ?? {}) as Record<string, unknown>;
   const current = root['enable-proposed-api'];
   const list = Array.isArray(current) ? current : [];
   if (list.includes(id)) return undefined;

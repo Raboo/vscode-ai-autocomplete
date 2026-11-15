@@ -379,7 +379,8 @@ export class NextEditController implements vscode.Disposable {
     this.offeredNative = true;
     void vscode.window
       .showInformationMessage('AI Autocomplete has a Next Edit suggestion that needs VS Code\'s inline-edit UI.', 'Enable', 'Not now')
-      .then((pick) => (pick === 'Enable' ? vscode.commands.executeCommand('aiAutocomplete.enableNativeNextEdit') : undefined));
+      .then((pick) => (pick === 'Enable' ? vscode.commands.executeCommand('aiAutocomplete.enableNativeNextEdit') : undefined))
+      .then(undefined, (err: unknown) => this.d.log.debug(`next edit: native UI notice failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
   private failed(err: unknown, backend: FimBackend, model: string | undefined, timeoutMs: number, logPrompts: boolean): void {

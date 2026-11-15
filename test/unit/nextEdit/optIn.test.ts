@@ -32,3 +32,18 @@ test('an empty file gets an object', () => {
   const out = withProposedApiOptIn('', EXTENSION_ID)!;
   expect(JSON.parse(out)).toEqual({ 'enable-proposed-api': ['raboo.ai-autocomplete'] });
 });
+
+test('malformed text throws instead of being edited', () => {
+  expect(() => withProposedApiOptIn('{ "a": 1, "b": ', EXTENSION_ID)).toThrow();
+  expect(() => withProposedApiOptIn('{ "a": 1 "b": 2 }', EXTENSION_ID)).toThrow();
+  expect(() => withProposedApiOptIn('[1, 2]', EXTENSION_ID)).toThrow();
+});
+
+test('trailing commas and comments-only files are accepted', () => {
+  const out = withProposedApiOptIn('{\n  // keep\n  "a": 1,\n}\n', EXTENSION_ID)!;
+  expect(out).toContain('// keep');
+  expect(out).toContain(EXTENSION_ID);
+  const only = withProposedApiOptIn('// just a comment\n', EXTENSION_ID)!;
+  expect(only).toContain('// just a comment');
+  expect(only).toContain(EXTENSION_ID);
+});

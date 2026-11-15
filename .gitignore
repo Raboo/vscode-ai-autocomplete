@@ -8,3 +8,7 @@ out/
 *.swp
 *.swo
 *~
+
+# Local test credentials (never commit)
+.env
+.env.*

@@ -228,7 +228,7 @@ git commit -m "feat: Next Edit edit history and recent snippets"
   - `export function editableRegion(cursorLine: number, lineCount: number): LineSpan`;
   - `export function clipAroundRegion(lines: string[], region: LineSpan, budgetChars: number): LineSpan`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `region is 5 above and 10 below the cursor`: `editableRegion(20, 100)` is `{ start: 15, end: 30 }`.
 - `region stays inside the file`:
@@ -239,22 +239,22 @@ git commit -m "feat: Next Edit edit history and recent snippets"
 - `clip gives leftover budget from above to below`: region 2–7 near the top of a 100-line file, budget 400, gives `{ start: 0, end: 29 }`.
 - `clip never cuts the region`: a budget smaller than the region returns the region itself.
 
-- [ ] **Step 2: Run it and see it fail**
+- [x] **Step 2: Run it and see it fail**
 
 Run: `npx vitest run test/unit/nextEdit/region.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `editableRegion`: start = max(0, cursor − 5); end = min(lastLine, cursor + 10); when longer than 25 lines, trim from the bottom.
 - `clipAroundRegion`: snap the region outward to whole pages (the first page starts at `floor(start / 10) * 10`, the last ends at `min(lastLine, floor(end / 10) * 10 + 9)`). Each line counts `length + 1` chars. Split the remaining budget: half for pages above, the other half plus whatever above did not use for pages below. Add the nearest page first, and stop on each side at the first page that does not fit.
 
-- [ ] **Step 4: Run it and see it pass**
+- [x] **Step 4: Run it and see it pass**
 
 Run: `npx vitest run test/unit/nextEdit/region.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/nextEdit/region.ts test/unit/nextEdit/region.test.ts

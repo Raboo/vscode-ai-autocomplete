@@ -30,9 +30,24 @@ describe('collectCompletion', () => {
     const fail = { failOnThinking: true };
     test('a reasoning event fails fast with ThinkingError and aborts', async () => {
       const ctl = new AbortController();
-      const chat: ChatEvent[] = [{ type: 'reasoning', text: 'hm' }, content('<COMPLETION>a'), finish()];
-      await expect(collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), ctl, fail)).rejects.toBeInstanceOf(ThinkingError);
+      const pulled: number[] = [];
+      const events: ChatEvent[] = [{ type: 'reasoning', text: 'hm' }, content('<COMPLETION>a'), finish()];
+      const b = { streamChat: async function* () { for (const [i, e] of events.entries()) { pulled.push(i); yield e; } } } as unknown as FimBackend;
+      await expect(collectCompletion(b, chatPlan(), new CompletionAccumulator(opts()), ctl, fail)).rejects.toBeInstanceOf(ThinkingError);
       expect(ctl.signal.aborted).toBe(true);
+      expect(pulled).toEqual([0]); // nothing after the first reasoning event was pulled
+    });
+    test('think tags inside the answer are code, not reasoning', async () => {
+      const chat = [content("<COMPLETION>const CLOSE = '</think>';"), finish()];
+      const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail);
+      expect(r.text).toBe("const CLOSE = '</think>';");
+      const open = [content("<COMPLETION>x = '<think>hi"), finish()];
+      const o = await collectCompletion(backend({ chat: open }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail);
+      expect(o.text).toBe("x = '<think>hi");
+    });
+    test('a closer before the answer fails, even in the same chunk', async () => {
+      const chat = [content('I should add them.</think><COMPLETION>a + b;'), finish()];
+      await expect(collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail)).rejects.toBeInstanceOf(ThinkingError);
     });
     test('an inline think opener with text fails fast', async () => {
       const ctl = new AbortController();

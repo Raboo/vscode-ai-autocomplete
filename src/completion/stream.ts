@@ -1,7 +1,7 @@
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest } from '../backends/types';
-import { ReasoningFilter } from '../models/thinking';
+import { hasThinkCloser, ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
 import type { CompletionAccumulator } from './filters';
-import { HoleFillerAnswer } from './holeFiller';
+import { COMPLETION_OPEN, HoleFillerAnswer } from './holeFiller';
 
 export type PlannedRequest =
   | { route: 'native' | 'template'; req: FimRequest }
@@ -20,7 +20,32 @@ export class ThinkingError extends Error {
 const isTimeout = (err: unknown): boolean => (err as { name?: unknown } | null)?.name === 'TimeoutError';
 
 /** The chat route's parsing state, kept outside the stream loop so a timeout can settle from it. */
-interface ChatState { filter: ReasoningFilter; answer: HoleFillerAnswer }
+interface ChatState {
+  filter: ReasoningFilter;
+  answer: HoleFillerAnswer;
+  /** failOnThinking: think tags after `<COMPLETION>` are answer text, so the answer is read from the raw content. */
+  literal: boolean;
+  raw: string;
+}
+
+/** What the answer extraction reads: the filter's visible text, or in literal mode the raw content from `<COMPLETION>` on. */
+function shown(chat: ChatState): string {
+  const at = chat.literal ? chat.raw.indexOf(COMPLETION_OPEN) : -1;
+  return at >= 0 ? chat.raw.slice(at) : chat.filter.visible;
+}
+
+/**
+ * Inline reasoning in content: only before the answer starts. Before `<COMPLETION>`, a think block with text counts;
+ * while the answer has not started, only a block opened at the very start, or a closer, counts.
+ */
+function inlineThinking(raw: string): boolean {
+  const at = raw.indexOf(COMPLETION_OPEN);
+  const pre = at >= 0 ? raw.slice(0, at) : raw;
+  const f = new ReasoningFilter();
+  f.push(pre);
+  if (at >= 0) f.end();
+  return f.thinking && (at >= 0 || startsWithThinkOpener(pre) || hasThinkCloser(pre));
+}
 
 /**
  * Streams one request into `acc` and returns `acc.text`. FIM routes push chunks as today (postprocess strips a leading reasoning block later).
@@ -40,8 +65,8 @@ export async function collectCompletion(
   let chat: ChatState | undefined;
   try {
     if (p.route === 'chat') {
-      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix) };
-      stopped = await collectChat(backend.streamChat(p.req), chat, acc, ctl, opts.failOnThinking === true);
+      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix), literal: opts.failOnThinking === true, raw: '' };
+      stopped = await collectChat(backend.streamChat(p.req), chat, acc, ctl);
     } else {
       for await (const chunk of backend.streamFim(p.req)) {
         if (acc.push(chunk)) {
@@ -54,7 +79,7 @@ export async function collectCompletion(
   } catch (err) {
     if (!isTimeout(err)) throw err;
     // `acc` may still hold an answer fed before a bare closing tag: settle from what the filter shows now.
-    if (chat) acc.replace(chat.answer.update(chat.filter.visible, false));
+    if (chat) acc.replace(chat.answer.update(shown(chat), false));
     const text = acc.text;
     const nl = text.lastIndexOf('\n');
     if (nl < 0) throw err;
@@ -67,14 +92,15 @@ function seen(chat: ChatState | undefined): { thinking: boolean; visible?: strin
   return chat ? { thinking: chat.filter.thinking, visible: chat.filter.visible } : { thinking: false };
 }
 
-async function collectChat(events: AsyncIterable<ChatEvent>, { filter, answer }: ChatState, acc: CompletionAccumulator, ctl: AbortController, failOnThinking: boolean): Promise<boolean> {
+async function collectChat(events: AsyncIterable<ChatEvent>, chat: ChatState, acc: CompletionAccumulator, ctl: AbortController): Promise<boolean> {
+  const { filter, answer, literal } = chat;
   // Only answers that extend the previous one reach `acc`: a shorter one (visible shrank on a bare closing tag) waits for the end.
   let fed = '';
   let finished = false;
   for await (const ev of events) {
     if (ev.type === 'reasoning') {
       filter.reasoning(ev.text);
-      if (failOnThinking && filter.thinking) return thinkingFound(ctl);
+      if (literal && /\S/.test(ev.text)) return thinkingFound(ctl);
       continue;
     }
     if (ev.type === 'finish') {
@@ -83,8 +109,9 @@ async function collectChat(events: AsyncIterable<ChatEvent>, { filter, answer }:
       break;
     }
     filter.push(ev.text);
-    if (failOnThinking && filter.thinking) return thinkingFound(ctl);
-    const next = answer.update(filter.visible, false);
+    chat.raw += ev.text;
+    if (literal && inlineThinking(chat.raw)) return thinkingFound(ctl);
+    const next = answer.update(shown(chat), false);
     if (!next.startsWith(fed)) continue;
     fed = next;
     if (acc.replace(next)) {
@@ -93,7 +120,7 @@ async function collectChat(events: AsyncIterable<ChatEvent>, { filter, answer }:
     }
   }
   if (!finished) filter.end();
-  return acc.replace(answer.update(filter.visible, true));
+  return acc.replace(answer.update(shown(chat), true));
 }
 
 function thinkingFound(ctl: AbortController): never {

@@ -876,17 +876,17 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
 - `thinking: (n) => status.setThinking(n)`.
 - `notify: (m) => void vscode.window.showWarningMessage(m)`.
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
   ```ts
   test('thinkingNote names the model and the latency', () => {
     expect(thinkingNote('Qwen3.8', 950)).toBe('Qwen3.8 still thinks before answering (last thinking completion 950 ms); choose a model that can turn thinking off');
     expect(thinkingNote(undefined, 10)).toMatch(/^the model still thinks/);
   });
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/statusModel.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the provider, status bar and wiring changes.
-- [ ] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass; the existing integration tests are unchanged.
-- [ ] **Step 5: Commit.** `feat: complete through the chat route with thinking off`.
+- [x] **Step 2: Run** `npx vitest run test/unit/statusModel.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the provider, status bar and wiring changes.
+- [x] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass; the existing integration tests are unchanged.
+- [x] **Step 5: Commit.** `feat: complete through the chat route with thinking off`.
 
 ### Task 9: Connection test and the Backends page
 

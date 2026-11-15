@@ -549,7 +549,7 @@ Why these rows:
 - **No FIM routes** on OpenRouter. `/api/v1/completions` is undocumented (see Global Constraints). Prompt mode `template` or `native` there gets the existing "does not work with this server" message.
 - `contextWindows` and `thinkingMandatory` are built only from entries with a string `id`. `contextWindows` is filled with own keys, so an id like `constructor` is plain data.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   test('detectModel makes no request', () => { /* mock server sees 0 requests */ });
   test('listModels reads ids, context windows and mandatory reasoning', () => {
@@ -566,10 +566,10 @@ Why these rows:
   test('createBackend picks OpenRouterBackend for openrouter.ai and for hostFlavor openrouter', () => {});
   test('routes: chat only', () => {});
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/openrouter.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the backend and the factory change.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: OpenRouter backend`.
+- [x] **Step 2: Run** `npx vitest run test/unit/openrouter.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the backend and the factory change.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: OpenRouter backend`.
 
 ### Task 5: Hole-filler prompt and answer
 

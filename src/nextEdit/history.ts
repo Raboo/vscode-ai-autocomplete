@@ -25,7 +25,10 @@ export function renderDiff(path: string, before: string, after: string): string 
   if (hunks.length === 0) return undefined;
   const out = [`--- ${path}`, `+++ ${path}`];
   for (const h of hunks) {
-    out.push(`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`, ...h.lines);
+    // Standard numbering: an empty range names the line before it.
+    const oldStart = h.oldLines === 0 ? h.oldStart - 1 : h.oldStart;
+    const newStart = h.newLines === 0 ? h.newStart - 1 : h.newStart;
+    out.push(`@@ -${oldStart},${h.oldLines} +${newStart},${h.newLines} @@`, ...h.lines);
   }
   return out.join('\n');
 }

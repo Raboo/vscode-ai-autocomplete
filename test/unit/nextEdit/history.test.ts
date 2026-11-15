@@ -102,6 +102,10 @@ test('renderDiff keeps no-newline markers out of the diff', () => {
   expect(renderDiff('f.py', 'a\nb', 'a\nB')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
   expect(renderDiff('f.py', 'a\nb', 'a\nb\n')).toBeUndefined();
   const d = renderDiff('f.py', 'a\nb\n', 'a\nb\nc') as string;
-  expect(d).toBe('--- f.py\n+++ f.py\n@@ -3,0 +3,1 @@\n+c');
+  expect(d).toBe('--- f.py\n+++ f.py\n@@ -2,0 +3,1 @@\n+c');
   expect(d).not.toContain('\\');
+});
+
+test('renderDiff numbers empty ranges with the line before them', () => {
+  expect(renderDiff('f.py', 'a\nb\nc\nd\n', 'a\nb\nd\n')).toBe('--- f.py\n+++ f.py\n@@ -3,1 +2,0 @@\n-c');
 });

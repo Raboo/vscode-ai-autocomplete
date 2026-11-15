@@ -165,6 +165,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     let planned: PlannedRequest;
     let stop = values.stop;
     let limit = values.timeoutMs; // the timeout the editor's request would use; the test itself waits longer
+    let maxTokens = values.maxTokens;
     if (route === 'chat') {
       const req = buildChatRequest({
         fim: values, flavor: inferHostFlavor(cfg), model, input: { ...SAMPLE, languageId: 'typescript', multiline: false },
@@ -173,6 +174,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix };
       stop = req.stop; // the request's own list, as in the provider
       limit = req.timeoutMs;
+      maxTokens = req.maxTokens; // with the chat overhead and any reasoning allowance
     } else {
       planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
     }
@@ -210,8 +212,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     stageStart = now();
     const window = Object.hasOwn(info.contextWindows, model) ? info.contextWindows[model] : undefined;
     if (window !== undefined) {
-      if (values.contextTokens + values.maxTokens > window) {
-        emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${values.maxTokens} is more than the server's ${window}` }, stageStart);
+      if (values.contextTokens + maxTokens > window) {
+        emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${maxTokens} is more than the server's ${window}` }, stageStart);
       } else {
         emit({ id: 'context', state: 'ok', text: `Server context window: ${window} tokens` }, stageStart);
       }

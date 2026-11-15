@@ -1,6 +1,6 @@
 import { createBackend } from '../backends';
 import { resolveFim } from '../completion/effective';
-import { noRouteText, planRoute, whyNoRoute, type FimRoute, type NoRoute } from '../completion/route';
+import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoRoute } from '../completion/route';
 import { parseBackendEntry, type Settings } from '../config/settings';
 import type { BackendConfig } from '../types';
 import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
@@ -43,7 +43,7 @@ function planFor(cfg: BackendConfig, model: string, s: Settings): { route: FimRo
 /** The model list's tag for `model`: "ready", "chat prompt" (", always thinks" when thinking cannot be turned off), or why the backend has no route for it. */
 export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkingMandatory = false): string {
   const p = planFor(cfg, model, s);
-  if ('why' in p) return noRouteText(p.why, cfg.fimMode);
+  if ('why' in p) return noRouteText(p.why, cfg.fimMode, cfg.kind);
   if (p.route !== 'chat') return 'ready';
   return p.cannotDisable || thinkingMandatory ? 'chat prompt, always thinks' : 'chat prompt';
 }
@@ -51,7 +51,11 @@ export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkin
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
   const p = model ? planFor(cfg, model, s) : undefined;
   if (p === undefined) return undefined;
-  if ('why' in p) return p.why === 'template' ? 'No completion template for this model' : noRouteText(p.why, cfg.fimMode);
+  if ('why' in p) {
+    if (p.why === 'mode') return noRouteText(p.why, cfg.fimMode);
+    // Mistral's FIM endpoint serves Codestral models only: a template cannot help there.
+    return cfg.kind === 'mistral' ? `This model cannot complete through Mistral's FIM endpoint; ${noRouteFix(false, cfg.kind)}` : 'No completion template for this model';
+  }
   return p.route === 'chat' && p.cannotDisable ? 'This model cannot turn thinking off' : undefined;
 }
 

@@ -54,6 +54,14 @@ describe('page state', () => {
     expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
   });
 
+  test('a Mistral chat-family model on kind mistral: the tag and the card say to choose a Codestral model', () => {
+    const cs = { id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {} } as const;
+    expect(modelTag(cs, 'devstral-small-2507', base())).toBe('choose a Codestral model');
+    expect(modelTag(cs, 'codestral-latest', base())).toBe('ready');
+    const card = buildPageState(inputs({ rawBackends: [{ ...cs, fimModel: 'devstral-small-2507' }] })).cards[0]!;
+    expect(card.warning).toBe("This model cannot complete through Mistral's FIM endpoint; choose a Codestral model");
+  });
+
   test('card warnings: chat mode works on LM Studio; Mistral chat mode does not; cannotDisable warns', () => {
     const chat = buildPageState(inputs({ rawBackends: [{ ...lm, fimMode: 'chat' }] }));
     expect(chat.cards[0]!.warning).toBeUndefined();

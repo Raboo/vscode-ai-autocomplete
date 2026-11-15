@@ -328,6 +328,13 @@ describe('explainFailure', () => {
       expect((await run(slow, { now: () => clock.t })).res.steps[2]).toMatchObject({ state: 'ok' });
     });
 
+    test('the context step counts the chat request\'s own max tokens', async () => {
+      const info = { models: ['gpt-oss-20b'], contextWindows: { 'gpt-oss-20b': 5000 } };
+      const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, info, chatEvents: ev('<COMPLETION>a + b;') });
+      const { res } = await run(f);
+      expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 1104 is more than the server's 5000" });
+    });
+
     test('context step ignores inherited keys', async () => {
       // the native route, so the run reaches the context step: an inherited `constructor` is not a window
       const f = fake({ config: { fimModel: 'constructor' }, info: { models: ['constructor'], contextWindows: {} } });

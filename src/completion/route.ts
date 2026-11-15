@@ -51,12 +51,12 @@ export function whyNoRoute(caps: RouteCaps, mode: FimMode): NoRoute {
 }
 
 /** The short text the status bar, the Backends page and the connection test show for a model with no route. */
-export function noRouteText(why: NoRoute, mode: FimMode): string {
+export function noRouteText(why: NoRoute, mode: FimMode, kind?: BackendKind): string {
   switch (why) {
     case 'mode':
       return `prompt mode "${mode}" does not work with this server`;
     case 'template':
-      return 'no completion template';
+      return kind === 'mistral' ? noRouteFix(false, kind) : 'no completion template';
   }
 }
 
@@ -102,7 +102,7 @@ export function explainUnsupported(
     return {
       onceKey,
       log: `model "${model}" cannot complete through Mistral's FIM endpoint: ${noRouteFix(chatPossible, kind)} in AI Autocomplete: Manage Backends`,
-      status: `${backendId}: choose a Codestral model`,
+      status: `${backendId}: ${noRouteText(why, mode, kind)}`,
       action,
     };
   }

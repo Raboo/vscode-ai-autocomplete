@@ -11,7 +11,11 @@ export interface Snippet {
 }
 
 function hunksOf(path: string, before: string, after: string) {
-  const norm = (s: string) => s.replace(/\r\n/g, '\n');
+  // A missing final newline would add "\ No newline at end of file" lines and make a bare final-newline change an edit.
+  const norm = (s: string) => {
+    const n = s.replace(/\r\n/g, '\n');
+    return n.endsWith('\n') ? n : n + '\n';
+  };
   return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0 }).hunks;
 }
 

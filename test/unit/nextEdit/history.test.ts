@@ -97,3 +97,11 @@ test('RecentSnippets.pick skips the excluded path and keeps the newest that fit 
   expect(s.pick('d', 8).map((x) => x.path)).toEqual(['b', 'c']);
   expect(s.pick('', 4).map((x) => x.path)).toEqual(['d']);
 });
+
+test('renderDiff keeps no-newline markers out of the diff', () => {
+  expect(renderDiff('f.py', 'a\nb', 'a\nB')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
+  expect(renderDiff('f.py', 'a\nb', 'a\nb\n')).toBeUndefined();
+  const d = renderDiff('f.py', 'a\nb\n', 'a\nb\nc') as string;
+  expect(d).toBe('--- f.py\n+++ f.py\n@@ -3,0 +3,1 @@\n+c');
+  expect(d).not.toContain('\\');
+});

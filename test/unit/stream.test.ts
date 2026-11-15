@@ -45,6 +45,10 @@ describe('collectCompletion', () => {
       const o = await collectCompletion(backend({ chat: open }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail);
       expect(o.text).toBe("x = '<think>hi");
     });
+    test('unwrapped content with a think tag is code, not reasoning', async () => {
+      const chat = [content("const CLOSE = '</think>';"), finish()];
+      await expect(collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail)).resolves.toBeDefined();
+    });
     test('a closer before the answer fails, even in the same chunk', async () => {
       const chat = [content('I should add them.</think><COMPLETION>a + b;'), finish()];
       await expect(collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail)).rejects.toBeInstanceOf(ThinkingError);

@@ -49,9 +49,8 @@ export function thinkingFields(strategy: ThinkingStrategy, flavor: HostFlavor): 
   return out;
 }
 
-/** Whether `text` starts (after whitespace) with a reasoning opener, and whether it holds a reasoning closer. */
+/** Whether `text` starts (after whitespace) with a reasoning opener. */
 export const startsWithThinkOpener = (text: string): boolean => { const t = text.trimStart(); return BLOCKS.some(([o]) => t.startsWith(o)); };
-export const hasThinkCloser = (text: string): boolean => BLOCKS.some(([, c]) => c !== '<|end|>' && text.includes(c));
 
 interface Tag { text: string; kind: 'open' | 'close' | 'marker'; closer?: string }
 

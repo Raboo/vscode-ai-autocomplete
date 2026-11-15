@@ -1,5 +1,5 @@
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest } from '../backends/types';
-import { hasThinkCloser, ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
+import { ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
 import type { CompletionAccumulator } from './filters';
 import { COMPLETION_OPEN, HoleFillerAnswer } from './holeFiller';
 
@@ -36,7 +36,7 @@ function shown(chat: ChatState): string {
 
 /**
  * Inline reasoning in content: only before the answer starts. Before `<COMPLETION>`, a think block with text counts;
- * while the answer has not started, only a block opened at the very start, or a closer, counts.
+ * with no `<COMPLETION>` (models do answer unwrapped), only a block opened at the very start counts: a bare closer may be code.
  */
 function inlineThinking(raw: string): boolean {
   const at = raw.indexOf(COMPLETION_OPEN);
@@ -44,7 +44,7 @@ function inlineThinking(raw: string): boolean {
   const f = new ReasoningFilter();
   f.push(pre);
   if (at >= 0) f.end();
-  return f.thinking && (at >= 0 || startsWithThinkOpener(pre) || hasThinkCloser(pre));
+  return f.thinking && (at >= 0 || startsWithThinkOpener(pre));
 }
 
 /**

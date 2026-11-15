@@ -235,7 +235,7 @@ These ideas come from Twinny (MIT), `src/extension/utils.ts` `prefixWindowStep` 
 
 **Files:** `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`, `docs/superpowers/specs/2026-11-14-backend-manager-design.md`, `README.md`, `AGENTS.md` (only if a rule changed), `docs/ROADMAP.md`, `docs/superpowers/followups/2026-11-13-phase0-1-review-followups.md`, `docs/superpowers/plans/2026-11-15-phase2-chat-thinking.md` (Publish step 4).
 
-- [ ] **Step 1: Update the docs.**
+- [x] **Step 1: Update the docs.**
   - **Main spec, "Thinking control" and "Sampling presets":**
     - `cannotDisable` models and models that keep thinking fail, with the status texts and the recovery from Task 1. The user's decision of 2026-11-15 replaces the "one-time warning … observed latency" design and the reasoning allowance.
     - One 5 s default deadline, configurable per backend.
@@ -263,11 +263,11 @@ These ideas come from Twinny (MIT), `src/extension/utils.ts` `prefixWindowStep` 
     - bounded LSP definitions and signature help;
     - test chat-wrapped FIM for Qwen3-Coder;
     - Twinny's secret shield for hosted providers.
-- [ ] **Step 2: Update Phase 2 Publish step 4** in `docs/superpowers/plans/2026-11-15-phase2-chat-thinking.md`:
+- [x] **Step 2: Update Phase 2 Publish step 4** in `docs/superpowers/plans/2026-11-15-phase2-chat-thinking.md`:
   - **OpenRouter mandatory-reasoning models:** now *fail clearly*. The page tags them `cannot turn thinking off`, Test fails, and the status bar shows `cannot turn thinking off`.
   - **A model that keeps thinking:** Test suggests a working switch.
   - **Remove** the "slow but works" expectations.
-- [ ] **Step 3: Commit.** `docs: thinking models fail fast, 5 s deadline, OpenRouter evidence, Twinny ideas`.
+- [x] **Step 3: Commit.** `docs: thinking models fail fast, 5 s deadline, OpenRouter evidence, Twinny ideas`.
 
 ### Task 5: Pin the stable prompt start on Strata
 

@@ -153,8 +153,15 @@ describe('LlamaCppBackend', () => {
     }
   });
 
-  test('supportsNativeFim is true', () => {
-    expect(new LlamaCppBackend(cfg('http://x'), async () => undefined).supportsNativeFim()).toBe(true);
+  test('routes: native, template and chat', () => {
+    expect(new LlamaCppBackend(cfg('http://x'), async () => undefined).routes()).toEqual({ native: true, template: true, chat: true, nativeChatModels: false });
+  });
+
+  test('chat URL is /v1/chat/completions', async () => {
+    m = await startMockHttp(() => ({ sse: ['[DONE]'] }));
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    for await (const _ of b.streamChat({ messages: [], maxTokens: 1, stop: [], sampling: {}, thinking: {}, extraBody: {}, signal: new AbortController().signal, timeoutMs: 5000 })) void _;
+    expect(m.requests[0].url).toBe('/v1/chat/completions');
   });
 
   test('HTTP 503 surfaces as HttpError', async () => {

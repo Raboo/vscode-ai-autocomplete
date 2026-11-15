@@ -133,11 +133,18 @@ describe('MistralBackend request', () => {
     expect(await new MistralBackend(cfg(m.url), key).listModels(ac.signal)).toEqual({ models: ['codestral-latest'], contextWindows: {} });
     expect(m.requests).toHaveLength(0);
   });
-  test('supportsNativeFim and detectModel', async () => {
+  test('routes and detectModel', async () => {
     const ac = new AbortController();
-    expect(new MistralBackend(cfg(''), key).supportsNativeFim()).toBe(true);
+    expect(new MistralBackend(cfg(''), key).routes()).toEqual({ native: true, template: false, chat: false, nativeChatModels: false });
     expect(await new MistralBackend(cfg(''), key).detectModel(ac.signal)).toBe('codestral-latest');
     expect(await new MistralBackend(cfg('', { fimModel: 'x' }), key).detectModel(ac.signal)).toBe('x');
+  });
+});
+
+describe('MistralBackend chat', () => {
+  test('streamChat throws', async () => {
+    const it = new MistralBackend(cfg(''), key).streamChat({ messages: [], maxTokens: 1, stop: [], sampling: {}, thinking: {}, extraBody: {}, signal: new AbortController().signal, timeoutMs: 5000 });
+    await expect(it[Symbol.asyncIterator]().next()).rejects.toThrow('Mistral backends serve FIM only');
   });
 });
 

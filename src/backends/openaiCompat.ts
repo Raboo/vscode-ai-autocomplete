@@ -1,8 +1,9 @@
 import type { BackendConfig, HostFlavor } from '../types';
 import { inferHostFlavor, isHostedFlavor } from './hostFlavor';
 import { authHeaders, getJson, joinUrl, postJson, throwIfStreamError } from './http';
+import { streamOpenAiChat } from './chat';
 import { parseSse } from './sse';
-import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
+import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type FimBackend, type FimRequest, type RouteCaps, type ServerInfo } from './types';
 
 const HOSTED_MAX_STOPS = 4;
 
@@ -16,8 +17,21 @@ export class OpenAiCompatBackend implements FimBackend {
     this.flavor = inferHostFlavor(config);
   }
 
-  supportsNativeFim(): boolean {
-    return this.flavor === 'deepseek' || this.flavor === 'ollama';
+  routes(): RouteCaps {
+    return {
+      native: this.flavor === 'deepseek' || this.flavor === 'ollama',
+      template: this.flavor !== 'strata',
+      chat: true,
+      nativeChatModels: this.flavor === 'deepseek',
+    };
+  }
+
+  streamChat(req: ChatRequest): AsyncIterable<ChatEvent> {
+    return this.chat(req);
+  }
+
+  private async *chat(req: ChatRequest): AsyncGenerator<ChatEvent> {
+    yield* streamOpenAiChat(joinUrl(this.config.baseUrl, 'chat/completions'), await this.headers(), req, isHostedFlavor(this.flavor));
   }
 
   private async headers(): Promise<Record<string, string>> {
@@ -44,6 +58,8 @@ export class OpenAiCompatBackend implements FimBackend {
         models.push(e.id);
         if (num(e.max_model_len)) {
           contextWindows[e.id] = e.max_model_len;
+        } else if (num((e.meta as { n_ctx?: unknown } | null | undefined)?.n_ctx)) {
+          contextWindows[e.id] = (e.meta as { n_ctx: number }).n_ctx;
         }
       }
     }
@@ -82,7 +98,7 @@ export class OpenAiCompatBackend implements FimBackend {
       ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
       ...(sampling.topP !== undefined ? { top_p: sampling.topP } : {}),
       ...(!hosted && sampling.topK !== undefined ? { top_k: sampling.topK } : {}),
-      stop: hosted ? req.stop.slice(0, HOSTED_MAX_STOPS) : req.stop,
+      ...(req.stop.length > 0 ? { stop: hosted ? req.stop.slice(0, HOSTED_MAX_STOPS) : req.stop } : {}),
       stream: true,
       ...req.extraBody,
     };

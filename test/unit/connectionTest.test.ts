@@ -29,7 +29,7 @@ function fake(o: FakeOpts = {}) {
       yield* c;
     })();
   });
-  const backend: FimBackend = { config, supportsNativeFim: () => o.native ?? true, detectModel: async () => undefined, listModels, streamFim };
+  const backend: FimBackend = { config, routes: () => ({ native: o.native ?? true, template: true, chat: true, nativeChatModels: false }), detectModel: async () => undefined, listModels, streamFim, streamChat: () => (async function* () { /* no-op */ })() };
   return { backend, listModels, streamFim, requests };
 }
 
@@ -181,7 +181,7 @@ describe('runConnectionTest', () => {
     expect(JSON.stringify(http.debug.mock.calls)).not.toContain('SECRET');
     const odd = mk();
     const f = fake();
-    f.backend.supportsNativeFim = () => { throw new Error('SECRET-MESSAGE'); };
+    f.backend.routes = () => { throw new Error('SECRET-MESSAGE'); };
     await run(f, { log: odd });
     expect(JSON.stringify(odd.debug.mock.calls)).toContain('connection test model: fail in 0 ms: request failed');
     expect(JSON.stringify(odd.debug.mock.calls)).not.toContain('SECRET');
@@ -204,7 +204,7 @@ describe('runConnectionTest', () => {
 
   test('never throws: an unexpected exception becomes a fail step', async () => {
     const f = fake();
-    f.backend.supportsNativeFim = () => { throw new Error('kaput'); };
+    f.backend.routes = () => { throw new Error('kaput'); };
     const { res } = await run(f);
     expect(res.steps.at(-1)).toMatchObject({ state: 'fail', text: 'request failed' });
   });

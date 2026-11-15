@@ -488,7 +488,7 @@ Why these rows:
 - The OpenAI-compatible FIM body omits an empty `stop` (follow-up "`stop: []` is always sent").
 - OpenAI-compatible `listModels` reads a numeric `meta.n_ctx` into `contextWindows` (Strata's `/v1/models` shape: `"meta":{"n_ctx":262144}`). The connection test's context step then works for Strata. Test: `listModels reads Strata meta.n_ctx`.
 
-- [ ] **Step 1: Write the failing tests** with `startMockHttp`.
+- [x] **Step 1: Write the failing tests** with `startMockHttp`.
   ```ts
   test('posts the chat body and yields reasoning, content and finish events', () => {
     // SSE: {"choices":[{"delta":{"reasoning_content":"hm"}}]}, {"choices":[{"delta":{"content":"<COMPLETION>a"}}]},
@@ -521,10 +521,10 @@ Why these rows:
   test('chat URLs', () => { /* llama.cpp → /v1/chat/completions; OpenAI-compatible baseUrl …/v1 → /v1/chat/completions */ });
   test('Mistral streamChat throws', () => {});
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/chat.test.ts test/unit/llamacpp.test.ts test/unit/openaiCompat.test.ts test/unit/mistral.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** `chat.ts`, the `routes()` and `streamChat` methods, and the caller switch.
-- [ ] **Step 4: Run the full check.** Expected: PASS. The existing route, form, pageState and connectionTest tests keep their assertions unchanged.
-- [ ] **Step 5: Commit.** `feat: chat completions transport with rejected-field retry`.
+- [x] **Step 2: Run** `npx vitest run test/unit/chat.test.ts test/unit/llamacpp.test.ts test/unit/openaiCompat.test.ts test/unit/mistral.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** `chat.ts`, the `routes()` and `streamChat` methods, and the caller switch.
+- [x] **Step 4: Run the full check.** Expected: PASS. The existing route, form, pageState and connectionTest tests keep their assertions unchanged.
+- [x] **Step 5: Commit.** `feat: chat completions transport with rejected-field retry`.
 
 ### Task 4: OpenRouter backend
 

@@ -56,6 +56,17 @@ export class CompletionAccumulator {
   push(chunk: string): boolean {
     if (this.stopped) return true;
     this.raw += chunk;
+    return this.update();
+  }
+
+  /** Sets the raw text and re-applies every rule. Returns true once a rule has stopped the stream. */
+  replace(text: string): boolean {
+    if (this.stopped) return true;
+    this.raw = text;
+    return this.update();
+  }
+
+  private update(): boolean {
     let text = this.raw.replace(/\r\n/g, '\n');
     if (text.endsWith('\r')) text = text.slice(0, -1); // hold a lone trailing CR for the next chunk
     const { text: out, stop } = this.apply(text);

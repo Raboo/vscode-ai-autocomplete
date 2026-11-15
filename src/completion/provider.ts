@@ -195,6 +195,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];
     }
+    if (route === 'chat') return []; // unreachable while chat is off above; narrows the type until Task 8
 
     const filePath = vscode.workspace.asRelativePath(doc.uri, false);
     const extra = fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars) : [];

@@ -140,6 +140,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;
     }
+    if (route === 'chat') return result; // unreachable while chat is off above; narrows the type until Task 9
     // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
     const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
     emit({

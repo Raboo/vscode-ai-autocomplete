@@ -104,7 +104,7 @@ export function planInsertion(text: string, eol: '\n' | '\r\n'): string {
 }
 
 export interface FimRequestPlan {
-  route: FimRoute;
+  route: Exclude<FimRoute, 'chat'>;
   fim: FimValues;
   model: string | undefined;
   multiline: boolean;

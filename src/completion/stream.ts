@@ -5,7 +5,7 @@ import { COMPLETION_OPEN, HoleFillerAnswer } from './holeFiller';
 
 export type PlannedRequest =
   | { route: 'native' | 'template'; req: FimRequest }
-  | { route: 'chat'; req: ChatRequest; linePrefix: string };
+  | { route: 'chat'; req: ChatRequest; linePrefix: string; lineSuffix: string };
 
 export interface Collected { text: string; stoppedEarly: boolean; thinking: boolean; timedOut: boolean; /** Chat route: the visible model output before answer extraction. */ visible?: string }
 
@@ -65,7 +65,7 @@ export async function collectCompletion(
   let chat: ChatState | undefined;
   try {
     if (p.route === 'chat') {
-      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix), literal: opts.failOnThinking === true, raw: '' };
+      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix, p.lineSuffix), literal: opts.failOnThinking === true, raw: '' };
       stopped = await collectChat(backend.streamChat(p.req), chat, acc, ctl);
     } else {
       for await (const chunk of backend.streamFim(p.req)) {

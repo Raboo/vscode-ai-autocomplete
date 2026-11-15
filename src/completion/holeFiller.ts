@@ -50,10 +50,13 @@ export class HoleFillerAnswer {
   private readonly linePrefix: string;
   /** The line prefix when it is only indentation, else ''. */
   private readonly indent: string;
+  /** The cursor is at the end of a line that ends in code. */
+  private readonly atLineEnd: boolean;
 
-  constructor(linePrefix: string) {
+  constructor(linePrefix: string, lineSuffix = '') {
     this.linePrefix = linePrefix.trimStart();
     this.indent = this.linePrefix === '' ? linePrefix : '';
+    this.atLineEnd = /\S$/.test(linePrefix) && lineSuffix.trim() === '';
   }
 
   /** The answer in `visible` (ReasoningFilter output) so far; `done` once the stream has ended. */
@@ -86,7 +89,7 @@ export class HoleFillerAnswer {
     const t = answer.trimStart();
     if (t.startsWith(p)) return t.slice(p.length);
     if (!complete && p.startsWith(t)) return '';
-    return answer;
+    return this.atLineEnd && startsLikeALine(answer) ? `\n${answer}` : answer;
   }
 
   /**
@@ -99,6 +102,19 @@ export class HoleFillerAnswer {
     const later = answer.split('\n').slice(1);
     return later.every((l) => l.trim() === '' || l.startsWith(ind)) ? answer.slice(ind.length) : answer;
   }
+}
+
+/**
+ * At the end of a line, models often write the next line without its line break (observed on Strata, Qwen3.8).
+ * Indentation right after the cursor (two or more spaces, or a tab, then code) marks such a line. One space stays on the
+ * cursor line, and so do two spaces before a line comment (an inline comment).
+ */
+function startsLikeALine(answer: string): boolean {
+  const ws = /^[ \t]*/.exec(answer)?.[0] ?? '';
+  const rest = answer.slice(ws.length);
+  if (rest === '' || rest.startsWith('\n')) return false;
+  if (ws.length < 2 && !ws.includes('\t')) return false;
+  return !(ws === '  ' && /^(#|\/\/)/.test(rest));
 }
 
 /**

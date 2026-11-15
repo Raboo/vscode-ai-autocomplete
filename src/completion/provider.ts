@@ -245,7 +245,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
           if (dropped.length > 0) this.d.log.info(`backend "${id}": the server rejected ${dropped.join(', ')} for ${model ?? 'the model'}; sending without them`);
         },
       });
-      planned = { route: 'chat', req, linePrefix };
+      planned = { route: 'chat', req, linePrefix, lineSuffix };
       stop = req.stop;
     } else {
       planned = { route, req: buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input }) };

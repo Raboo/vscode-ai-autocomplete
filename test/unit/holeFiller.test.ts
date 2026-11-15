@@ -118,6 +118,36 @@ describe('HoleFillerAnswer', () => {
     expect(a.update('<COMPLETION>```python\nx = 1\n```\nThis sets x.', false)).toBe('x = 1');
   });
 
+  test('at the end of a line, an answer that starts with indentation goes on a new line', () => {
+    // Observed on Strata (Qwen3.8): the cursor after a complete statement, and the next line comes without a line break.
+    const area = '    print(f"Area: {circle_area(r)}")';
+    const circ = '    print(f"Circumference: {circle_circumference(r)}")';
+    expect(new HoleFillerAnswer(area, '').update(circ, true)).toBe(`\n${circ}`);
+    expect(new HoleFillerAnswer(area, '').update(`<COMPLETION>${circ}\n    print(d)`, true)).toBe(`\n${circ}\n    print(d)`);
+    expect(new HoleFillerAnswer(area, '').update(`<COMPLETION>${circ}`, false)).toBe(`\n${circ}`);
+    // a model that adds the line break itself is left alone
+    expect(new HoleFillerAnswer(area, '').update(`<COMPLETION>\n${circ}`, true)).toBe(`\n${circ}`);
+    expect(new HoleFillerAnswer('def f():', '').update('    return 1', true)).toBe('\n    return 1');
+    expect(new HoleFillerAnswer('        return x', '').update('    else:', true)).toBe('\n    else:');
+    expect(new HoleFillerAnswer('\tfoo();', '').update('\tbar();', true)).toBe('\n\tbar();');
+  });
+
+  test('the cursor line keeps the answer when it does not look like a new line', () => {
+    expect(new HoleFillerAnswer('key:', '').update(' value', true)).toBe(' value');
+    expect(new HoleFillerAnswer('x = 1', '').update('  # one', true)).toBe('  # one');
+    expect(new HoleFillerAnswer('foo();', '').update('  // why', true)).toBe('  // why');
+    expect(new HoleFillerAnswer('x = ', '').update('  1', true)).toBe('  1');
+    expect(new HoleFillerAnswer('foo(', ')').update('  a', true)).toBe('  a');
+    // with only blanks after the cursor, two spaces after an open bracket start the next line
+    expect(new HoleFillerAnswer('foo(', '  ').update('  a', true)).toBe('\n  a');
+  });
+
+  test('a re-typed cursor line is dropped before the new-line rule, and a partial one is still held', () => {
+    const a = new HoleFillerAnswer('    print(f"Area")', '');
+    expect(a.update('<COMPLETION>    print(f"', false)).toBe('');
+    expect(a.update('<COMPLETION>    print(f"Area")\n    print(c)', true)).toBe('\n    print(c)');
+  });
+
   test('backticks inside the code are not a fence', () => {
     expect(new HoleFillerAnswer('').update('<COMPLETION>`a${b}`</COMPLETION>', true)).toBe('`a${b}`');
     expect(new HoleFillerAnswer('').update('<COMPLETION>const s = `\nhi\n`;</COMPLETION>', true)).toBe('const s = `\nhi\n`;');

@@ -21,7 +21,7 @@ const backend = (o: { fim?: string[]; chat?: ChatEvent[]; fail?: Error }): FimBa
   }) as unknown as FimBackend;
 
 const fimPlan: PlannedRequest = { route: 'native', req: {} as FimRequest };
-const chatPlan = (linePrefix = ''): PlannedRequest => ({ route: 'chat', req: {} as ChatRequest, linePrefix });
+const chatPlan = (linePrefix = ''): PlannedRequest => ({ route: 'chat', req: {} as ChatRequest, linePrefix, lineSuffix: '' });
 const content = (text: string): ChatEvent => ({ type: 'content', text });
 const finish = (reason = 'stop'): ChatEvent => ({ type: 'finish', reason });
 
@@ -181,6 +181,15 @@ describe('collectCompletion', () => {
     const chat = [content('```python\n'), content('    print(c)\n'), content('    print(d)\n'), content('```'), finish()];
     const r = await collectCompletion(backend({ chat }), chatPlan('    '), acc, new AbortController());
     expect(r.text).toBe('print(c)\n    print(d)');
+  });
+
+  test('at the end of a line, an indented answer becomes the next line; a single-line request keeps its first line', async () => {
+    const chat = () => [content('<COMPLETION>    print(c)\n'), content('    print(d)</COMPLETION>'), finish()];
+    const plan: PlannedRequest = { route: 'chat', req: {} as ChatRequest, linePrefix: '    print(a)', lineSuffix: '' };
+    const multi = await collectCompletion(backend({ chat: chat() }), plan, new CompletionAccumulator(opts({ multiline: true })), new AbortController());
+    expect(multi.text).toBe('\n    print(c)\n    print(d)');
+    const single = await collectCompletion(backend({ chat: chat() }), plan, new CompletionAccumulator(opts()), new AbortController());
+    expect(single.text).toBe('\n    print(c)');
   });
 
   test('a single-line chat timeout rethrows the timeout', async () => {

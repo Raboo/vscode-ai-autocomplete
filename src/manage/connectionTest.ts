@@ -191,7 +191,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         const req = chatRequest({ ...values, thinking: strategy }, pctl);
         const acc = new CompletionAccumulator({ stop: req.stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
         try {
-          const c = await collectCompletion(backend, { route: 'chat', req: { ...req, timeoutMs: PROBE_TIMEOUT_MS }, linePrefix: POST.linePrefix }, acc, pctl, { failOnThinking: true });
+          const c = await collectCompletion(backend, { route: 'chat', req: { ...req, timeoutMs: PROBE_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix }, acc, pctl, { failOnThinking: true });
           if ((postprocess(c.text, { ...POST, chat: true }) ?? '') !== '') return `choose "${THINKING_LABELS[strategy]}" as the Thinking switch`;
         } catch (err) {
           // Still thinking, rejected or timed out: this switch does not help, try the next.
@@ -213,7 +213,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     let maxTokens = values.maxTokens;
     if (route === 'chat') {
       const req = chatRequest(values, ctl, (fields) => fields.forEach((f) => rejected.add(f)));
-      planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix };
+      planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix };
       stop = req.stop; // the request's own list, as in the provider
       limit = req.timeoutMs;
       maxTokens = req.maxTokens; // with the chat overhead

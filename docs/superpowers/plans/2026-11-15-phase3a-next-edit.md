@@ -671,28 +671,28 @@ git commit -m "feat: command to enable the native Next Edit UI"
   - `BackendForm.nextEditModel: string`, mapped to and from `BackendConfig.nextEditModel` (blank: removed);
   - `menuEntries(...)` gains an entry `{ id: 'selectNextEditBackend', label: 'Next Edit: <id>' or 'Next Edit: off' }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `form maps nextEditModel both ways`: `toForm` reads it, `fromForm` writes it, and a blank value deletes it.
 - `the card shows a Next Edit model field whose placeholder is the completion model`: render with `model: 'qwen3.8'` gives a `nextEditModel` input with placeholder `same as the completion model (qwen3.8)`, using the same model datalist.
 - `the menu shows the Next Edit backend or off`.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/form.test.ts test/unit/render.test.ts test/unit/statusModel.test.ts`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - The page field mirrors the model field: escaped values, the existing datalist, and no API key or server text unescaped.
 - The command's quick pick lists the backend ids plus "Off". It writes `nextEdit.backend` with the same target rule as `useBackend` (workspace when a folder is open), and writes `""` for Off.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit && npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/ui/commands.ts src/ui/statusModel.ts package.json src/manage/form.ts src/manage/protocol.ts src/webview/backends/render.ts src/webview/backends/main.ts test/unit/form.test.ts test/unit/render.test.ts test/unit/statusModel.test.ts

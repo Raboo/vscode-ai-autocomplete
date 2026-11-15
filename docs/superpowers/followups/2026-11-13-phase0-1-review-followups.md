@@ -121,9 +121,8 @@ Parked by the Phase 2 reviews (the final review's fix wave did the rest):
 
 ### Provider
 
-- The status-bar thinking note changes only after a success, or a timeout while the model was thinking. After a model switch on the same backend whose requests fail, the old model's note stays.
 - The `kind` argument of `explainUnsupported` is optional, so a caller that leaves it out loses the Mistral text.
-- Not covered by integration tests: the thinking note clearing on a model switch; no chat text logged while `logPrompts` is off (needs a `Log` spy); a backend `fim.stop` stopping the chat answer on the client side; the debouncer's settings-change guard.
+- Not covered by integration tests: no chat text logged while `logPrompts` is off (needs a `Log` spy); a backend `fim.stop` stopping the chat answer on the client side; the debouncer's settings-change guard.
 
 ### Backends page
 

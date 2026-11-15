@@ -52,8 +52,8 @@
    - Test: `forgetLearned clears thinks` (Task 1) and the integration test `a model that keeps thinking fails, and Retry now asks again` (Task 1).
 4. **The stepped prefix window** never exceeds `maxPrefixChars`, and always keeps the whole cursor line up to the cursor.
    - Tests: `stepped window respects the char cap` and `stepped window keeps the cursor line` (Task 3).
-5. **The stable extra-context order** survives a smaller budget. Earlier picks keep their relative order, and the ones that no longer fit are dropped from the end, not reshuffled.
-   - Test: `pick keeps earlier picks in order when the budget shrinks` (Task 3).
+5. **The extra-context ring: membership by recency, order by stability** (revised by the final review's fix wave). Each request takes the newest chunks that fit the budget, and re-capturing a chunk, even with identical text, makes it new again. Of those, the chunks picked last time come first in their earlier order and the others follow oldest-first. A smaller budget drops the oldest chunks; the ones left keep their relative order.
+   - Tests: `a smaller budget keeps the newest chunks, earlier picks first in their order`, `membership follows recency: after 13 newer files are viewed the oldest earlier picks drop out`, `a re-added identical chunk counts as recent and stays in the set` and `order stays stable when the picked set is unchanged` (Task 3, revised in the fix wave).
 
 ---
 

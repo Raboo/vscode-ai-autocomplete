@@ -940,7 +940,7 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
   - when fields were rejected, the hint (or an `ok` step's hint) adds `the server rejected <a, b>; they are left out`. Those are our own field names.
 - **Context step:** it reads `Object.hasOwn(info.contextWindows, model)` (follow-up "`contextWindows[model]` uses a plain object").
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   // serverTypes.test.ts
   test('Strata and OpenRouter types', () => { /* prefills above; serverTypeOf infers openrouter from openrouter.ai; strata only from its flavor */ });
@@ -971,10 +971,10 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
   // render.test.ts
   test('the thinking control has id f-thinking in the Prompt section', () => {});
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/serverTypes.test.ts test/unit/form.test.ts test/unit/pageState.test.ts test/unit/connectionTest.test.ts test/unit/render.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** the changes.
-- [ ] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass.
-- [ ] **Step 5: Commit.** `feat: chat route, thinking and new server types on the Backends page`.
+- [x] **Step 2: Run** `npx vitest run test/unit/serverTypes.test.ts test/unit/form.test.ts test/unit/pageState.test.ts test/unit/connectionTest.test.ts test/unit/render.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** the changes.
+- [x] **Step 4: Run the full check**, then `npm run test:integration`. Expected: all pass.
+- [x] **Step 5: Commit.** `feat: chat route, thinking and new server types on the Backends page`.
 
 ### Task 10: Integration tests for the chat route
 

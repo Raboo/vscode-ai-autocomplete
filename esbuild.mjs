@@ -13,6 +13,9 @@ const extension = {
   platform: 'node',
   target: 'node20',
   external: ['vscode'],
+  // ES builds first: jsonc-parser's `main` is a UMD build whose requires esbuild cannot follow, so they would stay
+  // in the bundle as require("./impl/...") and fail at activation.
+  mainFields: ['module', 'main'],
   sourcemap: !production,
   minify: production,
   logLevel: 'info',

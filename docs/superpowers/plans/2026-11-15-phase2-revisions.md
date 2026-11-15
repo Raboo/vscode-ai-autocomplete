@@ -291,12 +291,12 @@ export function stableUserChars(messages: ChatMessage[]): number;
 - **Request:** `buildChatRequest` adds `strata_prefix: { message: 1, chars: stableUserChars(messages) }` to the body only when the flavor is `strata` and `chars > 0`, and only on the chat route.
 - **Rejection:** the field is optional. If a server answers 400/422 naming `strata_prefix`, the existing retry drops it and learns it.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `stableUserChars stops PIN_BACK_LINES above the cursor line`;
   - `stableUserChars is 0 near the top of the file`;
   - `buildChatRequest pins only on strata` (other flavors get no `strata_prefix`);
   - integration: in `ghost text from a chat model on Strata, thinking off`, assert that `body.strata_prefix.message === 1` and `body.strata_prefix.chars > 0`.
-- [ ] **Step 2: Run** them. Expected: FAIL.
-- [ ] **Step 3: Implement.** Add a README line ("on Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache") and the measured host fact, marked "verified 2026-11-15 at 13eedf5 + live".
-- [ ] **Step 4: Run the full check and** `npm run test:integration`. Expected: PASS.
-- [ ] **Step 5: Commit.** `perf: pin the stable prompt start on Strata`.
+- [x] **Step 2: Run** them. Expected: FAIL.
+- [x] **Step 3: Implement.** Add a README line ("on Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache") and the measured host fact, marked "verified 2026-11-15 at 13eedf5 + live".
+- [x] **Step 4: Run the full check and** `npm run test:integration`. Expected: PASS.
+- [x] **Step 5: Commit.** `perf: pin the stable prompt start on Strata`.

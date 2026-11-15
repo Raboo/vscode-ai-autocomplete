@@ -22,7 +22,10 @@ export type StepId = 'reach' | 'model' | 'completion' | 'thinking' | 'context';
 export interface TestStep { id: StepId; state: 'ok' | 'warn' | 'fail'; text: string; hint?: string; ms?: number }
 export interface FieldView {
   field: FormField; label: string; value: string; isDefault: boolean; hint: string;
-  options?: string[]; /** value → label, for the option text when the value is not readable. */ optionLabels?: Record<string, string>; disabledReason?: string; error?: string;
+  options?: string[];
+  /** value → label, for the option text when the value is not readable. */
+  optionLabels?: Record<string, string>;
+  disabledReason?: string; error?: string;
 }
 export type Dot = 'grey' | 'green' | 'yellow' | 'red' | 'lock';
 export interface CardView {

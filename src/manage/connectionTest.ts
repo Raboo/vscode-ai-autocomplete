@@ -10,7 +10,7 @@ import { collectCompletion, ThinkingError, type Collected, type PlannedRequest }
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
 import type { TemplateInput } from '../models/templates';
-import { THINKING_LABELS } from '../models/thinking';
+import { THINKING_LABELS, thinkingFields } from '../models/thinking';
 import type { ThinkingStrategy } from '../types';
 import type { TestStep } from './protocol';
 
@@ -174,13 +174,18 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
 
     /**
      * Tries the other thinking switches on the sample; returns the hint for the thinking step. Never changes settings.
-     * OpenRouter sends the same field for every switch, so there is nothing to try.
+     * A switch that sends the same request as the current one or as one already tried is skipped: on Strata, OpenRouter,
+     * DeepSeek and Ollama the flavor decides the request, so a thinking model would get identical requests.
      */
     const probe = async (): Promise<string | undefined> => {
-      if (flavor === 'openrouter') return undefined;
+      const key = (s: ThinkingStrategy): string => JSON.stringify(thinkingFields(s, flavor));
+      const seen = new Set([key(values.thinking)]);
+      let tried = 0;
       for (const strategy of THINKING_PROBES) {
-        if (strategy === values.thinking) continue;
-        if (i.signal.aborted) break;
+        if (!seen.has(key(strategy))) seen.add(key(strategy));
+        else continue;
+        if (i.signal.aborted) return undefined;
+        tried++;
         const pctl = makeCtl();
         const req = chatRequest({ ...values, thinking: strategy }, pctl);
         const acc = new CompletionAccumulator({ stop: req.stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
@@ -192,7 +197,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
           i.log.debug(`connection test probe ${strategy}: ${err instanceof ThinkingError ? 'still thinking' : explainFailure(err).text}`);
         }
       }
-      return 'no thinking switch turned it off; choose another model';
+      if (i.signal.aborted) return undefined;
+      return tried === 0 ? 'this server turns thinking off one way only; choose another model' : 'no thinking switch turned it off; choose another model';
     };
 
     // 3. completion
@@ -222,8 +228,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       stage = 'thinking';
       const label = THINKING_LABELS[values.thinking];
       const text = `${model} keeps thinking with the "${label}" switch`;
+      const ms = now() - stageStart; // until the thinking was seen, not the probe
       const probed = await probe();
-      emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}) }, stageStart, text);
+      emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}), ms }, undefined, text);
       return result;
     }
     const text = postprocess(collected.text, { ...POST, chat: route === 'chat' }) ?? '';

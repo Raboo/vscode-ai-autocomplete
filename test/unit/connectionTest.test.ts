@@ -314,13 +314,36 @@ describe('explainFailure', () => {
       expect(res.steps.some((s) => s.id === 'completion')).toBe(false);
     });
 
-    test('OpenRouter skips the probe', async () => {
+    test('OpenRouter probes only the switch that sends a different request', async () => {
       const config = { kind: 'openai' as const, hostFlavor: 'openrouter' as const, baseUrl: 'https://openrouter.ai/api/v1', fimModel: 'google/gemini-2.5-pro' };
       const f = fake({ config, caps: { native: false, template: false }, info: { models: ['google/gemini-2.5-pro'], contextWindows: {} }, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a;')] });
       const { res } = await run(f);
       expect(res.steps.find((s) => s.id === 'thinking')).toMatchObject({ state: 'fail' });
-      expect(res.steps.find((s) => s.id === 'thinking')!.hint).toBeUndefined();
-      expect(f.chatRequests).toHaveLength(1);
+      expect(res.steps.find((s) => s.id === 'thinking')!.hint).toBe('no thinking switch turned it off; choose another model');
+      expectOnlySoftSwitchProbed(f);
+    });
+
+    /** The flavor decides the body, so the only distinct switch is the /no_think system suffix: the real request plus that one. */
+    const expectOnlySoftSwitchProbed = (f: ReturnType<typeof fake>): void => {
+      expect(f.chatRequests).toHaveLength(2);
+      expect(f.chatRequests[1]!.thinking).toEqual(f.chatRequests[0]!.thinking);
+      expect(f.chatRequests[0]!.messages.some((m) => m.content.includes('/no_think'))).toBe(false);
+      expect(f.chatRequests[1]!.messages.some((m) => m.content.includes('/no_think'))).toBe(true);
+    };
+
+    test.each([['strata', 'http://127.0.0.1:8080/v1'], ['deepseek', 'https://api.deepseek.com/v1'], ['ollama', 'http://127.0.0.1:11434/v1']] as const)(
+      '%s probes only the switch that sends a different request', async (hostFlavor, baseUrl) => {
+        const f = fake({ config: { ...chatCfg, hostFlavor, baseUrl }, caps, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a;')] });
+        const { res } = await run(f);
+        expect(res.steps[2]).toMatchObject({ id: 'thinking', state: 'fail', hint: 'no thinking switch turned it off; choose another model' });
+        expectOnlySoftSwitchProbed(f);
+      });
+
+    test('the thinking step times the real request, not the probe', async () => {
+      const clock = { t: 0 };
+      const f = fake({ config: chatCfg, caps, clock, streamCost: 100, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a;')] });
+      const { res } = await run(f, { now: () => clock.t });
+      expect(res.steps[2]!.ms).toBe(100);
     });
 
     test('rejected fields are named in the thinking hint', async () => {

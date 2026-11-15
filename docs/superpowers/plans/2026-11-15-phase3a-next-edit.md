@@ -427,7 +427,7 @@ git commit -m "feat: Next Edit region diff and display classification"
   - `export function nextEditMaxTokens(regionChars: number): number`: `min(2048, ceil(regionChars / 3.5 * 1.5) + 64)`;
   - `export async function runNextEdit(o: { backend: FimBackend; values: FimValues; flavor: HostFlavor; model: string | undefined; snapshot: NextEditSnapshot; rejected: ReadonlySet<string>; signal: AbortSignal; onRejected?(fields: string[]): void; onPrompt?(messages: ChatMessage[]): void; onAnswer?(visible: string): void }): Promise<NextEditResult | undefined>`. It resolves `undefined` for no change, an invalid or trivial answer; it throws `ThinkingError`, the backend's errors and a `TimeoutError`.
 
-- [ ] **Step 1: Write the failing tests** (fake backend yielding scripted `ChatEvent`s, as in `test/unit/stream.test.ts`)
+- [x] **Step 1: Write the failing tests** (fake backend yielding scripted `ChatEvent`s, as in `test/unit/stream.test.ts`)
 
 - `a rename in the answer becomes an inline edit`: the circle-module snapshot from the live probe (cursor at the end of `    return math.pi * radius ** 2`), with an answer that renames `r` in `circle_circumference`, gives `show.kind === 'edit'` on `def circle_circumference(r):`.
 - `the request uses chatXtab messages, NES sampling and the Next Edit deadline`:
@@ -440,23 +440,23 @@ git commit -m "feat: Next Edit region diff and display classification"
 - `NO_CHANGE resolves undefined, and so does a whitespace-only edit`.
 - `buildChatRequest is unchanged`: the existing `route.test.ts` passes untouched.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/nextEdit/request.test.ts test/unit/route.test.ts`
 Expected: the new file FAILs; `route.test.ts` passes.
 
-- [ ] **Step 3: Implement** the envelope extraction first, then `runNextEdit`.
+- [x] **Step 3: Implement** the envelope extraction first, then `runNextEdit`.
 
 - The stream loop feeds content to a `ReasoningFilter`. A reasoning event with non-whitespace text, or a think opener at the start of the content, aborts and throws `ThinkingError`, as the FIM chat route does.
 - When `chatXtabDone(visible)` turns true, the loop aborts the request and stops reading.
 - The answer is then `parseChatXtab(visible, true)`. A `rewrite` goes through `regionEdit`, then `isTrivialEdit` (drop), then `classify`.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit/nextEdit/request.test.ts test/unit/route.test.ts test/unit/stream.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/completion/route.ts src/nextEdit/request.ts test/unit/nextEdit/request.test.ts

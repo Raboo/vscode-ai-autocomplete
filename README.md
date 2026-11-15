@@ -95,7 +95,9 @@ With this on, requests go only to backends on loopback or private-network addres
 
 A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. With `fimMode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
 
-Thinking is turned off per model family and server. The Thinking switch (the `thinking` field of the backend's `fim` object, also on the Backends page) overrides what the extension picks. Reasoning text is never shown. If a model keeps thinking anyway, the status bar shows a warning, and the model list tags a model that cannot turn thinking off as `chat prompt, always thinks`.
+Thinking is turned off per model family and server. The Thinking switch (the `thinking` field of the backend's `fim` object, also on the Backends page) overrides what the extension picks. Reasoning text is never shown. If a model keeps thinking anyway, the status bar shows a warning, also when the request timed out while the model was thinking, and later requests give it 1024 more tokens and 30 s (instead of 15 s) to answer. A model that cannot turn thinking off gets the same from its first request, plus a one-time notice; the model list tags it `chat prompt, always thinks`. A backend's `timeoutMs` replaces both timeouts.
+
+With the cursor after only indentation, a chat model often types the indentation again; the extension drops it when the rest of the answer lines up with it.
 
 **Strata** serves chat only. Strata's default address is `http://127.0.0.1:8080/v1`:
 
@@ -103,7 +105,7 @@ Thinking is turned off per model family and server. The Thinking switch (the `th
 { "id": "strata", "kind": "openai", "hostFlavor": "strata", "baseUrl": "http://127.0.0.1:8080/v1" }
 ```
 
-**OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key.
+**OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request and then treated like one that cannot turn thinking off. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
 
 ```jsonc
 { "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "fimModel": "z-ai/glm-5" }

@@ -86,3 +86,54 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 - The connection test's chat sample and thinking step run once; a model that thinks only on longer prompts passes it.
 - LM Studio's native `/api/v1/chat` (`reasoning: "off"`) is not used, so thinking cannot be switched off per request there (see the main spec's "To verify").
+
+Parked by the Phase 2 reviews (the final review's fix wave did the rest):
+
+### Thinking control and the reasoning filter
+
+- `THINKING_STRATEGIES` is a hand-kept copy of the `ThinkingStrategy` union, with no type-level check that the two agree.
+- On the chat route a bare closing tag still drops everything before it, so a chat answer whose code contains `</think>` (or `[/THINK]`, `<channel|>`) loses the text before it. FIM routes strip only a leading reasoning block.
+- FIM routes pass no finish reason. An unclosed reasoning block at the start of FIM output shows nothing and a later opener is kept as code, so this matters only if a FIM model ever reasons mid-output.
+- `thinking.test.ts` gaps: `thinking` for an unclosed block, a closer split across pushes inside a block, Harmony's `<|end|>` followed by the final marker, and a bare `[/THINK]`.
+- `TAGS.find` relies on no tag being a prefix of another; a comment should say the list must stay prefix-free.
+
+### Chat transport and OpenRouter
+
+- No test covers a 400 that names a field and whose retry also fails.
+- The `hosted` flag that `OpenAiCompatBackend.streamChat` passes is untested.
+- `HOSTED_MAX_STOPS` is defined twice (`chat.ts` and `openaiCompat.ts`); the FIM and chat limits must stay equal.
+- A delta with an empty `reasoning` string and a non-empty `reasoning_details` yields no reasoning event, so the thinking signal is lost.
+- `openrouter.test.ts` has no `__proto__` model id case.
+- `OpenRouterBackend.detectModel()` takes no `signal` on purpose; a comment should say so.
+
+### Hole filler and the stream loop
+
+- No table-driven test pins that streamed answers only grow (each one a prefix of the next and of the final answer).
+- Without an opening tag, a closing tag followed by whitespace (`a + b;</COMPLETION>\n`) stays in the answer.
+- `<COMPLETION>` quoted inside leaked reasoning can become the answer. It needs single-line mode, a server that does not split reasoning out, a template that prefills `<think>`, and reasoning that quotes `<COMPLETION>draft` plus a newline. A fix would ignore `<COMPLETION>` before a later bare closer.
+- `stoppedEarly` is true for a chat stream that had already finished when the final settle hits a stop rule.
+
+### Routes
+
+- `SAMPLING_WIRE` (`route.ts`) and `SAMPLING_FIELDS` (`chat.ts`) both own the wire names of the sampling fields.
+- No test uses llama.cpp's real 501 body (`Infill is not supported by this model`).
+- A cast in `route.test.ts` (`as unknown as HoleFillerInput`) hides a missing `filePath`.
+
+### Provider
+
+- The status-bar thinking note changes only after a success, or a timeout while the model was thinking. After a model switch on the same backend whose requests fail, the old model's note stays.
+- The `kind` argument of `explainUnsupported` is optional, so a caller that leaves it out loses the Mistral text.
+- Not covered by integration tests: the thinking note clearing on a model switch; no chat text logged while `logPrompts` is off (needs a `Log` spy); a backend `fim.stop` stopping the chat answer on the client side; the debouncer's settings-change guard.
+
+### Backends page
+
+- The connection test for the mandatory-reasoning `z-ai/glm-5` asserts only `state: 'warn'`; it should assert the text and the hint.
+- On the chat route the Stop field's source label names the preset or the overrides, though `</COMPLETION>` comes from neither; it should say built-in.
+- A `form.test.ts` fixture is declared with `kind: 'openai'` and then changed to `llamacpp`.
+
+### Integration tests
+
+- The 2500 ms sleep in the 404-mentions-a-model test proves "tried again after backoff" only weakly.
+- Backoff is a hard 2 s window. On a slow CI host the second trigger in the no-fallback test could land after it; watch for flakes.
+- `commitWhen` returns silently on timeout; its callers assert afterwards.
+- The Strata test checks for no `[thinking]` right after the commit, before a late status update could land.

@@ -97,14 +97,18 @@ src/
     secrets.ts                 API keys in SecretStorage, keyed by backend id
     localOnly.ts               loopback/private-range/.local host check
   backends/
-    types.ts                   Backend interface: fim() / complete() / chat() → AsyncIterable; capabilities
+    types.ts                   FimBackend: routes(), detectModel(), listModels(), streamFim() / streamChat() → AsyncIterable;
+                               request, chat event and server-info types
     http.ts, sse.ts            fetch with AbortSignal, timeouts, SSE parsing, ErrorBackoff
+    chat.ts                    /v1/chat/completions streaming shared by every chat-capable backend: reasoning fields
+                               become reasoning events; a 400/422 is retried once without the rejected fields
     llamacpp.ts                /infill (input_prefix/suffix/extra, n_predict, t_max_predict_ms, cache_prompt),
                                /completion (raw prompts for NES models), /v1/chat/completions, /props autodetect
     openaiCompat.ts            /v1/completions (raw template OR `suffix`), /v1/chat/completions;
                                host flavors: vllm, sglang, lmstudio, ollama, strata, deepseek, fireworks, together, generic
     mistral.ts                 /v1/fim/completions; codestral.mistral.ai ↔ api.mistral.ai fallback; chat-shaped response
-    openrouter.ts              openaiCompat + reasoning:{effort:"none"}, models metadata (reasoning.mandatory)
+    openrouter.ts              chat only; openaiCompat + reasoning:{effort:"none"}, models metadata (reasoning.mandatory);
+                               no request without a stored key
   models/
     presets.ts                 DATA: family regex → FIM template, stops, thinking strategy, sampling {fim, nes}
     templates.ts               FIM template renderers (qwen/repo-level, codestral, deepseek, starcoder, codellama,
@@ -117,9 +121,11 @@ src/
     cache.ts                   suggestion history: exact / typed-through / backspace matches
     scheduler.ts               adaptive debounce, in-flight reuse, per-document AbortController
     context.ts                 prefix/suffix windowing, char-based token budget, extra-context ring buffer
+    stream.ts                  one streaming loop for the provider and the connection test: FIM chunks, or chat events
+                               → reasoning filter → hole-filler answer; complete lines kept on a timeout
     filters.ts                 streaming stop rules
     postprocess.ts             final cleanup and duplicate checks
-    holeFiller.ts              chat prompt for models without FIM (own wording)
+    holeFiller.ts              chat prompt for models without FIM (own wording) and answer extraction
   nextEdit/
     history.ts                 edit-diff history + recently viewed snippets
     region.ts                  editable region around the cursor
@@ -146,15 +152,15 @@ For each backend+model, the first route that works is used, and the result is re
    - llama.cpp `/infill`, which applies the model's own FIM tokens and repo-level `input_extra` context;
    - Mistral `/v1/fim/completions`;
    - `/v1/completions` with `suffix` (DeepSeek beta, Ollama, SiliconFlow).
-2. **Raw template** on `/v1/completions`, using a client-side template from `templates.ts` (vLLM, LM Studio, Fireworks, Together, Strata if it has completions).
+2. **Raw template** on `/v1/completions`, using a client-side template from `templates.ts` (vLLM, LM Studio, Fireworks, Together). Strata has no `/v1/completions` (verified live 2026-11-15), so it is chat only.
 3. **Chat hole-filler** for models without FIM (general instruct models, Strata, OpenRouter), with thinking switched off.
 
 Route rules as built (Phase 2):
-- **OpenRouter is chat only.** `/api/v1/completions` exists but is undocumented, and so is `suffix`, so no code is sent there (verified 2026-11-15, openrouter.ai docs and openapi.json).
+- **OpenRouter is chat only.** `/api/v1/completions` exists but is undocumented, and so is `suffix`, so no code is sent there (verified 2026-11-15, openrouter.ai docs and openapi.json). This also holds for an "Other OpenAI-compatible" backend whose URL is on `openrouter.ai`: a known hosted hostname (OpenRouter, DeepSeek, Fireworks, Together) overrides the `generic` flavor. Without a stored key no completion request is sent (the keyless model list still is), and the status bar says `Set API key for <id>`.
 - In `auto` mode the chat route is used for chat families, and for a server with no raw completions endpoint. A coder model keeps its native or template route. DeepSeek's native `suffix` route also serves chat-family models.
 - On kind `mistral` the chat route does not exist: a chat-family model has no route, and the status says `<id>: choose a Codestral model`.
 - **Route learning:** a 404, 405 or 501 from a route in `auto` mode (or a 400 whose body says `does not support insert`, as Ollama answers) marks that route missing for the backend and model, and the next request takes the next route. A 404 whose body mentions the model does not count. A route is learned as missing only while another route remains, and it never counts toward backoff. The log line is `no <route> endpoint for <model> (HTTP <status>); the next request uses the next prompt route`. Nothing is persisted; **Retry now**, a passing connection test and an API-key change forget the learned routes.
-- A 400 or 422 on the chat route is retried once without the optional fields (thinking fields and sampling) it names, and the field is remembered only if the retry succeeds.
+- A 400 or 422 on the chat route is retried once without the optional fields (thinking fields and sampling) it names, and the field is remembered only if the retry succeeds. When the body names none of them, every thinking field is dropped for the retry.
 
 Expectation: the fast FIM path is a **coder model on llama.cpp `/infill`** (or Codestral). General models such as Qwen3.5/3.6/3.8 have FIM tokens in the tokenizer, but FIM isn't documented, so pointing FIM at Qwen3.8 on Strata lands on the chat hole-filler (route 3), which is slower. Qwen3.8 is the planned **Next Edit** model. A `fimMode: auto | native | template | chat` override per backend lets the user try raw-template FIM on Qwen3.8 anyway.
 
@@ -162,36 +168,38 @@ Expectation: the fast FIM path is a **coder model on llama.cpp `/infill`** (or C
 
 There is no universal switch, so this is a table, not scattered `if`s.
 
-- **Model family strategy (`presets.ts`)**: each family declares one of
-  - `none` (coder/instruct-only checkpoints);
+- **Model family strategy (`presets.ts`)**: each family declares one of the strategies below. The families named are examples; `presets.ts` is the full table.
+  - `none` (coder/instruct-only checkpoints, such as Qwen3-Instruct-2507);
   - `templateKwarg:enable_thinking` (Qwen3, Qwen3-2504, Qwen3.5/3.8, GLM, DeepSeek V4, Granite 4.2, Gemma 4, Nemotron, and unknown models);
-  - `templateKwarg:thinking` (DeepSeek V3.1/3.2 open weights, Kimi K2.5/K2.6);
+  - `templateKwarg:thinking` (DeepSeek V3.1/3.2 open weights, Kimi K2.5/K2.6, Granite 3.3);
   - `templateKwarg:thinking_mode=disabled` (MiniMax M3, row `minimax-m3`);
   - `templateKwarg:thinking_budget=0` (Seed-OSS);
   - `vendorThinkingDisabled` (no family uses it by default; a user picks it for hosted APIs that take `thinking:{type:"disabled"}`);
   - `reasoningEffortNone` (Mistral Small 4 / Medium 3.5; users can pick it for others);
   - `systemSoftSwitch:/no_think` (Nemotron Nano v2; the suffix goes in the system prompt);
-  - `cannotDisable` (gpt-oss, DeepSeek R1, MiniMax M2.x and M3.1, GLM-5.3, Kimi K3 and K2 Thinking, Qwen3 Thinking, Mistral Large 4).
+  - `cannotDisable` (gpt-oss, DeepSeek R1, MiniMax M2.x and M3.1, GLM-5.3, Kimi K3, K2.7 and K2 Thinking, Qwen3 Thinking, Qwen3.8 2.4T, Mistral Large 4).
   - A backend's `fim.thinking`, or a `modelOverrides` entry's `thinking`, replaces the family's choice (the Backends page's Thinking switch).
   - Reassigned from the first draft: Qwen3-2504 moved from `systemSoftSwitch` to `templateKwarg:enable_thinking` (row `qwen3`), and MiniMax M3 moved from `vendorThinkingDisabled` to `templateKwarg:thinking_mode=disabled` (row `minimax-m3`).
+  - Dropped from the first draft on purpose: the GPT-5.x, Gemini 2.5/3+, Z.ai and Moonshot rows. They have no preset. Through OpenRouter they get `reasoning:{effort:"none"}` whatever the family (and the "must reason" handling below); their own APIs work through an "Other OpenAI-compatible" backend with the Thinking switch (`vendorThinkingDisabled` sends `thinking:{type:"disabled"}`).
 - **Host flavor envelope** (host facts verified 2026-11-15; sources: llama.cpp `5c008e0`, vLLM `a16bfee`, SGLang `7b5fb39`, Ollama `a5864fc`, Strata `13eedf5`, LM Studio docs `8c7159b`, OpenRouter docs, DeepSeek docs):
   - llama.cpp, vLLM and SGLang → `chat_template_kwargs` plus `reasoning_effort:"none"`. llama.cpp takes `chat_template_kwargs` per request (`enable_thinking` must be a JSON boolean) and `reasoning_effort:"none"` sets `enable_thinking=false`. vLLM's `"none"` sets only `enable_thinking=false`. SGLang's sets both `thinking` and `enable_thinking`.
-  - LM Studio → the same envelope is sent, but LM Studio ignores `chat_template_kwargs` (lmstudio-bug-tracker #1990, open) and its `reasoning_effort` values are undocumented, so thinking may stay on there; the status-bar warning covers it and the README says to turn thinking off in the model's settings.
+  - LM Studio → the same fields as llama.cpp, plus `reasoning_effort:"none"` for `systemSoftSwitch` (where llama.cpp gets only the `/no_think` suffix), but LM Studio ignores `chat_template_kwargs` (lmstudio-bug-tracker #1990, open) and its `reasoning_effort` values are undocumented, so thinking may stay on there; the status-bar warning covers it and the README says to turn thinking off in the model's settings.
   - Strata (verified live and in DETAILS.md) → `reasoning_effort:"none"` plus `chat_template_kwargs:{enable_thinking:false}`, and always explicit sampling (`presence_penalty:0`) to override its chat defaults.
   - Ollama → `reasoning_effort:"none"` (`"none"` requests `false`; `think` is not a chat-completions field); gpt-oss and other `cannotDisable` families get `"low"`.
-  - OpenRouter → `reasoning:{effort:"none"}` ("Disables reasoning entirely"); `cannotDisable` families get `effort:"low"`. Models whose `/api/v1/models` entry says `reasoning.mandatory: true` reject `none` (145 of 471 listed on 2026-11-15). A model that rejects `none` (400 or 422) is retried once without `reasoning` and remembered per (backend, model). The page tags such models `chat prompt, always thinks`.
+  - OpenRouter → `reasoning:{effort:"none"}` ("Disables reasoning entirely"); `cannotDisable` families get `effort:"low"`. Models whose `/api/v1/models` entry says `reasoning.mandatory: true` reject `none` (145 of 471 listed on 2026-11-15). A model that rejects `none` (400 or 422) is retried once without `reasoning`, and the rejection is remembered per (backend, model) as "must reason": later requests treat it as `cannotDisable` (`effort:"low"`, the reasoning allowance, the 30 s timeout and the one-time warning). If `low` is rejected too, `reasoning` is left out. The page tags such models `chat prompt, always thinks`.
   - DeepSeek API → `thinking:{type:"disabled"}`; FIM there is non-thinking only.
   - Other vendor APIs → `thinking:{type:"disabled"}` through the `vendorThinkingDisabled` strategy on an "Other OpenAI-compatible" backend. There are no flavors for the Z.ai, Moonshot or MiniMax APIs.
   - LM Studio's native `/api/v1/chat` (which has `reasoning:"off"`) is not used; LM Studio stays on `/v1/chat/completions`. This is a known gap.
 - **Learning**: if a host returns 400 for a parameter, retry once without it and remember that per (backend, model). If reasoning still shows up, flag it.
-- **Stripping, always on**:
+- **Stripping**, on the chat route (the stream filter; nothing is stripped again afterwards):
   - the reasoning fields are read as reasoning and never shown: `reasoning_content` (llama.cpp, SGLang, Strata, DeepSeek), `reasoning` (vLLM's `delta.reasoning`, Ollama, OpenRouter), `reasoning_details` and `thinking`; Mistral's `{type:"thinking"}` content chunks are skipped;
   - strip reasoning blocks in content: `<think>…</think>`, `<seed:think>…</seed:think>`, `<mm:think>…</mm:think>`, Gemma 4's `<|channel>thought…<channel|>`, `[THINK]…[/THINK]`, `<|open|>think<|sep|>…<|close|>think<|sep|>`, and Harmony's `<|channel|>analysis<|message|>…<|end|>`;
   - a bare closing tag drops everything before it (templates that prefill `<think>`). A bare `<|end|>` is not a closer, because it is an end-of-turn token elsewhere (Phi); it closes reasoning only after a Harmony analysis opener;
   - keep only the text after the last closer;
   - discard the result if reasoning is unclosed and `finish_reason` is `length`.
-  - Chat-route timeouts keep the complete lines already received and the thinking flag.
-- **`cannotDisable` models** get a one-time warning saying they are a poor fit, and a reasoning allowance of 1024 extra tokens. A model that thinks although thinking was asked off is flagged, and the status bar shows a warning with the observed latency.
+  - A chat-route timeout keeps the complete lines received so far, read from the filter's current output, so nothing from before a bare closing tag. With no complete line it fails as a timeout but keeps the thinking flag: the model is flagged as below.
+  - On FIM routes only a reasoning block at the very start of the output is removed. Tags anywhere else are code there (for example a string holding `</think>`), so they stay.
+- **`cannotDisable` models** get a one-time warning saying they are a poor fit, a reasoning allowance of 1024 extra tokens, and a 30 s chat timeout instead of 15 s (a backend's `fim.timeoutMs` still wins). A model that thinks although thinking was asked off, even in a request that timed out, is flagged: the status bar shows a warning with the observed latency, and its later requests get the same allowance and timeout.
 - Hosts that reject sampling parameters (Kimi, Claude Sonnet 5, MiniMax M3) get a `samplingParams: "omit"` preset.
 
 ### Sampling presets (defaults; every value can be overridden per model through `aiAutocomplete.modelOverrides`)
@@ -235,8 +243,9 @@ Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backe
    - drop blank results;
    - drop if it repeats the previous line;
    - drop if it duplicates the suffix or the end of the prefix;
-   - strip code fences and thinking text;
+   - strip code fences, and on FIM routes a leading reasoning block;
    - replace the rest of the line when the model re-typed it.
+   - On the chat route the hole-filler answer also drops a re-typed start of the cursor line. When the line before the cursor is only indentation, it is dropped from the answer's first line only if every later non-blank line is indented at least as much (models often type the indentation again).
 7. **Return** the item with a `command` that records acceptance in local stats only. After an accept, optionally fire a speculative next request.
 
 ### Next Edit pipeline (`nextEdit/`)

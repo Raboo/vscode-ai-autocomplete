@@ -27,10 +27,11 @@ Open review findings for Phase 0–1 are listed in [superpowers/followups/2026-1
 
 Phase 2 (Publish step 4 of the [Phase 2 plan](superpowers/plans/2026-11-15-phase2-chat-thinking.md), run on the PR's CI `.vsix`):
 
-- Strata, added from the Backends page as type Strata: Test shows `Model qwen3.8-flash-next-iq3_s (chat prompt)`, a completion and `Thinking is off`. In a TypeScript file ghost text appears with no reasoning in it. With `debug.logPrompts` on, the log shows the chat request and the completion time, and the request carries `presence_penalty` 0.
+- Strata, added from the Backends page as type Strata: Test shows `Model qwen3.8-flash-next-iq3_s (chat prompt)`, a completion and `Thinking is off`. In a TypeScript file ghost text appears with no reasoning in it. With `debug.logPrompts` on, the log shows the chat request and the completion time, and the request carries `presence_penalty` 0. Press Enter inside a function body and accept a multi-line chat suggestion: its first line is not indented twice, and the later lines line up.
 - OpenRouter with your key:
   - a model that can turn thinking off (for example `z-ai/glm-5`) gives ghost text with no `<think>` leak and sane latency;
   - in the model list a mandatory-reasoning model (for example `minimax/minimax-m2.5`) is tagged `chat prompt, always thinks`, and using it shows the one-time warning and the status-bar thinking warning;
+  - a model tagged `chat prompt, always thinks` that falls to the generic preset (for example a `google/gemini-*` or `openai/o*` id, if the list still marks it mandatory): after the first request the log says the model must reason, the one-time warning appears, and later requests give ghost text;
   - `privacy.localOnly` blocks OpenRouter.
 - LM Studio with a Qwen3.x model in `auto` mode: the chat route is used. Record whether thinking goes off per request in the main spec's "To verify" list.
 - llama.cpp, no regression: a coder model (`--fim-qwen-1.5b-default`) still completes through `/infill`.

@@ -82,7 +82,7 @@ There is one page at a time. Opening it again reveals the existing tab.
   - Server type: a dropdown, see the table below.
   - Name, which becomes the backend id: lowercase letters, digits and dashes, unique. It is prefilled from the server type (`lmstudio`, then `lmstudio-2`).
   - URL, prefilled from the server type.
-  - Model: a combo box. It lists what the server reports, plus free text, plus "auto-detect" (empty), with a "reload list" link. Each listed model is tagged "ready" when it has a FIM route, "chat prompt" when it would complete through the chat prompt ("chat prompt, always thinks" when it cannot turn thinking off, which OpenRouter reports per model), or "no completion template" when it has no route.
+  - Model: a combo box. It lists what the server reports, plus free text, plus "auto-detect" (empty), with a "reload list" link. Each listed model is tagged "ready" when it has a FIM route, "chat prompt" when it would complete through the chat prompt ("chat prompt, always thinks" when it cannot turn thinking off, which OpenRouter reports per model), or "no completion template" when it has no route ("choose a Codestral model" on a Mistral backend, whose FIM endpoint serves Codestral models only; the card warning says the same).
   - API key: a password field shown for hosted server types. Its placeholder is "stored" when a key exists. Leaving it empty keeps the stored key, and a "Remove key" link deletes it.
 - **Prompt:** template (dropdown of every template id, default from the model's preset; disabled on the chat route, which uses no template), prompt mode (`fimMode`), the Thinking switch (dropdown of the thinking strategies, default from the model's family and server; enabled only on the chat route), multi-line.
 - **Context:** context size (tokens), lines before cursor, lines after cursor, use other open files.
@@ -161,7 +161,7 @@ The existing rule still holds: a `maxTokens` from levels 1 or 2 replaces `fim.ma
 - This replaces today's fixed caps of 8,000, 2,500 and 6,000 characters.
 - Lines before and after stay an extra cap on top of the budget.
 
-**Timeout:** `timeoutMs` replaces the fixed 5,000 ms request timeout for that backend. On the chat route it replaces the chat timeout (15000 ms unless set) instead, and the Timeout field shows that value there. The Stop field likewise shows the chat stops (`</COMPLETION>` plus the backend's own `stop`) on the chat route. The `thinking` key is a strategy id from the main spec's "Thinking control" list and is used only on the chat route.
+**Timeout:** `timeoutMs` replaces the fixed 5,000 ms request timeout for that backend. On the chat route it replaces the chat timeout (15000 ms unless set, 30000 ms for a model that cannot turn thinking off) instead, and the Timeout field shows that value there. The Stop field likewise shows the chat stops (`</COMPLETION>` plus the backend's own `stop`) on the chat route. The `thinking` key is a strategy id from the main spec's "Thinking control" list and is used only on the chat route.
 
 **Validation:**
 
@@ -212,15 +212,15 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
    - On the chat route it is a chat request built like a real one: the hole-filler prompt, the chat stops and the thinking fields for the model's family and server.
    - It sends a built-in TypeScript snippet (`function add(a: number, b: number): number {` / `  return ` / `}`) through the same request builder and stream filters as real completions, with the form's sampling.
    - It passes when the text is not empty, and reports time to first token, total time and the text (up to 80 characters).
-   - The test waits up to 30 s, because a first request can load the model (LM Studio JIT loading). A completion slower than the backend's timeout gets a warning: "slower than the X ms timeout; run the test again if the model was loading". On the chat route X is the chat timeout (15000 ms unless the backend sets `timeoutMs`).
-   - **Thinking** (chat route only): a sub-step that reports "Thinking is off", or warns "the model still thinks with thinking off" with the hint to choose a model that can turn thinking off or to set the Thinking switch. A server that rejected a request field says which fields are left out; this is learned for the session only.
+   - The test waits up to 30 s, because a first request can load the model (LM Studio JIT loading). A completion slower than the backend's timeout gets a warning: "slower than the X ms timeout; run the test again if the model was loading". On the chat route X is the chat request's own timeout (15000 ms, or 30000 ms for a model that cannot turn thinking off, unless the backend sets `timeoutMs`). A test that times out with no text fails as "timed out"; one that times out after complete lines warns.
+   - **Thinking** (chat route only): a sub-step that reports "Thinking is off", or warns "the model still thinks with thinking off" with the hint to choose a model that can turn thinking off or to set the Thinking switch. A server that rejected a request field says which fields are left out (an OpenRouter model that rejects effort "none" reads `reasoning effort "none"`); this is learned for the session only.
 4. **Context window,** where the server reports one:
    - llama.cpp: `/props` `default_generation_settings.n_ctx`;
    - LM Studio: `/api/v0/models` `loaded_context_length`;
    - vLLM: `/v1/models` `max_model_len`;
    - Ollama: `/api/show`.
 
-   The step warns when context size plus max tokens is larger. When the server reports nothing, the step is skipped silently.
+   The step warns when context size plus max tokens is larger. On the chat route max tokens is the test's chat request's own `max_tokens`, which includes the chat overhead and any reasoning allowance. When the server reports nothing, the step is skipped silently.
 
 **Rules:**
 

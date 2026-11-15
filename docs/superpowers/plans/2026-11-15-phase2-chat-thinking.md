@@ -1107,10 +1107,12 @@ These steps create public state on GitHub. **Ask the user once, listing every st
 
      Then, in a TypeScript file:
      - ghost text appears, with no reasoning in it;
-     - with `debug.logPrompts` on, the log shows the chat request and the completion time, and the request carries `presence_penalty` 0.
+     - with `debug.logPrompts` on, the log shows the chat request and the completion time, and the request carries `presence_penalty` 0;
+     - press Enter inside a function body and accept a multi-line chat suggestion: its first line is not indented twice, and the later lines line up.
    - **OpenRouter**, with the user's key:
      - a model that can turn thinking off (for example `z-ai/glm-5`) gives ghost text with no `<think>` leak and sane latency;
      - in the model list, a mandatory-reasoning model (for example `minimax/minimax-m2.5`) is tagged `chat prompt, always thinks`, and using it shows the one-time warning and the status-bar thinking warning;
+     - a model the list tags `chat prompt, always thinks` that no preset marks as unable to turn thinking off (it falls to the generic preset; check the list on the day, for example a `google/gemini-*` or `openai/o*` id): the first request is rejected and retried, the log says the model must reason, the one-time warning appears, and later requests give ghost text (slowly). This also answers the spec's open item on the status OpenRouter returns for `effort:"none"`;
      - `privacy.localOnly` blocks OpenRouter.
    - **LM Studio** with a Qwen3.x model in `auto` mode:
      - the chat route is used;

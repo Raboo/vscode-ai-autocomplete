@@ -279,7 +279,10 @@ suite('FIM inline completion', () => {
     // The request ends without an error: a missing route is learned, not a failure.
     await sleep(500);
     assert.ok(!api.status.current().includes('error'), `status: ${api.status.current()}`);
+    // Ghost text only reaches the document on commit, so commit before checking that none was shown.
+    await commit();
     assert.equal(editor.document.getText(), SOURCE);
+    assert.equal(posts(m, '/completion').length, 0, `mock saw ${JSON.stringify(m.requests)}`);
   };
 
   test('a missing route is learned silently and the next trigger uses the next route', async () => {

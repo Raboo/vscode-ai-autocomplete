@@ -9,6 +9,8 @@ import type { Settings } from '../config/settings';
 import type { Log } from '../log';
 import { THINKING_LABELS } from '../models/thinking';
 import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capabilities';
+import { toItemText, type NextEditShow } from '../nextEdit/diff';
+import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
 import { buildFimWindow, type ExtraContextRing } from './context';
 import { contextCaps, resolveFim } from './effective';
@@ -37,6 +39,8 @@ export interface FimDeps {
   log: Log;
   snoozedUntil(): number;
   capabilities: Capabilities;
+  /** Next Edit's result to show instead of FIM, and where FIM's own outcome goes. */
+  nextEdit?: Pick<NextEditController, 'itemFor' | 'fimResult' | 'rejected'>;
 }
 
 /** A request that passed every check and is about to be sent. */
@@ -82,6 +86,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   /** Backends whose last request failed, with the failure's status detail. */
   private readonly failing = new Map<string, string>();
   private readonly requests: RequestStatus;
+  /** The Next Edit items returned, so only their rejection reaches Next Edit. */
+  private readonly nextEditItems = new WeakSet<vscode.InlineCompletionItem>();
 
   constructor(private readonly d: FimDeps) {
     this.requests = new RequestStatus(d.status);
@@ -122,8 +128,19 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     }
   }
 
+  /**
+   * Proposed API (inlineCompletionsAdditions): VS Code calls it only with the proposal enabled.
+   * Kind 1 is InlineCompletionEndOfLifeReasonKind.Rejected, compared as a number because the enum is proposed too.
+   */
+  handleEndOfLifetime(item: vscode.InlineCompletionItem, reason: vscode.InlineCompletionEndOfLifeReason): void {
+    if ((reason.kind as number) === 1 && this.nextEditItems.has(item)) this.d.nextEdit?.rejected();
+  }
+
   private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal): Promise<vscode.InlineCompletionItem[]> {
     if (signal.aborted) return [];
+    // A Next Edit result for this document version is shown alone; the controller already applied the gate when it asked.
+    const next = this.d.nextEdit?.itemFor(doc, pos);
+    if (next) return [this.nextEditItem(next.show, doc, pos)];
     const s = this.d.getSettings();
     const line = doc.lineAt(pos.line).text;
     const linePrefix = line.slice(0, pos.character);
@@ -173,11 +190,13 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const early = resolveFim(backend.config, undefined, s).values;
     const caps = contextCaps(early.contextTokens);
     const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
+    // The version the window was read from: FIM's outcome is reported to Next Edit for it.
+    const version = doc.version;
     const uri = doc.uri.toString();
     const spot: Spot = { doc, pos, lineSuffix, backendId: id };
     // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
     const cached = invoked ? undefined : this.d.cache.find(uri, win.prefix, win.suffix);
-    if (cached !== undefined) return this.items(cached, spot);
+    if (cached !== undefined) return this.reported(cached, spot, version);
 
     const join = this.d.inflight.find(uri, win.prefix, win.suffix);
     if (join) {
@@ -186,7 +205,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       if (!finished || signal.aborted) return [];
       // The finished flight is cached under its own prefix, so the cache derives what is left after the text typed since.
       const hit = this.d.cache.find(uri, win.prefix, win.suffix);
-      if (hit !== undefined) return this.items(hit, spot);
+      if (hit !== undefined) return this.reported(hit, spot, version);
       // The suggestion does not continue what was typed since: request a fresh one.
     }
 
@@ -258,7 +277,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const result = this.run({ backend, backoff, debouncer, planned, model, thinking: fim.thinking, mode: fimMode, hasFallback, ctl, uri, prefix: win.prefix, suffix: win.suffix, stop, multiline, post, eol, logPrompts: s.debug.logPrompts });
     this.d.inflight.add(uri, win.prefix, win.suffix, result, ctl);
     const text = await result;
-    return text === undefined || signal.aborted ? [] : this.items(text, spot);
+    return text === undefined || signal.aborted ? [] : this.reported(text, spot, version);
   }
 
   /** Sends one request and records its result. Never rejects: resolves the insert text ('' = nothing), or undefined when cancelled or failed. */
@@ -369,6 +388,28 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const { insertText, replaceToEndOfLine } = toInsertion(text, at.lineSuffix);
     const end = replaceToEndOfLine ? at.doc.lineAt(at.pos.line).range.end : at.pos;
     return [new vscode.InlineCompletionItem(insertText, new vscode.Range(at.pos, end), { command: 'aiAutocomplete.accepted', title: '', arguments: [at.backendId] })];
+  }
+
+  /** FIM's answer, told to Next Edit while the document is still at the window's version: Next Edit only asks when FIM had nothing. */
+  private reported(text: string, at: Spot, version: number): vscode.InlineCompletionItem[] {
+    if (at.doc.version === version) this.d.nextEdit?.fimResult(at.doc.uri.toString(), version, text !== '');
+    return this.items(text, at);
+  }
+
+  /** Ghost text at the cursor, or an inline edit of the range (shown only by VS Code's inline-edit UI). */
+  private nextEditItem(show: NextEditShow, doc: vscode.TextDocument, pos: vscode.Position): vscode.InlineCompletionItem {
+    const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const command: vscode.Command = { command: 'aiAutocomplete.nextEditAccepted', title: '' };
+    let item: vscode.InlineCompletionItem;
+    if (show.kind === 'ghost') {
+      item = new vscode.InlineCompletionItem(toItemText(show.insertText, eol), new vscode.Range(pos, pos), command);
+    } else {
+      const range = new vscode.Range(show.start.line, show.start.character, show.end.line, show.end.character);
+      item = new vscode.InlineCompletionItem(toItemText(show.text, eol), range, command);
+      item.isInlineEdit = true;
+    }
+    this.nextEditItems.add(item);
+    return item;
   }
 
   private once(key: string, log: () => void): void {

@@ -25,7 +25,7 @@ const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined } {
+export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -89,33 +89,6 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     return b;
   };
 
-  const provider = new FimProvider({
-    getSettings: () => settings,
-    getBackend: (id) => backends.get(id),
-    isLocal,
-    cache,
-    inflight,
-    ring,
-    status,
-    log,
-    snoozedUntil,
-    capabilities,
-    backoff,
-    debouncer: (id) => {
-      let d = debouncers.get(id);
-      if (!d) {
-        const cfg = backends.get(id)?.config;
-        const url = cfg?.baseUrl;
-        const fixedMs = cfg ? resolveFim(cfg, undefined, settings).values.debounceMs : settings.fim.debounceMs;
-        const initialMs = url && isObviouslyLocal(url) ? LOCAL_DEBOUNCE_MS : REMOTE_DEBOUNCE_MS;
-        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs });
-        debouncers.set(id, d);
-      }
-      return d;
-    },
-  });
-  sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
-
   const nextEdit = new NextEditController({
     getSettings: () => settings,
     getBackend: (id) => backends.get(id),
@@ -130,6 +103,45 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     detectedModel: (b, signal) => Promise.resolve(provider.detectedModel(b.config.id) ?? b.detectModel(signal)),
   });
   sub(nextEdit);
+
+  const provider: FimProvider = new FimProvider({
+    getSettings: () => settings,
+    getBackend: (id) => backends.get(id),
+    isLocal,
+    cache,
+    inflight,
+    ring,
+    status,
+    log,
+    snoozedUntil,
+    capabilities,
+    backoff,
+    nextEdit,
+    debouncer: (id) => {
+      let d = debouncers.get(id);
+      if (!d) {
+        const cfg = backends.get(id)?.config;
+        const url = cfg?.baseUrl;
+        const fixedMs = cfg ? resolveFim(cfg, undefined, settings).values.debounceMs : settings.fim.debounceMs;
+        const initialMs = url && isObviouslyLocal(url) ? LOCAL_DEBOUNCE_MS : REMOTE_DEBOUNCE_MS;
+        d = new Debouncer({ initialMs, minMs: MIN_DEBOUNCE_MS, maxMs: MAX_DEBOUNCE_MS, fixedMs });
+        debouncers.set(id, d);
+      }
+      return d;
+    },
+  });
+  // Registering with metadata needs VS Code's proposed API (inlineCompletionsAdditions) and throws without it:
+  // the same proposal shows inline edits, so the probe tells whether Next Edit may return them.
+  let native: boolean;
+  try {
+    sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider, { displayName: 'AI Autocomplete' }));
+    native = true;
+  } catch {
+    sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
+    native = false;
+  }
+  nextEdit.native = native;
+  log.info(native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)");
 
   const panelDeps: BackendsPanelDeps = {
     context,
@@ -166,6 +178,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     channel,
     log,
     manageBackends,
+    nextEditAccepted: () => nextEdit.accepted(),
     retry: () => {
       for (const b of backoffs.values()) b.reset();
       for (const id of backends.keys()) capabilities.forgetLearned(id);
@@ -207,7 +220,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
-  return { status, secrets, backendsPanel: () => BackendsPanel.current() };
+  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native };
 }
 
 export function deactivate(): void {}

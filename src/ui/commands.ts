@@ -25,6 +25,8 @@ export interface CommandDeps {
   retry(): void;
   /** Opens (or reveals) the Backends page. */
   manageBackends(o: OpenOptions): void;
+  /** A Next Edit item was accepted. */
+  nextEditAccepted(): void;
 }
 
 /** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
@@ -118,5 +120,6 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       accepted++;
       d.status.setStats(accepted);
     }),
+    reg('nextEditAccepted', () => d.nextEditAccepted()),
   ];
 }

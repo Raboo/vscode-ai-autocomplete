@@ -15,6 +15,9 @@
   "engines": {
     "vscode": "^1.100.0"
   },
+  "enabledApiProposals": [
+    "inlineCompletionsAdditions"
+  ],
   "categories": [
     "AI",
     "Programming Languages"
@@ -400,12 +403,21 @@
         "command": "aiAutocomplete.accepted",
         "title": "Completion Accepted (internal)",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditAccepted",
+        "title": "Next Edit Accepted (internal)",
+        "category": "AI Autocomplete"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "aiAutocomplete.accepted",
+          "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditAccepted",
           "when": "false"
         }
       ]

@@ -210,12 +210,38 @@ describe('ExtraContextRing', () => {
     expect(first.map((c) => c.path)).toEqual(['a', 'b', 'c']);
   });
 
-  test('re-adding identical text keeps the chunk position', () => {
+  test('order stays stable when the picked set is unchanged', () => {
     const r = new ExtraContextRing();
     r.add('a', lines, 200);
     r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('a', lines, 200); // a is now the newest, but the set is the same
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('b', lines, 200);
     r.add('a', lines, 200);
     expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+  });
+
+  /** Budget for exactly two default (64-line) chunks of `lines`. */
+  const TWO = 2 * lines.slice(0, 64).join('\n').length;
+
+  test('membership follows recency: after 13 newer files are viewed the oldest earlier picks drop out', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'b']);
+    for (let i = 1; i <= 13; i++) r.add(`n${i}`, lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['n12', 'n13']);
+  });
+
+  test('a re-added identical chunk counts as recent and stays in the set', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('c', lines, 200);
+    r.add('a', lines, 200); // same text as before: a is the newest again
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'c']);
   });
 
   test('pick keeps earlier picks first and appends new ones', () => {
@@ -229,12 +255,12 @@ describe('ExtraContextRing', () => {
     expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c', 'a']);
   });
 
-  test('pick keeps earlier picks in order when the budget shrinks', () => {
+  test('a smaller budget keeps the newest chunks, earlier picks first in their order', () => {
     const r = new ExtraContextRing({ chunkLines: 1 });
     for (const p of ['a', 'b', 'c']) r.add(p, ['xxxx'], 0);
     expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c']);
     r.add('d', ['xxxx'], 0);
-    expect(r.pick(ex('z', 0, 0), 8).map((c) => c.path)).toEqual(['a', 'b']);
-    expect(r.pick(ex('z', 0, 0), 12).map((c) => c.path)).toEqual(['a', 'b', 'd']);
+    expect(r.pick(ex('z', 0, 0), 8).map((c) => c.path)).toEqual(['c', 'd']);
+    expect(r.pick(ex('z', 0, 0), 12).map((c) => c.path)).toEqual(['c', 'd', 'b']);
   });
 });

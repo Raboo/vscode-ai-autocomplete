@@ -245,7 +245,7 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
    - otherwise abort the old request.
 4. **Context**:
    - prefix/suffix line windows within a character budget. The prefix window starts on a multiple of `step = max(1, floor(prefixLines / 4))`, not on the exact line `prefixLines` above the cursor, so the start of the prompt stays the same for many keystrokes and server prompt caches keep hitting. The window therefore holds up to `prefixLines + step − 1` lines before the cursor line. When the character budget cuts that window, it starts at the first whole line that fits instead, so every line that fits is kept; only a cursor line that alone is over the budget is cut inside. This stepped window is an idea taken from Twinny (@ 48e5ee52);
-   - an extra-context ring buffer of chunks from recently edited and viewed files, which maps to `/infill` `input_extra` or to repo-level template headers and keeps llama.cpp's KV-cache reuse high. The chunks picked last time come first in the same order and new ones follow oldest-first, so the prompt prefix stays stable;
+   - an extra-context ring buffer of chunks from recently edited and viewed files, which maps to `/infill` `input_extra` or to repo-level template headers and keeps llama.cpp's KV-cache reuse high. Each request takes the newest chunks that fit the budget (re-capturing a chunk makes it new again). Of those, the chunks picked last time come first in the same order and the others follow oldest-first, so the prompt prefix stays stable while the picked set does not change;
    - optional clipboard.
 5. **Stream filters**:
    - stop tokens;

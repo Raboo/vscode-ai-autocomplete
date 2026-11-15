@@ -193,7 +193,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     const i = src.inspect<boolean | string>(key);
     const levels = [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])];
     if (levels.some((v) => v === 'true')) problems.push(`aiAutocomplete.${key}: expected true or false; "true" read as true`);
-    return [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])].some((v) => v === true || v === 'true');
+    return levels.some((v) => v === true || v === 'true');
   };
   // Restrict-only list: the user's list (else the default) plus whatever a workspace or folder adds; a workspace cannot remove entries.
   const unionStrs = (key: string, d: string[]): string[] => {

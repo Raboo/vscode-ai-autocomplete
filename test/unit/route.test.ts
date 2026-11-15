@@ -52,6 +52,11 @@ describe('planRoute', () => {
     expect(planRoute('mistral', MISTRAL, PC('codestral'), 'auto')).toBe('native');
     expect(planRoute('mistral', MISTRAL, PC(), 'auto')).toBe('native');
   });
+  test('mistral auto: a Mistral chat family has no route (Mistral\'s FIM endpoint serves Codestral only)', () => {
+    const devstral = resolveFim({ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {} }, 'devstral-small-2507', SETTINGS).values;
+    expect(devstral.chat).toBe(true);
+    expect(planRoute('mistral', MISTRAL, devstral, 'auto')).toBe('unsupported');
+  });
   test('explicit modes', () => {
     expect(planRoute('llamacpp', LLAMA, PC('mellum'), 'native')).toBe('native');
     expect(planRoute('openai', LMSTUDIO, PC('qwen'), 'native')).toBe('unsupported');

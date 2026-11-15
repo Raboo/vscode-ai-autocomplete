@@ -2,7 +2,7 @@
 // removes reasoning from chat and FIM output. No upstream code is copied.
 import type { HostFlavor, ThinkingStrategy } from '../types';
 
-/** Every top-level request field `thinkingFields` can set; the retry in Task 3 drops one of these at a time. */
+/** Every top-level request field `thinkingFields` can set. On a 400/422 the chat retry drops those the body names, or all of them when it names none. */
 export const THINKING_FIELDS: readonly string[] = ['chat_template_kwargs', 'reasoning_effort', 'reasoning', 'thinking'];
 
 export interface ThinkingFields { body: Record<string, unknown>; systemSuffix?: string }

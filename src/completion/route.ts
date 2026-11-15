@@ -19,7 +19,9 @@ export const REASONING_ALLOWANCE_TOKENS = 1024;
  * - template: the prompt is rendered client-side from the preset's FIM template;
  * - chat: a hole-filler prompt on /v1/chat/completions.
  * llama.cpp /infill lays tokens out prefix-first, so suffix-first models go through a template on /completion.
- * In auto mode chat families go to chat, except where the server's native FIM serves chat models (DeepSeek).
+ * In auto mode the chat route takes two kinds of request:
+ * - chat families, except where the server's native FIM serves chat models (DeepSeek);
+ * - any model on a server with no template route (Strata, OpenRouter) that native FIM does not take.
  */
 export function planRoute(
   kind: BackendKind,

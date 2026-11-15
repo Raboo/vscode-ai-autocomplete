@@ -164,8 +164,8 @@ export interface ChatRequestPlan {
 }
 
 /**
- * Learned when OpenRouter rejects `reasoning: {effort: "none"}` (the model must reason). It has its own key, so the
- * `reasoning` field is still sent, with effort "low"; if that is rejected too, `reasoning` itself is learned.
+ * Learned when OpenRouter rejects `reasoning: {effort: "none"}` (the model must reason). It has its own key, not `reasoning`:
+ * the model then counts as `cannotDisable`, whose low-effort body is defined but never sent, because the chat route is blocked for it.
  */
 export const EFFORT_NONE_REJECTED = 'reasoning.effort=none';
 

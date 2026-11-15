@@ -137,7 +137,7 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 10000,
-                    "description": "Maximum lines of code before the cursor."
+                    "description": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
                   },
                   "suffixLines": {
                     "type": "integer",
@@ -255,7 +255,7 @@
           "type": "number",
           "default": 200,
           "scope": "resource",
-          "markdownDescription": "Number of lines before the cursor sent as context."
+          "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
         },
         "aiAutocomplete.fim.suffixLines": {
           "type": "number",

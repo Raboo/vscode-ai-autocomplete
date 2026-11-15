@@ -161,3 +161,29 @@ Measured on the user's Strata (no address here):
 - It caps stop strings at 4.
 - It has no `t_max_predict_ms`.
 - Raw FIM, or the sweep and zeta Next Edit formats, would need a Strata PR first.
+
+## Phase 2 revisions (2026-11-15)
+
+Parked by the revisions' task reviews and final review (the fix wave did the rest).
+
+### Code
+
+- `NoRoute` has a `'thinking'` variant that `whyNoRoute` never returns, so `noRouteText('thinking')` is dead and untested: use it (for example in `explainUnsupported` or `pageState`) or drop it.
+- The `cannotDisable` log reads `model "the model" cannot turn thinking off…` when no model is known, and names no backend although it is logged once per backend.
+- `reportThinking` builds a local `outcome` only to return it.
+- `Collected.thinking` has no production reader left, and in literal mode `visible` and `thinking` can be garbled for answers that contain tags (only the `logPrompts` debug line shows them): drop `thinking`, or document that it is approximate.
+- `inlineThinking` parses the whole raw content again on every chunk (quadratic; negligible at 160 tokens).
+- An unnamed 400 on the chat route drops the thinking fields, not the Strata pin (`strata_prefix`): a design note.
+- The probe hint "this server turns thinking off one way only" is unreachable (documented in the Backends page spec, harmless).
+- The Backends page spec says only the `/no_think` switch is tried on Strata, DeepSeek, Ollama and OpenRouter; when `/no_think` is the current switch, the request without it is tried instead.
+- When the character cap cuts the prefix window, its start moves line by line, so server prompt caches miss on each new line in files with long lines; a coarser fallback grid (`step / 2`, …) could keep some of the stability (found in the fix wave).
+
+### Tests
+
+- The keeps-thinking integration test's "second trigger sends no POST" would also pass under a backoff: assert the status has no `retrying in`.
+- The `unwrapped … is code` stream test asserts only `toBeDefined`.
+- The "5 s deadline" form test pins the chat route only.
+- The integration suite no longer runs the Strata-flavor chat connection test: add one asserting the thinking failure and exactly 2 requests.
+- No test covers the non-BMP branch of `stableUserChars`.
+- No test checks that the user's `extraBody` overrides the Strata pin.
+- No integration test covers "a settings change unblocks" or "a passing Test unblocks" a model that keeps thinking; only code reading confirms them (`extension.ts` settings rebuild, `backendsPanel.ts` → `onTestPassed`).

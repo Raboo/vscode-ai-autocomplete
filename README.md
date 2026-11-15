@@ -97,7 +97,7 @@ A model with no fill-in-the-middle support, such as a general instruct or chat-o
 
 Thinking is turned off per model family and server. The Thinking dropdown on the Backends page (the `thinking` field of the backend's `fim` object) overrides what the extension picks. Reasoning text is never shown.
 
-A model that cannot turn thinking off (gpt-oss, DeepSeek R1 and similar, or an OpenRouter model that must reason) is not used: the model list tags it `chat prompt, cannot turn thinking off`, the Test fails, and the status bar shows `cannot turn thinking off`. A model that keeps thinking although thinking was asked off fails the same way, and the status bar shows `keeps thinking`. **Retry now**, a passing Test or a changed API key lets the extension try the model again, and a settings change clears what it learned.
+A model that cannot turn thinking off (gpt-oss, DeepSeek R1 and similar, or an OpenRouter model that must reason) is not used: the model list tags it `chat prompt, cannot turn thinking off`, the Test fails, and the status bar shows `cannot turn thinking off`. A model that keeps thinking although thinking was asked off fails the same way, and the status bar shows `keeps thinking`. For a model that keeps thinking, **Retry now**, a passing Test or a changed API key lets the extension try it again; a settings change clears everything it learned.
 
 When a model keeps thinking, **Test connection** tries the other thinking switches on a sample and suggests one that works ("choose ... as the Thinking switch"). On Strata, DeepSeek, Ollama and OpenRouter the server decides how thinking is turned off, so only the `/no_think` switch is tried.
 
@@ -111,7 +111,7 @@ With the cursor after only indentation, a chat model often types the indentation
 { "id": "strata", "kind": "openai", "hostFlavor": "strata", "baseUrl": "http://127.0.0.1:8080/v1" }
 ```
 
-On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes. Measured 2026-11-15 on the user's Strata, a 1750-token prompt took 3.6 s without the pin and 0.9 s with it (1691 tokens reused). The first request of a file still reads the whole prompt (about 4 s there), so on a large file the first suggestion can miss the 5 s deadline: raise the backend's Timeout on the Backends page.
+On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes. Measured on a test Strata server (Qwen3.8, 2026-11-15), a 1750-token prompt took 3.6 s without the pin and 0.9 s with it (1691 tokens reused). The first request of a file still reads the whole prompt (about 4 s there), so on a large file the first suggestion can miss the 5 s deadline: raise the backend's Timeout on the Backends page.
 
 **OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request (the server rejects turning reasoning off) and then treated like one that cannot turn thinking off. OpenRouter completes through the chat prompt only, because a raw FIM prompt reaches the model only with some of the providers OpenRouter picks. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
 

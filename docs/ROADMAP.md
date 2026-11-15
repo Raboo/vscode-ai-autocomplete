@@ -7,7 +7,8 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 0. Scaffold | Project skeleton, license files, CI, GitHub automation, AI-session handoff | [Phase 0–1 plan](superpowers/plans/2026-11-13-ai-autocomplete-phase0-1.md) | released in [v0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.1.0) |
 | 1. FIM core (v0.1) | llama.cpp `/infill`, openaiCompat, Mistral/Codestral; coder-family presets; full FIM pipeline; status bar; SecretStorage keys; `localOnly`; backends page ([design](superpowers/specs/2026-11-14-backend-manager-design.md)) | [Phase 0–1 plan](superpowers/plans/2026-11-13-ai-autocomplete-phase0-1.md) | released in [v0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.1.0) |
 | 2. Chat path and thinking control (v0.2) | Hole-filler, `thinking.ts` and capability learning, OpenRouter backend, model-family presets, Strata host flavor | [Phase 2 plan](superpowers/plans/2026-11-15-phase2-chat-thinking.md), [revisions](superpowers/plans/2026-11-15-phase2-revisions.md) | released in [v0.2.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.2.0) |
-| 3. Next Edit (v0.3) | Edit history, region, trigger; chatXtab, sweep and zeta21 formats; native renderer with decoration fallback | not written yet | not started |
+| 3a. Next Edit core, chatXtab, native display (v0.3) | Edit history, region, trigger; chatXtab format; ghost text for insertions; native inline edits with the argv.json opt-in | [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md) | implemented on `feat/next-edit` (not merged or released) |
+| 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | not written yet | not started |
 | 4. Local model helper (v0.4) | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | not written yet | not started |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
@@ -43,3 +44,19 @@ Results on 2026-11-15:
 - OpenRouter: passed.
 - LM Studio 0.4.28 with an MLX Qwen3.5-4B from Hugging Face: thinking cannot be turned off per request, and the extension fails it clearly; turning it off in the model's prompt template works (README, spec "To verify"). With Predicte also installed, `Tab` indented instead of accepting; disabling Predicte fixed it.
 - llama.cpp: not run yet; still deferred.
+
+Phase 3a (Publish step 4 of the [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md), run on the PR's CI `.vsix` against Strata; select it with **Select Next Edit Backend**):
+
+- Without the opt-in:
+  - rename a parameter in one function, then move the cursor down: nothing shows except, once, the notice offering the native UI;
+  - press Enter at the end of a line inside a function whose next line is obvious: an insertion shows as ghost text and Tab accepts it;
+  - FIM still works as before.
+- With the opt-in (run **Enable Native Next Edit UI**, quit and reopen VS Code):
+  - the rename shows as an inline edit on the next function; Tab jumps, Tab accepts;
+  - Esc dismisses it, and nothing re-shows for 5 s;
+  - accepting chains the next suggestion;
+  - with an inline edit showing, type a character on another line, then press Tab: the edit is either gone or still correct, never applied to shifted text.
+- With `debug.logPrompts` on, the log shows the chatXtab prompt with `<|edit_diff_history|>` and the request time. Note the latency on a large file.
+- A `.env` file gets no Next Edit request.
+- After a Next Edit timeout, FIM pauses too (shared backoff).
+- Alt+\ then waiting: no Next Edit at that spot (known gap).

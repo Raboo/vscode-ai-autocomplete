@@ -191,3 +191,20 @@ Parked by the revisions' task reviews and final review (the fix wave did the res
 - No test covers the non-BMP branch of `stableUserChars`.
 - No test checks that the user's `extraBody` overrides the Strata pin.
 - No integration test covers "a settings change unblocks" or "a passing Test unblocks" a model that keeps thinking; only code reading confirms them (`extension.ts` settings rebuild, `backendsPanel.ts` → `onTestPassed`).
+
+## Phase 3a (2026-11-16)
+
+Left open by the Phase 3a plan, its task reviews and its final review.
+
+- Copilot's replace-to-end-of-line rebase (Ruling 12): an edit that rewrites the rest of the cursor line is dropped as an inline edit instead of being rebased into ghost text.
+- No drift check is possible right before VS Code applies a native inline edit (Review Focus 1): between an edit appearing and Tab, VS Code may have shifted its range. Covered only by the smoke test.
+- Rejected-edit memory: after Esc, only a 5 s cooldown applies, so the same edit can come back.
+- The import-only edit filter: edits that only change import lines are not filtered out.
+- Use the proposed `onDidChange` instead of the `inlineSuggest.trigger` command to show a fresh result (Ruling 9). After an explicit trigger (Alt+\) at a document version and cursor, VS Code never shows a later Next Edit result for that same state (it treats the trigger as answered); fixing it needs the `onDidChange` path or a design change.
+- A Next Edit state in the status bar (Ruling 8): failures are only logged and notified.
+- Test on the Backends page should also test Next Edit (the `nextEditModel`).
+- The settings deferred in Ruling 7: `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget`.
+- `EDIT_ECHO_MS` is a 100 ms time heuristic; a version-based echo check would be sturdier, and a slow CI runner could double-request.
+- The shared backoff means a Next Edit timeout pauses FIM on the same backend: decide whether Next Edit should have its own backoff.
+- Requests already asked for a version and line are not retried after a dropped result or a failure until the document changes (R16 trade-off).
+- The extra-context ring (FIM) has the same "file reopened in a disabled language" gap that Next Edit's history now handles with `forget()`.

@@ -713,7 +713,7 @@ git commit -m "feat: choose the Next Edit backend and model"
     - label `proposed`: `files: 'out/test/integration/nextEdit.test.js'`, with `--enable-proposed-api raboo.ai-autocomplete` added to `launchArgs`.
   - The mock gains `nextEdit?: { content: string[] }`, streamed when a chat request's user message contains `<|code_to_edit|>`.
 
-- [ ] **Step 1: Write the tests** (`nextEdit.test.ts`; each reads `api.nativeNextEdit` to know its launch)
+- [x] **Step 1: Write the tests** (`nextEdit.test.ts`; each reads `api.nativeNextEdit` to know its launch)
 
 - `the probe matches the launch`: `nativeNextEdit` is `true` under `proposed` and `false` under `main`. Use an environment variable set in each config's `env`, for example `AI_AUTOCOMPLETE_TEST_LAUNCH`.
 - `an insertion after the cursor line shows as ghost text and is accepted`, in both launches:
@@ -728,12 +728,12 @@ git commit -m "feat: choose the Next Edit backend and model"
 - `typing fast sends one Next Edit request`: type 5 characters 30 ms apart with `editor.edit`; after the pause, the mock saw exactly one request containing `<|code_to_edit|>`.
 - `the Next Edit request carries the history diff`: after two edits more than 1.5 s apart, the user message contains `<|edit_diff_history|>` and `@@ -`.
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `npm run test:integration`
 Expected: every existing test plus the new ones pass under `main`, and the `proposed` run passes. If the trigger command misses because the window lacks OS focus, reuse the suite's existing `trigger`/`waitFor` helpers rather than new sleeps.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .vscode-test.mjs test/integration/mockServer.ts test/integration/nextEdit.test.ts package.json

@@ -745,27 +745,27 @@ git commit -m "test: Next Edit integration tests with and without the proposed A
 **Files:**
 - Modify: `README.md`, `AGENTS.md`, `THIRD_PARTY_NOTICES.md`, `docs/ROADMAP.md`, `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`, `docs/superpowers/followups/2026-11-13-phase0-1-review-followups.md`
 
-- [ ] **Step 1: README, a "Next Edit" section**
+- [x] **Step 1: README, a "Next Edit" section**
   - What it does.
   - How to turn it on: **AI Autocomplete: Select Next Edit Backend**, optionally a Next Edit model on the Backends page.
   - What shows without the opt-in (only insertions at the cursor) and how to opt in: **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code. VS Code logs an error about proposed APIs for extensions that declare them without the opt-in; that is expected.
   - Tab jumps to an edit, then accepts it; Esc dismisses it.
   - Privacy: the current file's recent diffs always go to the Next Edit backend; other files' diffs and snippets only with `fim.extraContext`.
   - The deadline setting.
-- [ ] **Step 2: AGENTS.md**
+- [x] **Step 2: AGENTS.md**
   - The `import 'vscode'` allowlist gains `src/nextEdit/vscode/*`.
   - "Zero runtime dependencies" becomes "Runtime dependencies: only `diff` and `jsonc-parser`".
   - Layout gains `src/nextEdit/` (one line per module).
   - Commands: `npm run test:integration` runs two launches (`main`, `proposed`).
-- [ ] **Step 3: THIRD_PARTY_NOTICES.md:** jsdiff (BSD-3-Clause, full text), jsonc-parser (MIT, full text), and microsoft/vscode for the pinned proposal file (MIT, full text).
-- [ ] **Step 4: The spec**
+- [x] **Step 3: THIRD_PARTY_NOTICES.md:** jsdiff (BSD-3-Clause, full text), jsonc-parser (MIT, full text), and microsoft/vscode for the pinned proposal file (MIT, full text).
+- [x] **Step 4: The spec**
   - Record the **(research)** facts from this plan's header under "Key API facts" (dated 2026-11-15, 1.146). Correct the old line "Defining `handleDidShowCompletionItem`, or passing registration `metadata`, throws".
   - Record that `showRange` is not used by the 1.146 editor.
   - Phase 3 is split into 3a/3b.
   - Rulings 2, 3, 6 and 9–13 go into "Next Edit pipeline".
   - The live probe's latency goes under "To verify" (answered for small prompts; large prompts still open).
-- [ ] **Step 5: ROADMAP:** the Phase 3 row is split into "3a. Next Edit core, chatXtab, native display" (plan: this file; status implemented) and "3b. Sweep and Zeta formats, decoration fallback" (plan not written yet; not started). Add Phase 3a's manual checks under "Deferred manual checks" (Publish step 4).
-- [ ] **Step 6: Follow-ups:** a "Phase 3a" section listing:
+- [x] **Step 5: ROADMAP:** the Phase 3 row is split into "3a. Next Edit core, chatXtab, native display" (plan: this file; status implemented) and "3b. Sweep and Zeta formats, decoration fallback" (plan not written yet; not started). Add Phase 3a's manual checks under "Deferred manual checks" (Publish step 4).
+- [x] **Step 6: Follow-ups:** a "Phase 3a" section listing:
   - Copilot's replace-to-end-of-line rebase (Ruling 12);
   - no drift check is possible right before VS Code applies a native inline edit (Review Focus 1);
   - rejected-edit memory;
@@ -774,7 +774,7 @@ git commit -m "test: Next Edit integration tests with and without the proposed A
   - a Next Edit status-bar state;
   - Test on the Backends page also testing Next Edit;
   - the settings deferred in Ruling 7.
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run: `npm run lint && npm run typecheck && npm run build && npm test && npm run test:integration && npm run package`
 Expected: all pass, and the `.vsix` builds.

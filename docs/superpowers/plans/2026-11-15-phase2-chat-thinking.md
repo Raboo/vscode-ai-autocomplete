@@ -1037,7 +1037,7 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
 **Files:**
 - Modify: `README.md`, `AGENTS.md`, `docs/ROADMAP.md`, `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`, `docs/superpowers/specs/2026-11-14-backend-manager-design.md`, `docs/superpowers/followups/2026-11-13-phase0-1-review-followups.md`.
 
-- [ ] **Step 1: Update the docs.**
+- [x] **Step 1: Update the docs.**
   - **README:**
     - Line 5: drop "OpenRouter support follows later".
     - Replace "Chat-only models" with **"Chat models (Strata, OpenRouter, general instruct models)"**:
@@ -1087,8 +1087,8 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
   - **Follow-ups:**
     - Remove the entries this plan fixed: debouncer settings; `"true"` localOnly; `stop: []`; the whole-stream timeout; `contextWindows` prototype keys; the duplicated `FIM_MODES`/`MULTILINE` (only that clause of the compound entry at L80; the `getJson`/`postJson` duplication and the duplicated hosted check stay); `resolvePreset` override stops; integration test 1's fixed wait.
     - Add whatever the reviews park.
-- [ ] **Step 2: Run the full check.** Expected: PASS.
-- [ ] **Step 3: Commit.** `docs: chat models, thinking control, OpenRouter and Strata`.
+- [x] **Step 2: Run the full check.** Expected: PASS.
+- [x] **Step 3: Commit.** `docs: chat models, thinking control, OpenRouter and Strata`.
 
 ---
 

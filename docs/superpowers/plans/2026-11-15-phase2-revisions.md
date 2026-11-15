@@ -268,3 +268,35 @@ These ideas come from Twinny (MIT), `src/extension/utils.ts` `prefixWindowStep` 
   - **A model that keeps thinking:** Test suggests a working switch.
   - **Remove** the "slow but works" expectations.
 - [ ] **Step 3: Commit.** `docs: thinking models fail fast, 5 s deadline, OpenRouter evidence, Twinny ideas`.
+
+### Task 5: Pin the stable prompt start on Strata
+
+Strata (commit `13eedf5`, docs/DETAILS.md "Conversation cache") accepts a request field `strata_prefix: {"message": <index>, "chars": <n>}`. It pins the first `n` characters of message `<index>` as a reusable cache checkpoint, with one pin per engine.
+
+Measured live on 2026-11-15 on the user's Strata, with a 725-token chat request changed only near its end:
+- without the pin, it reused 0 tokens and took 2.18 s;
+- with the pin, it reused 699 tokens and took 0.39 s.
+
+Strata is a hybrid model with DeltaNet layers. Without the pin, it resumes only at `<|im_start|>` boundaries, so every keystroke reads the whole user message again.
+
+**Files:** `src/completion/route.ts` (or `src/completion/holeFiller.ts` for the offset helper), `test/unit/route.test.ts`, `test/unit/holeFiller.test.ts`, `test/integration/fim.test.ts`, `README.md`, and the main spec's Strata host facts.
+
+**Interfaces:**
+```ts
+// holeFiller.ts
+export const PIN_BACK_LINES = 4;
+/** Characters of the user message that stay the same while the user types near the cursor: everything before the start of the line PIN_BACK_LINES above the cursor line (0 when there is none). */
+export function stableUserChars(messages: ChatMessage[]): number;
+```
+- **Request:** `buildChatRequest` adds `strata_prefix: { message: 1, chars: stableUserChars(messages) }` to the body only when the flavor is `strata` and `chars > 0`, and only on the chat route.
+- **Rejection:** the field is optional. If a server answers 400/422 naming `strata_prefix`, the existing retry drops it and learns it.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `stableUserChars stops PIN_BACK_LINES above the cursor line`;
+  - `stableUserChars is 0 near the top of the file`;
+  - `buildChatRequest pins only on strata` (other flavors get no `strata_prefix`);
+  - integration: in `ghost text from a chat model on Strata, thinking off`, assert that `body.strata_prefix.message === 1` and `body.strata_prefix.chars > 0`.
+- [ ] **Step 2: Run** them. Expected: FAIL.
+- [ ] **Step 3: Implement.** Add a README line ("on Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache") and the measured host fact, marked "verified 2026-11-15 at 13eedf5 + live".
+- [ ] **Step 4: Run the full check and** `npm run test:integration`. Expected: PASS.
+- [ ] **Step 5: Commit.** `perf: pin the stable prompt start on Strata`.

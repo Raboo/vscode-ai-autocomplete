@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FIM_LIMITS, parseBackendEntry, parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -194,5 +194,28 @@ describe('backend fim', () => {
     expect(problems).toEqual([]);
     expect(parseBackendEntry(5, 1, new Set(), problems)).toBeUndefined();
     expect(problems).toEqual(['aiAutocomplete.backends[1]: not an object, ignored']);
+  });
+});
+
+describe('thinking and localOnly strings', () => {
+  test('backend fim.thinking keeps a known strategy and reports an unknown one', () => {
+    const ok: string[] = [];
+    expect(parseBackendEntry({ ...B('lm'), fim: { thinking: 'cannotDisable' } }, 0, new Set(), ok)?.fim?.thinking).toBe('cannotDisable');
+    expect(ok).toEqual([]);
+    const problems: string[] = [];
+    const b = parseBackendEntry({ ...B('lm'), fim: { thinking: 'off' } }, 0, new Set(), problems);
+    expect(b?.fim).toBeUndefined();
+    expect(problems).toEqual([`aiAutocomplete.backends[0] ("lm").fim.thinking: unknown thinking switch "off" (use one of ${THINKING_STRATEGIES.join(', ')}), ignored`]);
+  });
+  test('modelOverrides thinking is parsed like fimTemplate', () => {
+    const r = parseSettings(src({ modelOverrides: { globalValue: { a: { thinking: 'none' }, b: { thinking: 'off' } } } }));
+    expect(r.settings.modelOverrides.a.thinking).toBe('none');
+    expect(r.settings.modelOverrides.b.thinking).toBeUndefined();
+    expect(r.problems).toEqual([`aiAutocomplete.modelOverrides["b"].thinking: unknown thinking switch "off" (use one of ${THINKING_STRATEGIES.join(', ')}), ignored`]);
+  });
+  test('a "true" string for privacy.localOnly counts as on and is reported', () => {
+    const r = parseSettings(src({ 'privacy.localOnly': { globalValue: 'true' as unknown as boolean } }));
+    expect(r.settings.privacy.localOnly).toBe(true);
+    expect(r.problems).toContain('aiAutocomplete.privacy.localOnly: expected true or false; "true" read as true');
   });
 });

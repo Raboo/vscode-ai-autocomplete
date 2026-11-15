@@ -1,14 +1,15 @@
 import type { Settings } from '../config/settings';
-import { resolvePreset } from '../models/presets';
-import type { BackendConfig, FimTemplateId, Multiline } from '../types';
+import { resolvePreset, type SamplingParams } from '../models/presets';
+import type { BackendConfig, FimTemplateId, Multiline, ThinkingStrategy } from '../types';
 
 export const DEFAULT_CONTEXT_TOKENS = 4700;
 export const CHARS_PER_TOKEN = 3.5;
 export const DEFAULT_TIMEOUT_MS = 5000;
+export const DEFAULT_CHAT_TIMEOUT_MS = 15000;
 
 export type ValueSource = 'backend' | 'modelOverride' | 'settings' | 'preset' | 'builtin';
 export type FimField = 'template' | 'temperature' | 'topP' | 'topK' | 'maxTokens' | 'multiline' | 'prefixLines' | 'suffixLines'
-  | 'contextTokens' | 'extraContext' | 'debounceMs' | 'timeoutMs' | 'stop' | 'extraBody';
+  | 'contextTokens' | 'extraContext' | 'debounceMs' | 'timeoutMs' | 'stop' | 'extraBody' | 'thinking';
 
 export interface FimValues {
   presetId: string;
@@ -26,6 +27,13 @@ export interface FimValues {
   /** null = adaptive. */
   debounceMs: number | null;
   timeoutMs: number;
+  chat: boolean;
+  thinking: ThinkingStrategy;
+  samplingParams: SamplingParams;
+  /** The chat route's timeout: the backend's `fim.timeoutMs`, else a longer default than the FIM one. */
+  chatTimeoutMs: number;
+  /** The backend's own `fim.stop`, without preset stops. */
+  backendStop: string[];
 }
 
 export interface ResolvedFim {
@@ -77,6 +85,11 @@ export function resolveFim(backend: BackendConfig, model: string | undefined, s:
     extraContext,
     debounceMs: b.debounceMs ?? s.fim.debounceMs,
     timeoutMs: b.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    chat: preset.chat,
+    thinking: b.thinking ?? preset.thinking,
+    samplingParams: preset.samplingParams,
+    chatTimeoutMs: b.timeoutMs ?? DEFAULT_CHAT_TIMEOUT_MS,
+    backendStop: [...(b.stop ?? [])],
   };
   const sources: Record<FimField, ValueSource> = {
     template: layered(b.template !== undefined, ov.fimTemplate),
@@ -93,6 +106,7 @@ export function resolveFim(backend: BackendConfig, model: string | undefined, s:
     timeoutMs: b.timeoutMs !== undefined ? 'backend' : 'builtin',
     stop: layered(b.stop !== undefined, ov.stop),
     extraBody: layered(b.extraBody !== undefined, ov.extraBody),
+    thinking: layered(b.thinking !== undefined, ov.thinking),
   };
   return { values, sources, extraContextAllowed: s.fim.extraContext };
 }

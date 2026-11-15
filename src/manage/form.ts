@@ -2,11 +2,14 @@ import { createBackend } from '../backends';
 import { inferHostFlavor, isHostedFlavor } from '../backends/hostFlavor';
 import { resolveFim, templateMismatch, type ValueSource } from '../completion/effective';
 import { planRoute } from '../completion/route';
-import { FIM_LIMITS, parseBackendEntry, type Settings } from '../config/settings';
+import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
 import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
 import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
 import { SERVER_TYPES, serverTypeOf, suggestId } from './serverTypes';
+
+const FIM_MODES: string[] = [...FIM_MODE_LIST];
+const MULTILINE: string[] = [...MULTILINE_LIST];
 
 export interface FieldError { field: ErrorField; message: string }
 
@@ -16,8 +19,6 @@ const FIELDS: readonly FormField[] = ['template', 'fimMode', 'multiline', 'conte
 /** The fields stored under `fim`; `fimMode` and `headers` live at the top level of the entry. */
 const FIM_KEYS = FIELDS.filter((f) => f !== 'fimMode' && f !== 'headers');
 const NUMERIC = Object.keys(FIM_LIMITS) as Limited[];
-const FIM_MODES = ['auto', 'native', 'template', 'chat'];
-const MULTILINES = ['auto', 'always', 'never'];
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 const MAX_HOSTED_STOPS = 4;
 
@@ -133,7 +134,7 @@ export function validateForm(f: BackendForm, taken: readonly string[]): FieldErr
   const mode = typed(f, 'fimMode');
   if (mode !== undefined && !FIM_MODES.includes(mode)) err('fimMode', `use one of ${FIM_MODES.join(', ')}`);
   const multiline = typed(f, 'multiline');
-  if (multiline !== undefined && !MULTILINES.includes(multiline)) err('multiline', `use one of ${MULTILINES.join(', ')}`);
+  if (multiline !== undefined && !MULTILINE.includes(multiline)) err('multiline', `use one of ${MULTILINE.join(', ')}`);
   const headers = typed(f, 'headers');
   if (headers !== undefined && parseHeaders(headers).bad) err('headers', 'each line needs the form Name: value');
   const body = typed(f, 'extraBody');
@@ -235,7 +236,7 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
     headers: { text: '', source: 'builtin' },
     extraBody: { text: Object.keys(values.extraBody).length > 0 ? JSON.stringify(values.extraBody) : '', source: sources.extraBody },
   };
-  const options: Partial<Record<FormField, string[]>> = { template: Object.keys(TEMPLATES), fimMode: FIM_MODES, multiline: MULTILINES };
+  const options: Partial<Record<FormField, string[]>> = { template: Object.keys(TEMPLATES), fimMode: FIM_MODES, multiline: MULTILINE };
   const disabled: Partial<Record<FormField, string>> = {};
   if (hosted) disabled.topK = 'not sent to hosted servers';
   if (native) disabled.template = 'the server builds the prompt';

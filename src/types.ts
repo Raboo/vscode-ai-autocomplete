@@ -6,10 +6,15 @@ export type FimTemplateId = 'qwen' | 'codestral' | 'deepseek' | 'starcoder' | 'c
 export type Multiline = 'auto' | 'always' | 'never';
 
 /** Per-backend completion settings; every key is optional and overrides the global `aiAutocomplete.fim.*` value. */
+/** How thinking is turned off for a model on the chat prompt; Task 2 turns each id into request fields. */
+export type ThinkingStrategy = 'none' | 'templateKwarg:enable_thinking' | 'templateKwarg:thinking' | 'templateKwarg:thinking_mode=disabled'
+  | 'templateKwarg:thinking_budget=0' | 'reasoningEffortNone' | 'systemSoftSwitch:/no_think' | 'vendorThinkingDisabled' | 'cannotDisable';
+
 export interface BackendFimSettings {
   template?: FimTemplateId; contextTokens?: number; prefixLines?: number; suffixLines?: number; extraContext?: boolean;
   multiline?: Multiline; maxTokens?: number; temperature?: number; topP?: number; topK?: number;
   debounceMs?: number; timeoutMs?: number; stop?: string[]; extraBody?: Record<string, unknown>;
+  thinking?: ThinkingStrategy;
 }
 
 export interface BackendConfig {
@@ -41,4 +46,5 @@ export interface ModelOverrideBody {
   stop?: string[];
   sampling?: Partial<Sampling>;
   extraBody?: Record<string, unknown>;
+  thinking?: ThinkingStrategy;
 }

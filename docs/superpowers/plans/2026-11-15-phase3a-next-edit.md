@@ -615,7 +615,7 @@ git commit -m "feat: show Next Edit results from the inline completion provider"
   - `export function argvPath(appName: string, home: string, env: { VSCODE_PORTABLE?: string }): string | undefined`;
   - `export function withProposedApiOptIn(text: string, id: string): string | undefined`: the new argv.json text, or `undefined` when `id` is already listed.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `argvPath per product`:
   - `Visual Studio Code` gives `<home>/.vscode/argv.json`;
@@ -632,12 +632,12 @@ git commit -m "feat: show Next Edit results from the inline completion provider"
 - `an empty file gets an object`.
 - `manifest.test.ts`: the dependencies are `['diff', 'jsonc-parser']`.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/nextEdit/optIn.test.ts test/unit/manifest.test.ts`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `withProposedApiOptIn` uses jsonc-parser's `parse`, `modify` and `applyEdits` with `{ formattingOptions: { insertSpaces: true, tabSize: 2 } }`.
 - **The command:**
@@ -647,12 +647,12 @@ Expected: FAIL
   - On an unknown product or a read/write error, run `workbench.action.configureRuntimeArguments` and show "Add \"enable-proposed-api\": [\"raboo.ai-autocomplete\"] to argv.json, then quit and reopen VS Code."
 - **The one-time notice** (controller, Task 7's drop path): "AI Autocomplete has a Next Edit suggestion that needs VS Code's inline-edit UI." with buttons "Enable" (runs the command) and "Not now", shown at most once per session.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit/nextEdit/optIn.test.ts test/unit/manifest.test.ts && npm run build`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json src/nextEdit/optIn.ts src/ui/commands.ts src/nextEdit/vscode/controller.ts test/unit/nextEdit/optIn.test.ts test/unit/manifest.test.ts

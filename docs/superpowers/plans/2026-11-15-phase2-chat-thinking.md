@@ -272,7 +272,7 @@ README.md  AGENTS.md  docs/ROADMAP.md  the main spec  docs/superpowers/followups
 - A string `"true"` for `privacy.localOnly` counts as on, and is reported as a problem: `aiAutocomplete.privacy.localOnly: expected true or false; "true" read as true`.
 - `form.ts` uses the exported `FIM_MODES` and `MULTILINE`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   // presets.test.ts
   test.each([
@@ -316,14 +316,14 @@ README.md  AGENTS.md  docs/ROADMAP.md  the main spec  docs/superpowers/followups
   // manifest.test.ts
   test('fim.thinking schema enum equals THINKING_STRATEGIES; modelOverrides description names thinking', () => {});
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/presets.test.ts test/unit/settings.test.ts test/unit/effective.test.ts test/unit/manifest.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `npx vitest run test/unit/presets.test.ts test/unit/settings.test.ts test/unit/effective.test.ts test/unit/manifest.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement.**
   - Add the types, the preset rows and the effective values.
   - Parse `fim.thinking` and `modelOverrides.<re>.thinking` in `settings.ts`.
   - Add `thinking` to the `fim` item schema in `package.json` (`enum` = the strategy ids, description `How thinking is turned off for this backend's model on the chat prompt.`).
   - Extend the `modelOverrides` `markdownDescription` to list `thinking`.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: model-family presets with thinking strategies`.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: model-family presets with thinking strategies`.
 
 ### Task 2: Thinking fields per host, and the reasoning filter
 

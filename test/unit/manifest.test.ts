@@ -6,7 +6,7 @@ test('identity', () => {
   expect(pkg.publisher).toBe('raboo'); expect(pkg.name).toBe('ai-autocomplete');
   expect(pkg.license).toBe('Apache-2.0'); expect(pkg.author.name).toBe('Elias Abacioglu');
   expect(pkg.enabledApiProposals).toBeUndefined();
-  expect(Object.keys(pkg.dependencies ?? {})).toEqual([]);
+  expect(Object.keys(pkg.dependencies ?? {})).toEqual(['diff']);
 });
 test('NOTICE credits the original author', () => {
   expect(readFileSync('NOTICE', 'utf8')).toContain('Originally created by Elias Abacioglu');

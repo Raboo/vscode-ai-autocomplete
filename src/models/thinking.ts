@@ -164,6 +164,19 @@ export class ReasoningFilter {
   get thinking(): boolean { return this.fieldThinking || this.parsed().thinking; }
 }
 
+/**
+ * FIM output: removes a reasoning block at the very start (after optional whitespace) and the whitespace after it;
+ * an unclosed one leaves nothing. Tags anywhere else stay: there they are code, such as a string holding `</think>`.
+ */
+export function stripLeadingReasoning(text: string): string {
+  const body = text.trimStart();
+  const block = BLOCKS.find(([open]) => body.startsWith(open));
+  if (!block) return text;
+  const [open, close] = block;
+  const end = body.indexOf(close, open.length);
+  return end < 0 ? '' : body.slice(end + close.length).trimStart();
+}
+
 export function stripThinking(text: string, finishReason?: string): { text: string; thinking: boolean } {
   const f = new ReasoningFilter();
   f.push(text);

@@ -24,7 +24,7 @@ export const SAMPLE: TemplateInput = {
   repoName: 'sample',
   extra: [],
 };
-const POST = { linePrefix: '  return ', lineSuffix: '', prevLine: 'function add(a: number, b: number): number {', suffix: SAMPLE.suffix };
+const POST = { linePrefix: '  return ', lineSuffix: '', prevLine: 'function add(a: number, b: number): number {', suffix: SAMPLE.suffix, chat: false };
 
 export interface ConnectionTestInput {
   backend: FimBackend;
@@ -177,7 +177,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
     }
     const collected = await stream(planned, ctl, stop);
-    const text = postprocess(collected.text, POST) ?? '';
+    const text = postprocess(collected.text, { ...POST, chat: route === 'chat' }) ?? '';
     const elapsed = now() - stageStart;
     if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
     if (text === '' && collected.timedOut) {

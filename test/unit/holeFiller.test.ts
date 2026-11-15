@@ -83,6 +83,33 @@ describe('HoleFillerAnswer', () => {
     expect(new HoleFillerAnswer('   ').update('<COMPLETION>  x', true)).toBe('  x');
   });
 
+  test('drops re-typed indentation after a whitespace-only line prefix', () => {
+    // Observed on Strata (Qwen3.8): the cursor after only indentation, and the model types the indentation again.
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION>  return s\n    .toLowerCase()\n    .trim();</COMPLETION>', true))
+      .toBe('return s\n    .toLowerCase()\n    .trim();');
+    expect(new HoleFillerAnswer('      ').update('<COMPLETION>      ansible.builtin.service:\n        name: nginx\n\n        state: started</COMPLETION>', true))
+      .toBe('ansible.builtin.service:\n        name: nginx\n\n        state: started');
+    // the line's full indentation re-typed: the rest still lines up
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION>    x = 1;', true)).toBe('  x = 1;');
+    expect(new HoleFillerAnswer('\t').update('<COMPLETION>\treturn x;', true)).toBe('return x;');
+  });
+
+  test('keeps the indentation when a later line is indented less, or the first line does not start with the prefix', () => {
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION>  x = 1;\n}', true)).toBe('  x = 1;\n}');
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION> x = 1;', true)).toBe(' x = 1;');
+    expect(new HoleFillerAnswer('  ').update('<COMPLETION>\tx = 1;', true)).toBe('\tx = 1;');
+    expect(new HoleFillerAnswer('').update('<COMPLETION>  x = 1;', true)).toBe('  x = 1;');
+  });
+
+  test('while streaming, the indentation drop holds until a later line breaks it', () => {
+    const a = new HoleFillerAnswer('  ');
+    expect(a.update('<COMPLETION>  ', false)).toBe('');
+    expect(a.update('<COMPLETION>  x = 1;', false)).toBe('x = 1;');
+    expect(a.update('<COMPLETION>  x = 1;\n ', false)).toBe('x = 1;\n ');
+    expect(a.update('<COMPLETION>  x = 1;\n  y', false)).toBe('x = 1;\n  y');
+    expect(a.update('<COMPLETION>  x = 1;\n  y\n}', false)).toBe('  x = 1;\n  y\n}');
+  });
+
   test('a held prefix is released once the answer ends', () => {
     expect(new HoleFillerAnswer('  return ').update('<COMPLETION>ret</COMPLETION>', false)).toBe('ret');
     expect(new HoleFillerAnswer('  return ').update('<COMPLETION>ret', true)).toBe('ret');

@@ -115,6 +115,17 @@ describe('collectCompletion', () => {
     expect(r).toMatchObject({ text: 'l1\nl2', timedOut: true, thinking: true });
   });
 
+  test('an indentation drop that a later line undoes reaches acc only at the end, whole', async () => {
+    const acc = new CompletionAccumulator(opts({ multiline: true }));
+    const seen: string[] = [];
+    const orig = acc.replace.bind(acc);
+    acc.replace = (t: string) => (seen.push(t), orig(t));
+    const chat = [content('<COMPLETION>  x = 1;\n'), content('}'), finish()];
+    const r = await collectCompletion(backend({ chat }), chatPlan('  '), acc, new AbortController());
+    expect(r.text).toBe('  x = 1;\n}');
+    expect(seen).toEqual(['x = 1;\n', '  x = 1;\n}']);
+  });
+
   test('a single-line chat timeout keeps the thinking flag', async () => {
     const chat: ChatEvent[] = [{ type: 'reasoning', text: 'hm' }, content('<COMPLETION>a + b')];
     await expect(

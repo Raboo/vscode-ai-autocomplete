@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { HOST_FLAVORS, THINKING_STRATEGIES } from '../../src/config/settings';
-import { ReasoningFilter, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
+import { ReasoningFilter, stripLeadingReasoning, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
 import fixture from './fixtures/thinking-fields.json';
 
 const golden = fixture as Record<string, Record<string, ThinkingFields>>;
@@ -55,6 +55,20 @@ describe('stripThinking', () => {
   test('plain text passes through', () => {
     expect(stripThinking('a + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('if (a < b) {}')).toEqual({ text: 'if (a < b) {}', thinking: false });
+  });
+});
+
+describe('stripLeadingReasoning', () => {
+  test.each(PAIRS)('a leading %s block and the whitespace after it are removed', (open, close) => {
+    expect(stripLeadingReasoning(` \n${open}Let me see.${close}\n  a + b;`)).toBe('a + b;');
+  });
+  test('tags anywhere else are code and stay', () => {
+    expect(stripLeadingReasoning("const CLOSE = '</think>';")).toBe("const CLOSE = '</think>';");
+    expect(stripLeadingReasoning("text.indexOf('<think>')")).toBe("text.indexOf('<think>')");
+    expect(stripLeadingReasoning("<think>x</think>const CLOSE = '</think>';")).toBe("const CLOSE = '</think>';");
+  });
+  test('an unclosed leading block leaves nothing', () => {
+    expect(stripLeadingReasoning('<think>still going')).toBe('');
   });
 });
 

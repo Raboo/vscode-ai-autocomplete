@@ -6,6 +6,7 @@ const ctx = (o: Partial<PostCtx> = {}): PostCtx => ({
   lineSuffix: '',
   prevLine: '',
   suffix: '',
+  chat: false,
   ...o,
 });
 
@@ -48,8 +49,16 @@ describe('toInsertion', () => {
 });
 
 describe('postprocess reasoning', () => {
-  test('reasoning is stripped before the other rules', () => {
+  test('a leading reasoning block is stripped before the other rules', () => {
     expect(postprocess('<think>x</think>a + b;', ctx())).toBe('a + b;');
     expect(postprocess('<think>x</think>', ctx())).toBeUndefined();
+  });
+  test('on FIM routes, reasoning tags inside code are code', () => {
+    expect(postprocess("const CLOSE = '</think>';", ctx())).toBe("const CLOSE = '</think>';");
+    expect(postprocess("text.indexOf('<think>')", ctx())).toBe("text.indexOf('<think>')");
+  });
+  test('the chat route is already free of reasoning: nothing is stripped', () => {
+    expect(postprocess("x = '</think>' + y;", ctx({ chat: true }))).toBe("x = '</think>' + y;");
+    expect(postprocess('<think>a</think>b', ctx({ chat: true }))).toBe('<think>a</think>b');
   });
 });

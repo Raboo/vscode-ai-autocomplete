@@ -30,9 +30,12 @@ export function holeFillerMessages(i: HoleFillerInput, systemSuffix?: string): C
 /** Extracts the inserted text from the visible (reasoning-free) chat output. */
 export class HoleFillerAnswer {
   private readonly linePrefix: string;
+  /** The line prefix when it is only indentation, else ''. */
+  private readonly indent: string;
 
   constructor(linePrefix: string) {
     this.linePrefix = linePrefix.trimStart();
+    this.indent = this.linePrefix === '' ? linePrefix : '';
   }
 
   /** The answer in `visible` (ReasoningFilter output) so far; `done` once the stream has ended. */
@@ -59,11 +62,22 @@ export class HoleFillerAnswer {
 
   private dropLinePrefix(answer: string, complete: boolean): string {
     const p = this.linePrefix;
-    if (p.trim() === '') return answer;
+    if (p === '') return this.dropIndent(answer);
     const t = answer.trimStart();
     if (t.startsWith(p)) return t.slice(p.length);
     if (!complete && p.startsWith(t)) return '';
     return answer;
+  }
+
+  /**
+   * After a line prefix of only indentation, models often type the indentation again. It is dropped from the first line
+   * when every later non-blank line is indented at least as much, so the answer's lines keep their relative indentation.
+   */
+  private dropIndent(answer: string): string {
+    const ind = this.indent;
+    if (ind === '' || !answer.startsWith(ind)) return answer;
+    const later = answer.split('\n').slice(1);
+    return later.every((l) => l.trim() === '' || l.startsWith(ind)) ? answer.slice(ind.length) : answer;
   }
 }
 

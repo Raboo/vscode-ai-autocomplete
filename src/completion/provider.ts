@@ -251,7 +251,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       planned = { route, req: buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input }) };
     }
     const hasFallback = planRoute(kind, usableRoutes(backend.routes(), new Set<FimRoute>([...learned.failedRoutes, route])), fim, fimMode) !== 'unsupported';
-    const post: PostCtx = { linePrefix, lineSuffix, prevLine: pos.line > 0 ? doc.lineAt(pos.line - 1).text : '', suffix: win.suffix };
+    const post: PostCtx = { linePrefix, lineSuffix, prevLine: pos.line > 0 ? doc.lineAt(pos.line - 1).text : '', suffix: win.suffix, chat: route === 'chat' };
     const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
 
     this.d.inflight.abortAll(uri);

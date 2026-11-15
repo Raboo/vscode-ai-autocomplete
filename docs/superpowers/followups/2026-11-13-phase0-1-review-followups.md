@@ -137,3 +137,27 @@ Parked by the Phase 2 reviews (the final review's fix wave did the rest):
 - Backoff is a hard 2 s window. On a slow CI host the second trigger in the no-fallback test could land after it; watch for flakes.
 - `commitWhen` returns silently on timeout; its callers assert afterwards.
 - The Strata test checks for no `[thinking]` right after the commit, before a late status update could land.
+
+## Twinny ideas (2026-11-15, Twinny @ 48e5ee52)
+
+Not done in the revisions:
+
+- Complete while the suggest widget is open (needs a spec decision).
+- Prefetch the next line for local servers.
+- Recent-edit hunks as context, designed with the Phase 3 edit-history tracker.
+- Warm-up request for local servers.
+- Structural stop rules.
+- Bounded LSP definitions and signature help.
+- Test chat-wrapped FIM for Qwen3-Coder.
+- Twinny's secret shield for hosted providers.
+
+## Strata gaps (2026-11-15)
+
+Measured on the user's Strata (no address here):
+
+- No raw-prompt endpoint: `/v1/completions`, `/completion` and `/infill` answer 404.
+- Its chat path treats FIM tokens as text.
+- It applies `presence_penalty` 1.5 by default, so the extension always sends an explicit value.
+- It caps stop strings at 4.
+- It has no `t_max_predict_ms`.
+- Raw FIM, or the sweep and zeta Next Edit formats, would need a Strata PR first.

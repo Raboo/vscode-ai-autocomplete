@@ -1105,14 +1105,17 @@ These steps create public state on GitHub. **Ask the user once, listing every st
      - a completion;
      - `Thinking is off`.
 
+     On a large file the first suggestion may miss the 5 s deadline; raise the backend's Timeout then.
+
      Then, in a TypeScript file:
      - ghost text appears, with no reasoning in it;
      - with `debug.logPrompts` on, the log shows the chat request and the completion time, and the request carries `presence_penalty` 0;
      - press Enter inside a function body and accept a multi-line chat suggestion: its first line is not indented twice, and the later lines line up.
    - **OpenRouter**, with the user's key:
      - a model that can turn thinking off (for example `z-ai/glm-5`) gives ghost text with no `<think>` leak and sane latency;
-     - in the model list, a mandatory-reasoning model (for example `minimax/minimax-m2.5`) is tagged `chat prompt, always thinks`, and using it shows the one-time warning and the status-bar thinking warning;
-     - a model the list tags `chat prompt, always thinks` that no preset marks as unable to turn thinking off (it falls to the generic preset; check the list on the day, for example a `google/gemini-*` or `openai/o*` id): the first request is rejected and retried, the log says the model must reason, the one-time warning appears, and later requests give ghost text (slowly). This also answers the spec's open item on the status OpenRouter returns for `effort:"none"`;
+     - in the model list, a mandatory-reasoning model (for example `minimax/minimax-m2.5`) is tagged `chat prompt, cannot turn thinking off`. It fails clearly: the page tags it, Test fails, and the status bar shows `cannot turn thinking off`;
+     - a model the list tags the same way that no preset marks as unable to turn thinking off (it falls to the generic preset; check the list on the day, for example a `google/gemini-*` or `openai/o*` id): the first request is rejected, the log says the model must reason, and the status bar shows `cannot turn thinking off`. This also answers the spec's open item on the status OpenRouter returns for `effort:"none"`;
+     - a model that keeps thinking although thinking is off: Test suggests a working switch;
      - `privacy.localOnly` blocks OpenRouter.
    - **LM Studio** with a Qwen3.x model in `auto` mode:
      - the chat route is used;

@@ -79,7 +79,7 @@ Each backend can carry a `fim` object with its own completion settings. The Back
   "fim": { "contextTokens": 8000, "temperature": 0.1, "multiline": "auto" } }
 ```
 
-Fields: `template`, `contextTokens` (default 4700), `prefixLines`, `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`. A backend can also set `fimMode` and `headers` at the top level.
+Fields: `template`, `contextTokens` (default 4700), `prefixLines` (lines before the cursor; the window starts on a multiple of a quarter of this value so the prompt start stays stable, so it can hold up to `prefixLines + step − 1` lines, with `step` being `prefixLines / 4` rounded down and at least 1), `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`. A backend can also set `fimMode` and `headers` at the top level.
 
 A value is taken from the first of these that sets it: the backend's `fim` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.fim.*` settings, then the built-in preset for the model. Three fields work differently: the backend's `stop` sequences are added to the preset's and the override's, not used instead of them; its `extraBody` is merged over the override's; and its `extraContext` can only switch extra context off: it cannot turn it on while `aiAutocomplete.fim.extraContext` is off.
 
@@ -93,9 +93,15 @@ With this on, requests go only to backends on loopback or private-network addres
 
 ### Chat models (Strata, OpenRouter, general instruct models)
 
-A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. With `fimMode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
+A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. Chat models must be able to turn thinking off: autocomplete waits 5 s for an answer, and a model that reasons first cannot give one. With `fimMode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
 
-Thinking is turned off per model family and server. The Thinking switch (the `thinking` field of the backend's `fim` object, also on the Backends page) overrides what the extension picks. Reasoning text is never shown. If a model keeps thinking anyway, the status bar shows a warning, also when the request timed out while the model was thinking, and later requests give it 1024 more tokens and 30 s (instead of 15 s) to answer. A model that cannot turn thinking off gets the same from its first request, plus a one-time notice; the model list tags it `chat prompt, always thinks`. A backend's `timeoutMs` replaces both timeouts.
+Thinking is turned off per model family and server. The Thinking dropdown on the Backends page (the `thinking` field of the backend's `fim` object) overrides what the extension picks. Reasoning text is never shown.
+
+A model that cannot turn thinking off (gpt-oss, DeepSeek R1 and similar, or an OpenRouter model that must reason) is not used: the model list tags it `chat prompt, cannot turn thinking off`, the Test fails, and the status bar shows `cannot turn thinking off`. A model that keeps thinking although thinking was asked off fails the same way, and the status bar shows `keeps thinking`. **Retry now**, a passing Test or a changed API key lets the extension try the model again, and a settings change clears what it learned.
+
+When a model keeps thinking, **Test connection** tries the other thinking switches on a sample and suggests one that works ("choose ... as the Thinking switch"). On Strata, DeepSeek, Ollama and OpenRouter the server decides how thinking is turned off, so only the `/no_think` switch is tried.
+
+Every request has a 5 s deadline. Set the backend's Timeout (`timeoutMs`) to change it.
 
 With the cursor after only indentation, a chat model often types the indentation again; the extension drops it when the rest of the answer lines up with it.
 
@@ -105,15 +111,15 @@ With the cursor after only indentation, a chat model often types the indentation
 { "id": "strata", "kind": "openai", "hostFlavor": "strata", "baseUrl": "http://127.0.0.1:8080/v1" }
 ```
 
-On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes.
+On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes. Measured 2026-11-15 on the user's Strata, a 1750-token prompt took 3.6 s without the pin and 0.9 s with it (1691 tokens reused). The first request of a file still reads the whole prompt (about 4 s there), so on a large file the first suggestion can miss the 5 s deadline: raise the backend's Timeout on the Backends page.
 
-**OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request and then treated like one that cannot turn thinking off. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
+**OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request (the server rejects turning reasoning off) and then treated like one that cannot turn thinking off. OpenRouter completes through the chat prompt only, because a raw FIM prompt reaches the model only with some of the providers OpenRouter picks. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
 
 ```jsonc
 { "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "fimModel": "z-ai/glm-5" }
 ```
 
-**LM Studio:** when the thinking warning appears, turn thinking off in the model's settings in LM Studio. The extension cannot switch it per request there.
+**LM Studio:** when the status bar says the model keeps thinking, turn thinking off in the model's settings in LM Studio. The extension cannot switch it per request there.
 
 ## Privacy
 

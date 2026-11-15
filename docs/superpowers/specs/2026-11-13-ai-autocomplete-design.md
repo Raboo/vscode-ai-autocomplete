@@ -138,7 +138,7 @@ src/
     recipes.ts                 DATA: curated local models + llama-server / lms launch args
     manager.ts                 detect llama-server/lms, spawn, health-poll, stop; download progress
   ui/
-    statusBar.ts               state, snooze, quick switch, "model is thinking" warning
+    statusBar.ts               state, snooze, quick switch, "cannot turn thinking off" / "keeps thinking" errors
     log.ts                     OutputChannel; prompts logged only if aiAutocomplete.debug.logPrompts
   types/vscode.proposed.inlineCompletionsAdditions.d.ts   pinned copy (via `npx @vscode/dts dev`)
 test/unit/…, test/integration/… (mock llama.cpp/OpenAI server)
@@ -156,7 +156,10 @@ For each backend+model, the first route that works is used, and the result is re
 3. **Chat hole-filler** for models without FIM (general instruct models, Strata, OpenRouter), with thinking switched off.
 
 Route rules as built (Phase 2):
-- **OpenRouter is chat only.** `/api/v1/completions` exists but is undocumented, and so is `suffix`, so no code is sent there (verified 2026-11-15, openrouter.ai docs and openapi.json). This also holds for an "Other OpenAI-compatible" backend whose URL is on `openrouter.ai`: a known hosted hostname (OpenRouter, DeepSeek, Fireworks, Together) overrides the `generic` flavor. Without a stored key no completion request is sent (the keyless model list still is), and the status bar says `Set API key for <id>`.
+- **OpenRouter is chat only.** `/api/v1/completions` exists but is undocumented, and so is `suffix`, so no code is sent there (verified 2026-11-15, openrouter.ai docs and openapi.json). Evidence:
+  - OpenRouter's FAQ names `/api/v1/completions` ("OpenAI spec … any model with the same request/response format"). openapi.json has no schema for it, and every listed model advertises it. No metadata says whether a raw `prompt` or `suffix` reaches the model.
+  - Live test on 2026-11-15 with the `add(a, b)` sample: `qwen/qwen3-coder` (provider DeepInfra) honoured raw Qwen FIM tokens; `qwen/qwen-2.5-coder-32b-instruct` (Cloudflare) wrapped the prompt in a chat turn; `mistralai/codestral-2508` (Mistral) ignored `suffix` and answered as a chat model, also with raw `[SUFFIX]…[PREFIX]` tokens.
+  - So raw FIM depends on the provider OpenRouter picks. **Decision: OpenRouter uses the chat route only.** Twinny's raw-prompt approach (PR #495) is the other view, and its maintainer has doubts about it (#455). This also holds for an "Other OpenAI-compatible" backend whose URL is on `openrouter.ai`: a known hosted hostname (OpenRouter, DeepSeek, Fireworks, Together) overrides the `generic` flavor. Without a stored key no completion request is sent (the keyless model list still is), and the status bar says `Set API key for <id>`.
 - In `auto` mode the chat route is used for chat families, and for a server with no raw completions endpoint. A coder model keeps its native or template route. DeepSeek's native `suffix` route also serves chat-family models.
 - On kind `mistral` the chat route does not exist: a chat-family model has no route, and the status says `<id>: choose a Codestral model`.
 - **Route learning:** a 404, 405 or 501 from a route in `auto` mode (or a 400 whose body says `does not support insert`, as Ollama answers) marks that route missing for the backend and model, and the next request takes the next route. A 404 whose body mentions the model does not count. A route is learned as missing only while another route remains, and it never counts toward backoff. The log line is `no <route> endpoint for <model> (HTTP <status>); the next request uses the next prompt route`. Nothing is persisted; **Retry now**, a passing connection test and an API-key change forget the learned routes.
@@ -183,24 +186,33 @@ There is no universal switch, so this is a table, not scattered `if`s.
   - Dropped from the first draft on purpose: the GPT-5.x, Gemini 2.5/3+, Z.ai and Moonshot rows. They have no preset. Through OpenRouter they get `reasoning:{effort:"none"}` whatever the family (and the "must reason" handling below); their own APIs work through an "Other OpenAI-compatible" backend with the Thinking switch (`vendorThinkingDisabled` sends `thinking:{type:"disabled"}`).
 - **Host flavor envelope** (host facts verified 2026-11-15; sources: llama.cpp `5c008e0`, vLLM `a16bfee`, SGLang `7b5fb39`, Ollama `a5864fc`, Strata `13eedf5`, LM Studio docs `8c7159b`, OpenRouter docs, DeepSeek docs):
   - llama.cpp, vLLM and SGLang → `chat_template_kwargs` plus `reasoning_effort:"none"`. llama.cpp takes `chat_template_kwargs` per request (`enable_thinking` must be a JSON boolean) and `reasoning_effort:"none"` sets `enable_thinking=false`. vLLM's `"none"` sets only `enable_thinking=false`. SGLang's sets both `thinking` and `enable_thinking`.
-  - LM Studio → the same fields as llama.cpp, plus `reasoning_effort:"none"` for `systemSoftSwitch` (where llama.cpp gets only the `/no_think` suffix), but LM Studio ignores `chat_template_kwargs` (lmstudio-bug-tracker #1990, open) and its `reasoning_effort` values are undocumented, so thinking may stay on there; the status-bar warning covers it and the README says to turn thinking off in the model's settings.
+  - LM Studio → the same fields as llama.cpp, plus `reasoning_effort:"none"` for `systemSoftSwitch` (where llama.cpp gets only the `/no_think` suffix), but LM Studio ignores `chat_template_kwargs` (lmstudio-bug-tracker #1990, open) and its `reasoning_effort` values are undocumented, so thinking may stay on there; a model that keeps thinking fails (see "`cannotDisable` models and models that keep thinking" below) and the README says to turn thinking off in the model's settings.
   - Strata (verified live and in DETAILS.md) → `reasoning_effort:"none"` plus `chat_template_kwargs:{enable_thinking:false}`, and always explicit sampling (`presence_penalty:0`) to override its chat defaults.
-  - Strata prompt cache (verified 2026-11-15 at 13eedf5 + live): Strata is a hybrid model with DeltaNet layers and, without help, resumes a prompt only at `<|im_start|>` boundaries, so every keystroke reads the whole user message again. The request field `strata_prefix: {"message": <index>, "chars": <n>}` pins the first `n` characters of that message as a reusable checkpoint (one pin per engine). The chat route sends it with `message: 1` and the characters before the line `PIN_BACK_LINES` (4) above the cursor line, when that is more than 0; a server that rejects it is retried without it and the rejection is remembered. On the user's Strata endpoint, a 725-token chat request changed only near its end reused 0 tokens in 2.18 s without the pin and 699 tokens in 0.39 s with it.
+  - Strata prompt cache (verified 2026-11-15 at 13eedf5 + live): Strata is a hybrid model with DeltaNet layers and, without help, resumes a prompt only at `<|im_start|>` boundaries, so every keystroke reads the whole user message again. The request field `strata_prefix: {"message": <index>, "chars": <n>}` pins the first `n` characters of that message as a reusable checkpoint (one pin per engine). The chat route sends it with `message: 1` and the characters before the line `PIN_BACK_LINES` (4) above the cursor line, when that is more than 0; a server that rejects it is retried without it and the rejection is remembered. On the user's Strata endpoint, a 725-token chat request changed only near its end reused 0 tokens in 2.18 s without the pin and 699 tokens in 0.39 s with it; a 1750-token prompt took 3.6 s without the pin and 0.9 s with it (1691 tokens reused; measured 2026-11-15 on the user's Strata). The first request of a file still reads the whole prompt (about 4 s there), so on a large file the first suggestion can miss the 5 s default; the per-backend Timeout can be raised.
   - Ollama → `reasoning_effort:"none"` (`"none"` requests `false`; `think` is not a chat-completions field); gpt-oss and other `cannotDisable` families get `"low"`.
-  - OpenRouter → `reasoning:{effort:"none"}` ("Disables reasoning entirely"); `cannotDisable` families get `effort:"low"`. Models whose `/api/v1/models` entry says `reasoning.mandatory: true` reject `none` (145 of 471 listed on 2026-11-15). A model that rejects `none` (400 or 422) is retried once without `reasoning`, and the rejection is remembered per (backend, model) as "must reason": later requests treat it as `cannotDisable` (`effort:"low"`, the reasoning allowance, the 30 s timeout and the one-time warning). If `low` is rejected too, `reasoning` is left out. The page tags such models `chat prompt, always thinks`.
+  - OpenRouter → `reasoning:{effort:"none"}` ("Disables reasoning entirely"); `cannotDisable` families get `effort:"low"`. Models whose `/api/v1/models` entry says `reasoning.mandatory: true` reject `none` (145 of 471 listed on 2026-11-15). A model that rejects `none` (400 or 422) is retried once without `reasoning`, and the rejection is remembered per (backend, model) as "must reason": later requests treat it as `cannotDisable`: the chat route is blocked before any request, and the status bar shows `<backend>: <model> cannot turn thinking off`. The page tags such models `chat prompt, cannot turn thinking off`, and Test fails for them.
   - DeepSeek API → `thinking:{type:"disabled"}`; FIM there is non-thinking only.
   - Other vendor APIs → `thinking:{type:"disabled"}` through the `vendorThinkingDisabled` strategy on an "Other OpenAI-compatible" backend. There are no flavors for the Z.ai, Moonshot or MiniMax APIs.
   - LM Studio's native `/api/v1/chat` (which has `reasoning:"off"`) is not used; LM Studio stays on `/v1/chat/completions`. This is a known gap.
-- **Learning**: if a host returns 400 for a parameter, retry once without it and remember that per (backend, model). If reasoning still shows up, flag it.
+- **Learning**: if a host returns 400 for a parameter, retry once without it and remember that per (backend, model). If reasoning still shows up, the model fails as below.
 - **Stripping**, on the chat route (the stream filter; nothing is stripped again afterwards):
   - the reasoning fields are read as reasoning and never shown: `reasoning_content` (llama.cpp, SGLang, Strata, DeepSeek), `reasoning` (vLLM's `delta.reasoning`, Ollama, OpenRouter), `reasoning_details` and `thinking`; Mistral's `{type:"thinking"}` content chunks are skipped;
   - strip reasoning blocks in content: `<think>…</think>`, `<seed:think>…</seed:think>`, `<mm:think>…</mm:think>`, Gemma 4's `<|channel>thought…<channel|>`, `[THINK]…[/THINK]`, `<|open|>think<|sep|>…<|close|>think<|sep|>`, and Harmony's `<|channel|>analysis<|message|>…<|end|>`;
   - a bare closing tag drops everything before it (templates that prefill `<think>`). A bare `<|end|>` is not a closer, because it is an end-of-turn token elsewhere (Phi); it closes reasoning only after a Harmony analysis opener;
   - keep only the text after the last closer;
   - discard the result if reasoning is unclosed and `finish_reason` is `length`.
-  - A chat-route timeout keeps the complete lines received so far, read from the filter's current output, so nothing from before a bare closing tag. With no complete line it fails as a timeout but keeps the thinking flag: the model is flagged as below.
+  - A chat-route timeout keeps the complete lines received so far, read from the filter's current output, so nothing from before a bare closing tag. With no complete line it fails as a timeout.
+  - What counts as reasoning (the request fails with a `ThinkingError` at once, without waiting for the answer):
+    - inline think tags count only before `<COMPLETION>`;
+    - with no `<COMPLETION>` wrapper, only a think opener at the very start of the content followed by reasoning counts (a closer alone does not);
+    - reasoning events in a separate field fail on any non-whitespace text; whitespace-only reasoning events are ignored;
+    - an empty prefilled think block never fails.
   - On FIM routes only a reasoning block at the very start of the output is removed. Tags anywhere else are code there (for example a string holding `</think>`), so they stay.
-- **`cannotDisable` models** get a one-time warning saying they are a poor fit, a reasoning allowance of 1024 extra tokens, and a 30 s chat timeout instead of 15 s (a backend's `fim.timeoutMs` still wins). A model that thinks although thinking was asked off, even in a request that timed out, is flagged: the status bar shows a warning with the observed latency, and its later requests get the same allowance and timeout.
+- **`cannotDisable` models and models that keep thinking fail** (the user's decision of 2026-11-15; it replaces the first design's one-time warning on observed latency, the 1024-token reasoning allowance and the 30 s chat timeout). Autocomplete needs an answer in 5 s, and a model that reasons first cannot give one.
+  - A `cannotDisable` model (by family, or an OpenRouter model that rejected effort "none") is blocked before any request. The status bar shows `<backend>: <model> cannot turn thinking off` as an error with an action that opens the Backends page, and the log warns once per backend and model.
+  - A model that thinks although thinking was asked off fails the request, is remembered as thinking, and is blocked from then on. The status bar shows `<backend>: <model> keeps thinking`; the log names the thinking switch in use.
+  - Recovery: **Retry now**, a passing connection test or an API-key change forgets what was learned (`forgetLearned`), and a settings change clears everything.
+  - The Backends page test says the same: see the Backends page spec.
 - Hosts that reject sampling parameters (Kimi, Claude Sonnet 5, MiniMax M3) get a `samplingParams: "omit"` preset.
 
 ### Sampling presets (defaults; every value can be overridden per model through `aiAutocomplete.modelOverrides`)
@@ -208,13 +220,15 @@ There is no universal switch, so this is a table, not scattered `if`s.
 | Use | Defaults |
 |---|---|
 | FIM, coder models | temperature 0.1 (Codestral 0.2; Qwen-Coder greedy-ish 0–0.1), top_p 0.95, top_k 40 where supported, max_tokens 128 (single-line 48), model FIM tokens + `\n\n\n` as stops, llama.cpp `t_max_predict_ms` 500, `cache_prompt: true` |
-| FIM, chat hole-filler | temperature 0.1–0.2, max_tokens 160, stop `</COMPLETION>` |
+| FIM, chat hole-filler | temperature 0.1–0.2, max_tokens 160, stop `</COMPLETION>`; no reasoning allowance |
 | NES, dedicated models (Zeta/Sweep/Instinct) | greedy (temperature 0), max_tokens ≈ editable-region size × 1.5 + margin, format-specific end markers |
 | NES, chat models (Qwen3.8 etc.) | thinking off; temperature 0.2, top_p 0.8, top_k 20, **presence_penalty 0** (the model card's 0.7 / 1.5 values are chat settings that penalise repeated brackets and indentation); max_tokens ≈ region size × 1.5 |
 | NES, Sweep (1.5B / v2 7B) | temperature 0; max 512 (1.5B) / 1024 (7B); stop `<\|file_sep\|>`, `</s>` (1.5B) or `<\|endoftext\|>`, `<\|file_sep\|>` (v2) |
 | NES, Zeta 2.1 | temperature 0.2, max_tokens 256–512; stop `<[end▁of▁sentence]>` only. Never stop on `<\|marker_2\|>`, which cuts off multi-block edits. |
 
 Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backend preset therefore omits `top_p`. Twinny notes that some hosted completion endpoints reject more than 4 stop sequences, so the stop list is capped per backend.
+
+Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS`). A backend's `fim.timeoutMs` (the page's Timeout field) replaces it. The chat route has no longer deadline for thinking models: they fail instead.
 
 ### FIM pipeline (`completion/`)
 
@@ -230,8 +244,8 @@ Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backe
    - join an in-flight request when the new prefix extends its prefix and the suffix is the same;
    - otherwise abort the old request.
 4. **Context**:
-   - prefix/suffix line windows within a character budget;
-   - an extra-context ring buffer of chunks from recently edited and viewed files, which maps to `/infill` `input_extra` or to repo-level template headers and keeps llama.cpp's KV-cache reuse high;
+   - prefix/suffix line windows within a character budget. The prefix window starts on a multiple of `step = max(1, floor(prefixLines / 4))`, not on the exact line `prefixLines` above the cursor, so the start of the prompt stays the same for many keystrokes and server prompt caches keep hitting. The window therefore holds up to `prefixLines + step − 1` lines before the cursor line. This stepped window is an idea taken from Twinny (@ 48e5ee52);
+   - an extra-context ring buffer of chunks from recently edited and viewed files, which maps to `/infill` `input_extra` or to repo-level template headers and keeps llama.cpp's KV-cache reuse high. The chunks picked last time come first in the same order and new ones follow oldest-first, so the prompt prefix stays stable;
    - optional clipboard.
 5. **Stream filters**:
    - stop tokens;

@@ -1,6 +1,6 @@
 import type { Learned } from '../models/capabilities';
 import type { StatusAction } from './requestStatus';
-import type { ChatRequest, FimRequest, RouteCaps } from '../backends/types';
+import type { ChatMessage, ChatRequest, FimRequest, RouteCaps } from '../backends/types';
 import { COMPLETION_CLOSE, holeFillerMessages, stableUserChars, type HoleFillerInput } from './holeFiller';
 import { thinkingFields } from '../models/thinking';
 import type { FimValues } from './effective';
@@ -193,12 +193,26 @@ export const STRATA_PIN_FIELD = 'strata_prefix';
 
 const SAMPLING_WIRE = { temperature: 'temperature', topP: 'top_p', topK: 'top_k', presencePenalty: 'presence_penalty' } as const;
 
-export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
-  const { fim, input, rejected } = p;
+export interface ChatEnvelope {
+  values: FimValues;
+  flavor: HostFlavor;
+  model: string | undefined;
+  rejected: ReadonlySet<string>;
+  signal: AbortSignal;
+  onRejected?(fields: string[]): void;
+  maxTokens: number;
+  stop: string[];
+  messages: (systemSuffix: string | undefined) => ChatMessage[];
+  /** The stable-start length Strata pins as a cache checkpoint; asked only when the pin applies. */
+  pinChars: (messages: ChatMessage[]) => number;
+}
+
+/** What every chat request shares: thinking fields, sampling, the Strata pin, the effort-none mapping and the deadline. */
+export function chatRequestEnvelope(p: ChatEnvelope): ChatRequest {
+  const { values: fim, rejected } = p;
   const strategy = chatThinking(fim.thinking, p.flavor, rejected);
   const tf = thinkingFields(strategy, p.flavor);
   const thinking = Object.fromEntries(Object.entries(tf.body).filter(([k]) => !rejected.has(k)));
-  const budget = (input.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS)) + CHAT_OVERHEAD_TOKENS;
   const effortNone = (thinking.reasoning as { effort?: unknown } | undefined)?.effort === 'none';
   const report = p.onRejected;
   const onRejected = report && effortNone ? (fields: string[]) => report(fields.map((f) => (f === 'reasoning' ? EFFORT_NONE_REJECTED : f))) : report;
@@ -209,14 +223,14 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
       if (all[k] !== undefined && !rejected.has(SAMPLING_WIRE[k])) sampling[k] = all[k];
     }
   }
-  const messages = holeFillerMessages(input, tf.systemSuffix);
+  const messages = p.messages(tf.systemSuffix);
   // Strata resumes a hybrid-model prompt only at message boundaries unless the stable start is pinned as a cache checkpoint.
-  const pinChars = p.flavor === 'strata' && !rejected.has(STRATA_PIN_FIELD) ? stableUserChars(messages) : 0;
+  const pinChars = p.flavor === 'strata' && !rejected.has(STRATA_PIN_FIELD) ? p.pinChars(messages) : 0;
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
     messages,
-    maxTokens: budget,
-    stop: chatStops(fim),
+    maxTokens: p.maxTokens,
+    stop: p.stop,
     sampling,
     thinking,
     extraBody: pinChars > 0 ? { [STRATA_PIN_FIELD]: { message: 1, chars: pinChars }, ...fim.extraBody } : fim.extraBody,
@@ -224,4 +238,20 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
     timeoutMs: fim.timeoutMs,
     ...(onRejected ? { onRejected } : {}),
   };
+}
+
+export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
+  const { fim, input } = p;
+  return chatRequestEnvelope({
+    values: fim,
+    flavor: p.flavor,
+    model: p.model,
+    rejected: p.rejected,
+    signal: p.signal,
+    ...(p.onRejected ? { onRejected: p.onRejected } : {}),
+    maxTokens: (input.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS)) + CHAT_OVERHEAD_TOKENS,
+    stop: chatStops(fim),
+    messages: (suffix) => holeFillerMessages(input, suffix),
+    pinChars: stableUserChars,
+  });
 }

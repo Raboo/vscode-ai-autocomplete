@@ -119,7 +119,9 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 { "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "fimModel": "z-ai/glm-5" }
 ```
 
-**LM Studio:** when the status bar says the model keeps thinking, turn thinking off in the model's settings in LM Studio. The extension cannot switch it per request there.
+**LM Studio:** when the status bar says the model keeps thinking, turn thinking off in LM Studio; the extension cannot switch it per request there. For a model from LM Studio's catalog, switch off **Enable Thinking** in its settings. For a model downloaded from Hugging Face, add `{%- set enable_thinking = false %}` as the first line of its prompt template (My Models → the model's settings → Prompt Template).
+
+**Other autocomplete extensions** (for example Predicte, Kilo Code or Continue) can show their own ghost text or take the `Tab` key, so `Tab` may indent or insert their suggestion instead. Turn their autocomplete off while you use this one.
 
 ## Privacy
 

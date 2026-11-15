@@ -36,3 +36,10 @@ Phase 2 (Publish step 4 of the [Phase 2 plan](superpowers/plans/2026-11-15-phase
   - `privacy.localOnly` blocks OpenRouter.
 - LM Studio with a Qwen3.x model in `auto` mode: the chat route is used. Record whether thinking goes off per request in the main spec's "To verify" list.
 - llama.cpp, no regression: a coder model (`--fim-qwen-1.5b-default`) still completes through `/infill`.
+
+Results on 2026-11-15:
+
+- Strata: passed, after two fixes found in the test (a fenced chat answer indented twice; at the end of a line the model left out the line break).
+- OpenRouter: passed.
+- LM Studio 0.4.28 with an MLX Qwen3.5-4B from Hugging Face: thinking cannot be turned off per request, and the extension fails it clearly; turning it off in the model's prompt template works (README, spec "To verify"). With Predicte also installed, `Tab` indented instead of accepting; disabling Predicte fixed it.
+- llama.cpp: not run yet; still deferred.

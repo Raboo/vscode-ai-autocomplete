@@ -161,6 +161,11 @@ Measured on the user's Strata (no address here):
 - It has no `t_max_predict_ms`.
 - Raw FIM, or the sweep and zeta Next Edit formats, would need a Strata PR first.
 
+## Phase 2 smoke test (2026-11-15)
+
+- LM Studio cannot turn thinking off per request for Hugging Face downloads (spec "To verify"). A raw `/v1/completions` route that sends the chat prompt in the model's chat format, with an empty think block and `<COMPLETION>` already filled in, avoided thinking there (0.8–1.5 s on Qwen3.5-4B) and would need no LM Studio setup.
+- Qwen3.5-4B on LM Studio, chat route: at the end of a line it often answers the next line with neither a line break nor indentation, so the suggestion continues the cursor line (the line-break rule needs leading indentation); on an empty line at column 0 it sometimes starts with a line break.
+
 ## Phase 2 revisions (2026-11-15)
 
 Parked by the revisions' task reviews and final review (the fix wave did the rest).

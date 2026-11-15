@@ -483,19 +483,19 @@ git commit -m "feat: run one Next Edit request over the chat stream"
     - `native: boolean` (set by `extension.ts` from the probe).
   - `NextEditDeps` holds getSettings, getBackend, capabilities, backoff, isLocal, log, snoozedUntil, the `RecentSnippets`, an `isExcluded(doc)` predicate (the one `extension.ts` gives `ContextTracker`, minus the `extraContext` clause) and `detectedModel(backend, signal)`.
 
-- [ ] **Step 1: Write the failing tests** (`trigger.test.ts`, fake clock numbers)
+- [x] **Step 1: Write the failing tests** (`trigger.test.ts`, fake clock numbers)
 
 - `a cursor move within 10 s of an edit triggers; after 10 s it does not`.
 - `the same line does not trigger again within 5 s, another line does`.
 - `nothing triggers within 5 s of a rejection, edit pause included`.
 - `afterPause is true outside a rejection cooldown`.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/nextEdit/trigger.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement `TriggerPolicy`, then the controller**
+- [x] **Step 3: Implement `TriggerPolicy`, then the controller**
 
 **Gate.** The controller sends nothing unless all of these hold (the gate is shared by every path below):
 - `nextEdit.enabled`, a `nextEdit.backendId`, and not snoozed;
@@ -540,12 +540,12 @@ Expected: FAIL (module not found).
 
 **`extension.ts`:** create the history-free `RecentSnippets` and the controller, pass the snippets to `ContextTracker`, and dispose of the controller with the extension. On settings changes, clear stored results and abort requests, as for FIM.
 
-- [ ] **Step 4: Run them and see them pass**
+- [x] **Step 4: Run them and see them pass**
 
 Run: `npx vitest run test/unit/nextEdit/trigger.test.ts && npm run typecheck && npm run lint`
 Expected: PASS, no type or lint errors (the vscode allowlist lint rule, if any, includes `src/nextEdit/vscode/*`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/nextEdit/trigger.ts src/nextEdit/vscode/controller.ts src/completion/contextTracker.ts src/extension.ts test/unit/nextEdit/trigger.test.ts

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.1.0...v0.2.0) (2026-11-15)
+
+
+### Features
+
+* chat prompt for chat models, thinking control, OpenRouter and Strata ([#6](https://github.com/Raboo/vscode-ai-autocomplete/issues/6)) ([709d3ee](https://github.com/Raboo/vscode-ai-autocomplete/commit/709d3ee5d13973693bb40e6e3d25b6d1dc92a566))
+
 ## [0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.0.1...v0.1.0) (2026-11-14)
 
 

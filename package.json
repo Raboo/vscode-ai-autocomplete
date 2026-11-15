@@ -2,7 +2,7 @@
   "name": "ai-autocomplete",
   "displayName": "AI Autocomplete",
   "publisher": "raboo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
   "author": {
@@ -195,7 +195,17 @@
                   },
                   "thinking": {
                     "type": "string",
-                    "enum": ["none", "templateKwarg:enable_thinking", "templateKwarg:thinking", "templateKwarg:thinking_mode=disabled", "templateKwarg:thinking_budget=0", "reasoningEffortNone", "systemSoftSwitch:/no_think", "vendorThinkingDisabled", "cannotDisable"],
+                    "enum": [
+                      "none",
+                      "templateKwarg:enable_thinking",
+                      "templateKwarg:thinking",
+                      "templateKwarg:thinking_mode=disabled",
+                      "templateKwarg:thinking_budget=0",
+                      "reasoningEffortNone",
+                      "systemSoftSwitch:/no_think",
+                      "vendorThinkingDisabled",
+                      "cannotDisable"
+                    ],
                     "description": "How thinking is turned off for this backend's model on the chat prompt."
                   },
                   "stop": {

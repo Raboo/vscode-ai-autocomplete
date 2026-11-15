@@ -154,6 +154,15 @@ describe('form model', () => {
     expect(view(fieldViews(or({ changed: { fimMode: 'chat', timeoutMs: '9000' } }), 'z-ai/glm-5', settings(), []), 'timeoutMs')).toMatchObject({ value: '9000', isDefault: false });
   });
 
+  test('the stop warning counts the chat list, not the FIM one; the template mismatch is skipped on the chat route', () => {
+    // qwen2.5-coder has 10 FIM stops but one chat stop
+    expect(formWarnings(or(), 'qwen2.5-coder-7b', settings())).toEqual([]);
+    expect(formWarnings(form({ type: 'together', baseUrl: 'https://api.together.xyz/v1', changed: {} }), 'qwen2.5-coder-7b', settings())).toContain('only the first 4 stop sequences are sent');
+    const mismatched = { changed: { fimMode: 'chat', template: 'seed-coder' } };
+    expect(formWarnings(or(mismatched), 'qwen2.5-coder-7b', settings())).toEqual([]);
+    expect(formWarnings(or({ changed: { fimMode: 'template', template: 'seed-coder' } }), 'qwen2.5-coder-7b', settings()).join()).toContain('own template is');
+  });
+
   test('formWarnings flags a chat model that cannot turn thinking off', () => {
     expect(formWarnings(or(), 'gpt-oss-20b', settings())).toContain('gpt-oss-20b cannot turn thinking off, so completions will be slow');
     expect(formWarnings(or(), 'z-ai/glm-5', settings())).toEqual([]);

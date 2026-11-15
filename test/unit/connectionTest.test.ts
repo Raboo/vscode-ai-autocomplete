@@ -97,13 +97,19 @@ describe('runConnectionTest', () => {
   test('zeta model without template → warn naming seed-coder, no completion request', async () => {
     const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b' } });
     const { res } = await run(f);
-    expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'zeta-2-7b has no completion template', hint: 'pick a coder model, or choose a template; seed-coder fits Zeta 2.x' });
+    expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'zeta-2-7b has no completion template', hint: 'pick a coder model, choose a template for it, or set the prompt mode to chat; seed-coder fits Zeta 2.x' });
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
   test('a non-zeta model without template gets the plain hint', async () => {
-    const plain = await run(fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3' } }));
-    expect(plain.res.steps[1]).toMatchObject({ text: 'llama-3 has no completion template', hint: 'pick a coder model, or choose a template' });
+    const plain = await run(fake({ native: false, caps: { chat: false }, config: { kind: 'openai', fimModel: 'llama-3' } }));
+    expect(plain.res.steps[1]).toMatchObject({ text: 'llama-3 has no completion template', hint: 'pick a coder model, or choose a template for it' });
+    // chat possible: the hint offers the chat prompt mode
+    const withChat = await run(fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3' } }));
+    expect(withChat.res.steps[1]).toMatchObject({ text: 'llama-3 has no completion template', hint: 'pick a coder model, choose a template for it, or set the prompt mode to chat' });
+    // Mistral serves Codestral only, and a template cannot help
+    const mistral = await run(fake({ config: { kind: 'mistral', fimModel: 'mistral-large-4' } }));
+    expect(mistral.res.steps.find((s) => s.id === 'model')).toMatchObject({ state: 'warn', text: "mistral-large-4 cannot complete through Mistral's FIM endpoint", hint: 'choose a Codestral model' });
   });
 
   test('a prompt mode the server cannot use names the mode, not the template', async () => {
@@ -304,8 +310,11 @@ describe('explainFailure', () => {
     });
 
     test('context step ignores inherited keys', async () => {
-      const f = fake({ config: { ...chatCfg, fimModel: 'constructor' }, caps, info: { models: ['constructor'], contextWindows: {} }, chatEvents: ev('<COMPLETION>a;') });
-      expect((await run(f)).res.steps.map((s) => s.id)).not.toContain('context');
+      // the native route, so the run reaches the context step: an inherited `constructor` is not a window
+      const f = fake({ config: { fimModel: 'constructor' }, info: { models: ['constructor'], contextWindows: {} } });
+      const ids = (await run(f)).res.steps.map((s) => s.id);
+      expect(ids).toContain('completion');
+      expect(ids).not.toContain('context');
     });
   });
 });

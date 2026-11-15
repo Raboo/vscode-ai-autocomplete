@@ -5,7 +5,7 @@ import type { Settings } from '../config/settings';
 import { resolveFim, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
-import { buildChatRequest, buildFimRequest, noRouteText, planRoute, whyNoRoute } from '../completion/route';
+import { buildChatRequest, buildFimRequest, noRouteFix, noRouteText, planRoute, whyNoRoute } from '../completion/route';
 import { collectCompletion, type Collected, type PlannedRequest } from '../completion/stream';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
@@ -132,7 +132,13 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
     if (route === 'unsupported') {
       const why = whyNoRoute(caps, cfg.fimMode);
-      if (why === 'template') emit({ id: 'model', state: 'warn', text: `${model} has no completion template`, hint: `pick a coder model, or choose a template${/zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}` }, stageStart);
+      if (why === 'template') {
+        const mistral = cfg.kind === 'mistral';
+        emit({
+          id: 'model', state: 'warn', text: mistral ? `${model} cannot complete through Mistral's FIM endpoint` : `${model} has no completion template`,
+          hint: `${noRouteFix(caps.chat, cfg.kind)}${!mistral && /zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}`,
+        }, stageStart);
+      }
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;
     }

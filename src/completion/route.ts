@@ -60,6 +60,13 @@ export function noRouteText(why: NoRoute, mode: FimMode): string {
   }
 }
 
+/** What to do about a model with no template route: shared by the provider's log and the Backends page's connection test. */
+export function noRouteFix(chatPossible: boolean, kind?: BackendKind): string {
+  // Mistral's completion endpoint serves Codestral models only, and it has no chat route here: a template cannot help.
+  if (kind === 'mistral') return 'choose a Codestral model';
+  return chatPossible ? 'pick a coder model, choose a template for it, or set the prompt mode to chat' : 'pick a coder model, or choose a template for it';
+}
+
 /**
  * What to log (once per `onceKey`) and show when a model has no route. An undetected model is a detection
  * problem, not a model problem, so it gets its own message and an error status.
@@ -94,15 +101,14 @@ export function explainUnsupported(
     // Mistral's completion endpoint serves Codestral models only, and it has no chat route here: a template cannot help.
     return {
       onceKey,
-      log: `model "${model}" cannot complete through Mistral's FIM endpoint: choose a Codestral model in AI Autocomplete: Manage Backends`,
+      log: `model "${model}" cannot complete through Mistral's FIM endpoint: ${noRouteFix(chatPossible, kind)} in AI Autocomplete: Manage Backends`,
       status: `${backendId}: choose a Codestral model`,
       action,
     };
   }
-  const fix = chatPossible ? 'pick a coder model, choose a template for it, or set the prompt mode to chat' : 'pick a coder model, or choose a template for it';
   return {
     onceKey,
-    log: `model "${model}" has no FIM template (not a known code-completion model): ${fix} in AI Autocomplete: Manage Backends`,
+    log: `model "${model}" has no FIM template (not a known code-completion model): ${noRouteFix(chatPossible)} in AI Autocomplete: Manage Backends`,
     status: `${backendId}: ${noRouteText(why, mode)}`,
     action,
   };

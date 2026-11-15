@@ -619,7 +619,7 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
 2. Without `<COMPLETION>`: the answer is `''` while streaming. At `done`, it is the whole `visible` minus a trailing `</COMPLETION>` (a model that skipped the opening tag).
 3. **Re-typed line prefix:** let `p = linePrefix.trimStart()`. When `p.trim() !== ''` and `answer.trimStart()` starts with `p`, the leading whitespace and `p` are dropped. While streaming, an answer whose `trimStart()` is still a prefix of `p` gives `''`, held until it can be decided.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```ts
   test('the prompt is our own wording', () => {
     // HOLE_FILLER_SYSTEM contains '<|cursor|>' and '<COMPLETION>'; it and every message of holeFillerMessages(…) contain none of
@@ -642,10 +642,10 @@ ${multiline ? 'Insert the code that belongs at <|cursor|>.' : 'Insert the code t
   });
   test('an empty completion is empty', () => { /* '<COMPLETION></COMPLETION>' → '' */ });
   ```
-- [ ] **Step 2: Run** `npx vitest run test/unit/holeFiller.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement** `holeFiller.ts`.
-- [ ] **Step 4: Run the full check.** Expected: PASS.
-- [ ] **Step 5: Commit.** `feat: chat hole-filler prompt and answer extraction`.
+- [x] **Step 2: Run** `npx vitest run test/unit/holeFiller.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement** `holeFiller.ts`.
+- [x] **Step 4: Run the full check.** Expected: PASS.
+- [x] **Step 5: Commit.** `feat: chat hole-filler prompt and answer extraction`.
 
 ### Task 6: Route planning with a chat route, chat requests and the capability store
 

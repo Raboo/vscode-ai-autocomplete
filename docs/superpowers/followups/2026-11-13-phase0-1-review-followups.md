@@ -2,11 +2,6 @@
 
 Known issues found by the per-task reviews and the final whole-branch review of the Phase 0–1 plan, and left open on purpose. None blocks v0.1.0. Pick them up when you next touch the area, or fold them into a later phase's plan. Remove an entry when it is fixed.
 
-## Recommended next (small, behaviour-visible)
-
-- **Requests waiting in the debouncer during a settings change use the old settings.** A request not yet in `InFlight` still goes out up to ~600 ms after the change, with the old backend and the old `localOnly` value. Fix: in `FimProvider.provide()`, return `[]` when `this.d.getSettings()` is no longer the object read at the start, checked after the awaits and before `inflight.add`. (`src/completion/provider.ts`)
-- **A string `"true"` for `privacy.localOnly` fails open**, because the check is `=== true`. Fix: type-check boolean settings in `parseSettings` (report a problem; treat `"true"` as true for restrict-only keys).
-
 ## Settings
 
 - `fim.disableInLanguages` and `fim.extraContext` keep normal resource precedence. A workspace can therefore widen what the extra-context ring captures, or turn extra context back on. The data still goes only to the user's own backend.
@@ -17,12 +12,10 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 ## Backends and transport
 
-- The 5 s timeout covers the whole stream, so output from a slow stream is thrown away. The spec's "show what we have at X ms" time cap is not implemented (Phase 2).
 - An abort with a custom reason is classified as a network failure. Callers must use a plain `abort()`.
 - Late in-flight failures count as consecutive. After the circuit expires, a single failure re-opens it.
 - Failed model detection (`GET /models`) is not backed off. It probes again on every debounced keystroke while the server is down, or while a server lists several models and the backend sets no `fimModel`.
 - `0.0.0.0` and `::` count as not local. This fails safe.
-- `stop: []` is always sent by the OpenAI-compatible backend.
 - A `/props` response that is not ok is not cancelled. A missing `res.body` silently ends as an empty completion.
 - A user `Authorization` header in a different case is sent alongside the stored key.
 - `Content-Type` can be duplicated the same way.
@@ -46,7 +39,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 ## Tests
 
-- Integration test 1 waits a fixed 300 ms before committing; poll instead.
 - Integration test 2's `requests.length === 0` is trivially true.
 - The cache "newest wins" test does not tell the two orders apart.
 - `Debouncer` boundary cases are untested: `elapsed == delay`, and the call time recorded after an abort.
@@ -77,10 +69,8 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - A cancelled test of a new draft keeps its result under the proposed id, and a rename does not move test results or detected models.
 - The panel does not post a new state when workspace folders change.
 - `backendsPanel.ts` is about 460 lines; split it when next touched.
-- `getJson` duplicates `postJson`'s non-ok handling; `form.ts` duplicates the fimMode and multiline value lists of `settings.ts` (`FIM_MODES`, `MULTILINE`); the hosted check is duplicated in `fieldViews` and `formWarnings`.
+- `getJson` duplicates `postJson`'s non-ok handling; the hosted check is duplicated in `fieldViews` and `formWarnings`.
 - Header names typed on the page are not validated, so a bad name fails as "request failed".
-- `contextWindows[model]` uses a plain object, so a model id like `constructor` reads a prototype value.
-- `resolvePreset` drops the stops of an earlier override when a later override sets `fimTemplate` (only odd multi-override configs).
 - `.vscode-test.mjs` writes the test profile's settings at import time.
 - With a typed template, the Stop field's default follows that template's stops, but its hint still says "built-in preset for this model".
 - On llama.cpp, a model with no built-in template (for example Zeta) routes natively in `auto` mode, so the page disables the Template field; choosing seed-coder there means switching the prompt mode to `template` first.
@@ -91,3 +81,8 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 - The connection test sends a tiny sample prompt, so it can pass while real prompts fail. oMLX (an LM Studio engine) rejects larger prompts with a prefill memory guard when the model barely fits in RAM. A test step with a prompt near the backend's context size would catch this.
 - Kilo Code, Continue and other installed autocomplete extensions compete for the same ghost text. Detecting another active inline-completion provider and saying so on the Backends page would save a debugging round.
+
+## From Phase 2 (2026-11-15)
+
+- The connection test's chat sample and thinking step run once; a model that thinks only on longer prompts passes it.
+- LM Studio's native `/api/v1/chat` (`reasoning: "off"`) is not used, so thinking cannot be switched off per request there (see the main spec's "To verify").

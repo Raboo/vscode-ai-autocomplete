@@ -14,7 +14,9 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from `globalValue` only; workspace values are ignored.
 - Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`. Everything else is pure and unit-testable.
 - The Backends page never receives an API key, and server-supplied text (model ids, error bodies) is HTML-escaped before it reaches the page. Error text shown in the page is fixed text.
-- Prompt and completion text are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
+- Prompt and completion text, reasoning text and server error bodies are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
+- The chat prompt (`src/completion/holeFiller.ts`) is our own wording. Never copy Continue's hole-filler prompt (its upstream license is unverified).
+- A git-ignored `.env` in the repo root may hold the user's local test endpoint credentials. Agents never commit them, copy them into docs, plans or tests, or print them; tests use mocks.
 - A file that copies or closely adapts upstream code starts with `// Portions adapted from <project> <path> @ <commit> (<license>). Copyright <holder>.`, and `THIRD_PARTY_NOTICES.md` gets an entry for that project (full MIT text for MIT projects).
 - Never touch the GitHub repo `Raboo/ai-autocomplete`.
 - Interactive sessions ask the user before creating repos, pushing, changing repo settings or releasing, and wait for a yes.
@@ -42,6 +44,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 ## Layout
 
 - Pure modules (config parsing, backends, models, most of `completion/`) never import `vscode` and are unit-tested in `test/unit/`.
+- Chat path and thinking control: `src/models/thinking.ts` (request fields per strategy and host flavor, reasoning filter), `src/models/capabilities.ts` (what a server rejected or lacks, learned per session, never persisted), `src/completion/holeFiller.ts` (the chat prompt), `src/completion/stream.ts` (streaming of all routes), `src/backends/chat.ts` (`/v1/chat/completions`) and `src/backends/openrouter.ts` (OpenRouter's model list). Route choice lives in `src/completion/route.ts`.
 - `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking and `src/ui/*`.

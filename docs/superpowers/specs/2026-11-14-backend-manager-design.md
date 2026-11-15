@@ -24,7 +24,7 @@ The first real use exposed the gap: LM Studio serving `randmaru/zeta-2.1-mlx` lo
 
 - Editing the general settings (`fim.enabled`, `privacy.localOnly`, `fim.disableInLanguages`, `fim.disableInFiles`, `fim.skipMidWord`, `debug.logPrompts`) on the page. They stay on VS Code's Settings page, which the page links to.
 - Editing `aiAutocomplete.modelOverrides` on the page. Its values still apply and show up as defaults.
-- Next Edit fields (Phase 3), the chat route, and the OpenRouter and Strata server types (Phase 2).
+- Next Edit fields (Phase 3). (The chat route and the OpenRouter and Strata server types were non-goals here and arrived in Phase 2; they are described below.)
 - Running or downloading local models (Phase 4).
 
 ## Anti-goals (failure even if it works)
@@ -82,9 +82,9 @@ There is one page at a time. Opening it again reveals the existing tab.
   - Server type: a dropdown, see the table below.
   - Name, which becomes the backend id: lowercase letters, digits and dashes, unique. It is prefilled from the server type (`lmstudio`, then `lmstudio-2`).
   - URL, prefilled from the server type.
-  - Model: a combo box. It lists what the server reports, plus free text, plus "auto-detect" (empty), with a "reload list" link. Each listed model is tagged "ready" when it has a FIM route, or "no completion template" when it doesn't.
+  - Model: a combo box. It lists what the server reports, plus free text, plus "auto-detect" (empty), with a "reload list" link. Each listed model is tagged "ready" when it has a FIM route, "chat prompt" when it would complete through the chat prompt ("chat prompt, always thinks" when it cannot turn thinking off, which OpenRouter reports per model), or "no completion template" when it has no route.
   - API key: a password field shown for hosted server types. Its placeholder is "stored" when a key exists. Leaving it empty keeps the stored key, and a "Remove key" link deletes it.
-- **Prompt:** template (dropdown of every template id, default from the model's preset), prompt mode (`fimMode`), multi-line.
+- **Prompt:** template (dropdown of every template id, default from the model's preset; disabled on the chat route, which uses no template), prompt mode (`fimMode`), the Thinking switch (dropdown of the thinking strategies, default from the model's family and server; enabled only on the chat route), multi-line.
 - **Context:** context size (tokens), lines before cursor, lines after cursor, use other open files.
 - **Generation:** temperature, top P, top K, max tokens, wait after typing (ms), timeout (ms).
 - **Advanced** (collapsed): stop sequences (one per line), extra HTTP headers (`Name: value` per line), extra request body (JSON).
@@ -113,7 +113,11 @@ There is one page at a time. Opening it again reveals the existing tab.
 | DeepSeek | openai / deepseek | `https://api.deepseek.com/beta` | yes |
 | Fireworks | openai / fireworks | `https://api.fireworks.ai/inference/v1` | yes |
 | Together | openai / together | `https://api.together.xyz/v1` | yes |
+| Strata | openai / strata | `http://127.0.0.1:8080/v1` | optional |
+| OpenRouter | openai / openrouter | `https://openrouter.ai/api/v1` | yes |
 | Other OpenAI-compatible | openai / generic | empty | optional |
+
+Strata's default address and its optional key are verified 2026-11-15 (Strata `13eedf5`, DETAILS.md and a live check). OpenRouter's `/api/v1/models` needs no key and lists `context_length` and `reasoning.mandatory`, which the page uses for the context step and the "always thinks" tag (verified 2026-11-15, openrouter.ai docs).
 
 When an existing entry has a `kind`/`hostFlavor` pair the table doesn't list, its card shows "Other OpenAI-compatible" and the pair is kept unchanged on save.
 
@@ -127,7 +131,7 @@ When an existing entry has a `kind`/`hostFlavor` pair the table doesn't list, it
     "fimModel": "randmaru/zeta-2.1-mlx",
     "fim": { "template": "seed-coder", "temperature": 0.05 } }
   ```
-- Keys of `fim`: `template`, `contextTokens`, `prefixLines`, `suffixLines`, `extraContext`, `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`.
+- Keys of `fim`: `template`, `contextTokens`, `prefixLines`, `suffixLines`, `extraContext`, `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`.
 - `fimMode` and `headers` stay where they are, at the top level of the entry.
 - The `package.json` schema documents `fim`, so settings.json gets completion and validation.
 - `parseSettings` validates `fim`. It keeps the valid keys and reports each dropped one, the way `modelOverrides` problems are reported.
@@ -157,7 +161,7 @@ The existing rule still holds: a `maxTokens` from levels 1 or 2 replaces `fim.ma
 - This replaces today's fixed caps of 8,000, 2,500 and 6,000 characters.
 - Lines before and after stay an extra cap on top of the budget.
 
-**Timeout:** `timeoutMs` replaces the fixed 5,000 ms request timeout for that backend.
+**Timeout:** `timeoutMs` replaces the fixed 5,000 ms request timeout for that backend. On the chat route it replaces the chat timeout (15000 ms unless set) instead, and the Timeout field shows that value there. The Stop field likewise shows the chat stops (`</COMPLETION>` plus the backend's own `stop`) on the chat route. The `thinking` key is a strategy id from the main spec's "Thinking control" list and is used only on the chat route.
 
 **Validation:**
 
@@ -201,12 +205,15 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
 
 2. **Model and route.**
    - The model is the form's model, or the detected one.
-   - The step reports the model, the template and the route (native or template).
-   - When there is no route, it says what to change ("pick a coder model, or choose a template; seed-coder fits Zeta 2.x") and stops here with a warning.
+   - The step reports the model and the route: native, template (with the template id), or the chat prompt (`Model <id> (chat prompt)`). A model that cannot turn thinking off gets a warning on the chat route: "this model cannot turn thinking off, so completions are slow".
+   - A Template chosen for another model gets a mismatch warning on the template route only; it is skipped on the chat route, which uses no template.
+   - When there is no route, it says what to change and stops here with a warning. The hint comes from one helper shared with the provider's log: "pick a coder model, or choose a template for it", plus "or set the prompt mode to chat" when the chat route is possible; seed-coder is suggested for Zeta 2.x. On a Mistral backend a chat-family model has no route and the hint is "choose a Codestral model".
 3. **Sample completion.**
+   - On the chat route it is a chat request built like a real one: the hole-filler prompt, the chat stops and the thinking fields for the model's family and server.
    - It sends a built-in TypeScript snippet (`function add(a: number, b: number): number {` / `  return ` / `}`) through the same request builder and stream filters as real completions, with the form's sampling.
    - It passes when the text is not empty, and reports time to first token, total time and the text (up to 80 characters).
-   - The test waits up to 30 s, because a first request can load the model (LM Studio JIT loading). A completion slower than the backend's timeout gets a warning: "slower than the X ms timeout; run the test again if the model was loading".
+   - The test waits up to 30 s, because a first request can load the model (LM Studio JIT loading). A completion slower than the backend's timeout gets a warning: "slower than the X ms timeout; run the test again if the model was loading". On the chat route X is the chat timeout (15000 ms unless the backend sets `timeoutMs`).
+   - **Thinking** (chat route only): a sub-step that reports "Thinking is off", or warns "the model still thinks with thinking off" with the hint to choose a model that can turn thinking off or to set the Thinking switch. A server that rejected a request field says which fields are left out; this is learned for the session only.
 4. **Context window,** where the server reports one:
    - llama.cpp: `/props` `default_generation_settings.n_ctx`;
    - LM Studio: `/api/v0/models` `loaded_context_length`;
@@ -282,8 +289,12 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
 
 ## Model with no template
 
-- **Log line** (once per backend and model): `model "<id>" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`.
-- **`fimMode: "chat"` keeps its own message:** "chat FIM arrives in v0.2".
+- **Log line** (once per backend and model), in two variants:
+  - when the chat route is not possible: `model "<id>" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`;
+  - when it is possible: `... pick a coder model, choose a template for it, or set the prompt mode to chat in AI Autocomplete: Manage Backends`.
+- **Mistral:** a chat-family model has no route there. The log says `model "<id>" cannot complete through Mistral's FIM endpoint: choose a Codestral model in AI Autocomplete: Manage Backends` and the status is `<backend>: choose a Codestral model`.
+- **A prompt mode the server cannot use** (for example `fimMode: "chat"` on Mistral) logs `prompt mode (fimMode) "<mode>" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`. This replaces the earlier "chat FIM arrives in v0.2" message.
+- **A route the server turns out not to have** (404, 405 or 501 on a route in `auto` mode) is logged as `no <route> endpoint for <model> (HTTP <status>); the next request uses the next prompt route` and remembered for the session. **Retry now**, a passing connection test and a change of the API key forget the routes learned as missing.
 - **Status bar:** shows `<backend>: no completion template` as an error state. Clicking it opens the page at that card.
 - **Elsewhere:** the model list tags such models, and the Template dropdown fixes them.
 - **No built-in preset for Zeta.** As a FIM model its quality is unknown, and Phase 3 supports it properly as a Next Edit model. The test step's hint names seed-coder as the template to try.

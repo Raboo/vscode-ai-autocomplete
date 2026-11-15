@@ -5,7 +5,9 @@ import type { Settings } from '../config/settings';
 import { resolveFim, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
-import { buildFimRequest, noRouteText, planRoute, whyNoRoute } from '../completion/route';
+import { buildChatRequest, buildFimRequest, noRouteText, planRoute, whyNoRoute } from '../completion/route';
+import { collectCompletion, type Collected, type PlannedRequest } from '../completion/stream';
+import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
 import type { TemplateInput } from '../models/templates';
 import type { TestStep } from './protocol';
@@ -88,15 +90,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       return result;
     }
 
-    const stream = async (req: ReturnType<typeof buildFimRequest>, ctl: AbortController, stop: string[]): Promise<string> => {
+    const stream = async (p: PlannedRequest, ctl: AbortController, stop: string[]): Promise<Collected> => {
       const acc = new CompletionAccumulator({ stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
-      for await (const chunk of backend.streamFim(req)) {
-        if (acc.push(chunk)) {
-          ctl.abort();
-          break;
-        }
-      }
-      return postprocess(acc.text, POST) ?? '';
+      return collectCompletion(backend, p, acc, ctl);
     };
     const makeCtl = (): AbortController => {
       const ctl = new AbortController();
@@ -112,7 +108,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       const v = resolveFim(cfg, cfg.fimModel, settings).values;
       const ctl = makeCtl();
       const req = buildFimRequest({ route: 'native', fim: v, model: cfg.fimModel, multiline: false, input: SAMPLE, signal: ctl.signal });
-      await stream({ ...req, sampling: { ...req.sampling, maxTokens: 1 }, timeoutMs: TEST_TIMEOUT_MS }, ctl, v.stop);
+      await stream({ route: 'native', req: { ...req, sampling: { ...req.sampling, maxTokens: 1 }, timeoutMs: TEST_TIMEOUT_MS } }, ctl, v.stop);
       emit({ id: 'reach', state: 'ok', text: `Server answered in ${now() - stageStart} ms` }, stageStart);
       info = await backend.listModels(i.signal); // answered locally, no request
     } else {
@@ -131,8 +127,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     }
     result.model = model;
     const values = resolveFim(cfg, model, settings).values;
-    // The chat route stays off until the test handles it.
-    const caps = { ...backend.routes(), chat: false };
+    // A fresh probe: routes learned as missing during completions are ignored.
+    const caps = backend.routes();
     const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
     if (route === 'unsupported') {
       const why = whyNoRoute(caps, cfg.fimMode);
@@ -140,34 +136,68 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
       return result;
     }
-    if (route === 'chat') return result; // unreachable while chat is off above; narrows the type until Task 9
     // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
     const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
-    emit({
-      id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
-      ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
-    }, stageStart);
+    const cannotDisable = values.thinking === 'cannotDisable' || (info.thinkingMandatory ?? []).includes(model);
+    if (route === 'chat') {
+      emit({
+        id: 'model', state: cannotDisable ? 'warn' : 'ok', text: `Model ${model} (chat prompt)`,
+        ...(cannotDisable ? { hint: 'this model cannot turn thinking off, so completions are slow' } : {}),
+      }, stageStart);
+    } else {
+      emit({
+        id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
+        ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
+      }, stageStart);
+    }
 
     // 3. completion
     stage = 'completion';
     stageStart = now();
     const ctl = makeCtl();
-    const req = buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal });
-    const text = await stream({ ...req, timeoutMs: TEST_TIMEOUT_MS }, ctl, values.stop);
+    const rejected = new Set<string>();
+    let planned: PlannedRequest;
+    let stop = values.stop;
+    if (route === 'chat') {
+      const req = buildChatRequest({
+        fim: values, flavor: inferHostFlavor(cfg), model, input: { ...SAMPLE, languageId: 'typescript', multiline: false },
+        rejected: new Set(), signal: ctl.signal, onRejected: (fields) => fields.forEach((f) => rejected.add(f)),
+      });
+      planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix };
+      stop = req.stop; // the request's own list, as in the provider
+    } else {
+      planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
+    }
+    const collected = await stream(planned, ctl, stop);
+    const text = postprocess(collected.text, POST) ?? '';
     const elapsed = now() - stageStart;
+    const limit = route === 'chat' ? values.chatTimeoutMs : values.timeoutMs;
     if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
     if (text === '') {
       emit({ id: 'completion', state: 'warn', text: 'the server answered but returned no completion' }, stageStart);
-    } else if (elapsed > values.timeoutMs) {
-      emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint: `slower than the ${values.timeoutMs} ms timeout; run the test again if the model was loading` }, stageStart);
+    } else if (elapsed > limit) {
+      emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint: `slower than the ${limit} ms timeout; run the test again if the model was loading` }, stageStart);
     } else {
       emit({ id: 'completion', state: 'ok', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"` }, stageStart);
+    }
+
+    // 3b. thinking (chat route only)
+    if (route === 'chat') {
+      stage = 'thinking';
+      stageStart = now();
+      const rej = rejected.size > 0 ? `the server rejected ${[...rejected].join(', ')}; they are left out` : undefined;
+      if (collected.thinking) {
+        emit({ id: 'thinking', state: 'warn', text: 'the model still thinks with thinking off',
+          hint: ['completions take longer; choose a model that can turn thinking off, or set the Thinking switch', rej].filter(Boolean).join('; ') }, stageStart);
+      } else {
+        emit({ id: 'thinking', state: 'ok', text: 'Thinking is off', ...(rej ? { hint: rej } : {}) }, stageStart);
+      }
     }
 
     // 4. context
     stage = 'context';
     stageStart = now();
-    const window = info.contextWindows[model];
+    const window = Object.hasOwn(info.contextWindows, model) ? info.contextWindows[model] : undefined;
     if (window !== undefined) {
       if (values.contextTokens + values.maxTokens > window) {
         emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${values.maxTokens} is more than the server's ${window}` }, stageStart);

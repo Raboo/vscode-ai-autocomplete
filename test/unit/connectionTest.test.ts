@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import { completionServed, explainFailure, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
-import type { FimBackend, FimRequest, ServerInfo } from '../../src/backends/types';
+import type { ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from '../../src/backends/types';
 import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
 import { parseSettings } from '../../src/config/settings';
@@ -10,7 +10,7 @@ import type { TestStep } from '../../src/manage/protocol';
 
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
-interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number }
+interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void }
 function fake(o: FakeOpts = {}) {
   const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, ...o.config };
   const listModels = vi.fn(async (): Promise<ServerInfo> => {
@@ -29,8 +29,19 @@ function fake(o: FakeOpts = {}) {
       yield* c;
     })();
   });
-  const backend: FimBackend = { config, routes: () => ({ native: o.native ?? true, template: config.kind !== 'mistral', chat: config.kind !== 'mistral', nativeChatModels: false }), detectModel: async () => undefined, listModels, streamFim, streamChat: () => (async function* () { /* no-op */ })() };
-  return { backend, listModels, streamFim, requests };
+  const chatRequests: ChatRequest[] = [];
+  const streamChat = vi.fn((req: ChatRequest) => {
+    chatRequests.push(req);
+    o.onChat?.(req);
+    const ev = o.chatEvents ?? [];
+    return (async function* () {
+      if (o.clock) o.clock.t += o.streamCost ?? 0;
+      if (ev instanceof Error) throw ev;
+      yield* ev;
+    })();
+  });
+  const backend: FimBackend = { config, routes: () => ({ native: o.native ?? true, template: config.kind !== 'mistral', chat: config.kind !== 'mistral', nativeChatModels: false, ...o.caps }), detectModel: async () => undefined, listModels, streamFim, streamChat };
+  return { backend, listModels, streamFim, streamChat, requests, chatRequests };
 }
 
 async function run(f: ReturnType<typeof fake>, extra: Partial<ConnectionTestInput> = {}) {
@@ -90,11 +101,9 @@ describe('runConnectionTest', () => {
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
-  test('a non-zeta model without template gets the plain hint; chat mode is not yet routed', async () => {
+  test('a non-zeta model without template gets the plain hint', async () => {
     const plain = await run(fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3' } }));
     expect(plain.res.steps[1]).toMatchObject({ text: 'llama-3 has no completion template', hint: 'pick a coder model, or choose a template' });
-    const chat = await run(fake({ config: { fimModel: 'qwen2.5-coder-7b', fimMode: 'chat' } }));
-    expect(chat.res.steps[1]).toMatchObject({ state: 'warn', text: 'prompt mode "chat" does not work with this server' });
   });
 
   test('a prompt mode the server cannot use names the mode, not the template', async () => {
@@ -246,6 +255,57 @@ describe('explainFailure', () => {
     expect(explainFailure(new SyntaxError('bad json'))).toEqual({ text: 'request failed' });
     expect(explainFailure(new StreamError('SECRET-MESSAGE'))).toEqual({
       text: 'the server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message',
+    });
+  });
+
+  describe('chat route', () => {
+    const chatCfg = { kind: 'openai' as const, fimModel: 'Qwen3.8-Flash-Next' };
+    const caps = { native: false, template: true, chat: true, nativeChatModels: false };
+    const ev = (...c: string[]): ChatEvent[] => c.map((text) => ({ type: 'content', text }));
+
+    test('reach, model, completion and thinking ok', async () => {
+      const f = fake({ config: chatCfg, caps, chatEvents: ev('<COMPLETION>a + b;') });
+      const { res } = await run(f);
+      expect(res.steps.map((s) => [s.id, s.state, s.text])).toEqual([
+        ['reach', 'ok', 'Server answered in 0 ms (1 models)'], ['model', 'ok', 'Model Qwen3.8-Flash-Next (chat prompt)'],
+        ['completion', 'ok', 'Test completion in 0 ms: "a + b;"'], ['thinking', 'ok', 'Thinking is off'],
+      ]);
+      expect(f.chatRequests[0]!.timeoutMs).toBe(TEST_TIMEOUT_MS);
+      expect(f.streamFim).not.toHaveBeenCalled();
+    });
+
+    test('a model that thinks anyway gets a thinking warning', async () => {
+      const f = fake({ config: chatCfg, caps, chatEvents: [{ type: 'reasoning', text: 'hmm' }, ...ev('<COMPLETION>a + b;')] });
+      const { res } = await run(f);
+      expect(res.steps[3]).toMatchObject({ id: 'thinking', state: 'warn', text: 'the model still thinks with thinking off',
+        hint: 'completions take longer; choose a model that can turn thinking off, or set the Thinking switch' });
+    });
+
+    test('rejected fields are named in the thinking hint', async () => {
+      const f = fake({ config: chatCfg, caps, chatEvents: ev('<COMPLETION>a + b;'), onChat: (r) => r.onRejected?.(['top_k', 'presence_penalty']) });
+      const { res } = await run(f);
+      expect(res.steps[3]).toMatchObject({ id: 'thinking', state: 'ok', text: 'Thinking is off', hint: 'the server rejected top_k, presence_penalty; they are left out' });
+    });
+
+    test('a cannotDisable model warns at the model step and still runs the completion', async () => {
+      const f = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, chatEvents: [{ type: 'reasoning', text: 'x' }, ...ev('<COMPLETION>a + b;')] });
+      const { res } = await run(f);
+      expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'Model gpt-oss-20b (chat prompt)', hint: 'this model cannot turn thinking off, so completions are slow' });
+      expect(res.steps[2]).toMatchObject({ id: 'completion', state: 'ok' });
+      const m = fake({ config: { ...chatCfg, fimModel: 'z-ai/glm-5' }, caps, info: { models: ['z-ai/glm-5'], contextWindows: {}, thinkingMandatory: ['z-ai/glm-5'] }, chatEvents: ev('<COMPLETION>a;') });
+      expect((await run(m)).res.steps[1]).toMatchObject({ state: 'warn' });
+    });
+
+    test('the slow warning compares against the chat timeout', async () => {
+      const clock = { t: 0 };
+      const f = fake({ config: chatCfg, caps, clock, streamCost: 6000, chatEvents: ev('<COMPLETION>a + b;') });
+      const { res } = await run(f, { now: () => clock.t });
+      expect(res.steps[2]).toMatchObject({ state: 'ok' }); // 6 s is over the FIM timeout of 5 s but under the chat timeout of 15 s
+    });
+
+    test('context step ignores inherited keys', async () => {
+      const f = fake({ config: { ...chatCfg, fimModel: 'constructor' }, caps, info: { models: ['constructor'], contextWindows: {} }, chatEvents: ev('<COMPLETION>a;') });
+      expect((await run(f)).res.steps.map((s) => s.id)).not.toContain('context');
     });
   });
 });

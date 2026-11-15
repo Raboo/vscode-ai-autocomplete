@@ -6,7 +6,7 @@ import type { CardView, Dot, EditView, ErrorField, FieldView, FormField, PageSta
 export interface LocalUi { typedKey: string; advancedOpen: boolean }
 
 const SECTIONS: readonly { title: string; fields: readonly FormField[] }[] = [
-  { title: 'Prompt', fields: ['template', 'fimMode', 'multiline'] },
+  { title: 'Prompt', fields: ['template', 'fimMode', 'thinking', 'multiline'] },
   { title: 'Context', fields: ['contextTokens', 'prefixLines', 'suffixLines', 'extraContext'] },
   { title: 'Generation', fields: ['temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs'] },
 ];

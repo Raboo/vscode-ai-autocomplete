@@ -36,21 +36,31 @@ describe('page state', () => {
   });
 
   test('the card warning names the prompt mode when the mode, not the model, is the problem', () => {
-    const chat = buildPageState(inputs({ rawBackends: [{ ...lm, fimMode: 'chat' }] }));
-    expect(chat.cards[0]).toMatchObject({ warning: 'prompt mode "chat" does not work with this server', dot: 'yellow' });
     const native = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'qwen2.5-coder-7b', fimMode: 'native' }] }));
     expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });
     const mistral = buildPageState(inputs({ rawBackends: [{ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimModel: 'codestral-latest', fimMode: 'template' }] }));
     expect(mistral.cards[0]!.warning).toBe('prompt mode "template" does not work with this server');
   });
 
-  test('modelTag: ready, or why the backend has no route for the model', () => {
+  test('modelTag: ready, chat prompt, always thinks, or no route', () => {
     const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, ...o });
     expect(modelTag(cfg(), 'qwen2.5-coder-7b', base())).toBe('ready');
     expect(modelTag(cfg(), 'zeta-2.1', base())).toBe('no completion template');
     expect(modelTag(cfg({ fim: { template: 'seed-coder' } }), 'zeta-2.1', base())).toBe('ready');
-    expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "chat" does not work with this server');
+    expect(modelTag(cfg(), 'Qwen3.8-Flash-Next', base())).toBe('chat prompt');
+    expect(modelTag(cfg(), 'gpt-oss-20b', base())).toBe('chat prompt, always thinks');
+    expect(modelTag(cfg(), 'z-ai/glm-5', base(), true)).toBe('chat prompt, always thinks');
+    expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('chat prompt');
     expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
+  });
+
+  test('card warnings: chat mode works on LM Studio; Mistral chat mode does not; cannotDisable warns', () => {
+    const chat = buildPageState(inputs({ rawBackends: [{ ...lm, fimMode: 'chat' }] }));
+    expect(chat.cards[0]!.warning).toBeUndefined();
+    const mistral = buildPageState(inputs({ rawBackends: [{ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimModel: 'codestral-latest', fimMode: 'chat' }] }));
+    expect(mistral.cards[0]).toMatchObject({ warning: 'prompt mode "chat" does not work with this server', dot: 'yellow' });
+    const thinks = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'gpt-oss-20b' }] }));
+    expect(thinks.cards[0]).toMatchObject({ warning: 'This model cannot turn thinking off', dot: 'yellow' });
   });
 
   test('dot precedence', () => {

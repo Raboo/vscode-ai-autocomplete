@@ -1,8 +1,8 @@
 import { createBackend } from '../backends';
 import { inferHostFlavor, isHostedFlavor } from '../backends/hostFlavor';
 import { resolveFim, templateMismatch, type ValueSource } from '../completion/effective';
-import { planRoute } from '../completion/route';
-import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, parseBackendEntry, type Settings } from '../config/settings';
+import { chatStops, planRoute } from '../completion/route';
+import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
 import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
 import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
@@ -10,11 +10,12 @@ import { SERVER_TYPES, serverTypeOf, suggestId } from './serverTypes';
 
 const FIM_MODES: string[] = [...FIM_MODE_LIST];
 const MULTILINE: string[] = [...MULTILINE_LIST];
+const THINKING: string[] = [...THINKING_STRATEGIES];
 
 export interface FieldError { field: ErrorField; message: string }
 
 type Limited = keyof typeof FIM_LIMITS;
-const FIELDS: readonly FormField[] = ['template', 'fimMode', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
+const FIELDS: readonly FormField[] = ['template', 'fimMode', 'thinking', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
   'temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs', 'stop', 'headers', 'extraBody'];
 /** The fields stored under `fim`; `fimMode` and `headers` live at the top level of the entry. */
 const FIM_KEYS = FIELDS.filter((f) => f !== 'fimMode' && f !== 'headers');
@@ -133,6 +134,8 @@ export function validateForm(f: BackendForm, taken: readonly string[]): FieldErr
   if (template !== undefined && !Object.hasOwn(TEMPLATES, template)) err('template', 'unknown template');
   const mode = typed(f, 'fimMode');
   if (mode !== undefined && !FIM_MODES.includes(mode)) err('fimMode', `use one of ${FIM_MODES.join(', ')}`);
+  const thinking = typed(f, 'thinking');
+  if (thinking !== undefined && !THINKING.includes(thinking)) err('thinking', 'unknown thinking switch');
   const multiline = typed(f, 'multiline');
   if (multiline !== undefined && !MULTILINE.includes(multiline)) err('multiline', `use one of ${MULTILINE.join(', ')}`);
   const headers = typed(f, 'headers');
@@ -171,7 +174,7 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
     else if (k === 'headers') {
       const { headers } = parseHeaders(text);
       if (Object.keys(headers).length > 0) out.headers = headers;
-    } else if (k === 'template' || k === 'multiline') fim[k] = text;
+    } else if (k === 'template' || k === 'multiline' || k === 'thinking') fim[k] = text;
     else if (k === 'extraContext') fim[k] = text === 'true';
     else if (k === 'stop') fim[k] = lines(text);
     else if (k === 'extraBody') {
@@ -195,7 +198,7 @@ const SOURCE_LABEL: Record<ValueSource, string> = {
   backend: 'this backend', preset: 'built-in preset for this model', modelOverride: 'your model overrides', settings: 'your settings', builtin: 'built-in default',
 };
 const LABELS: Record<FormField, string> = {
-  template: 'Template', fimMode: 'Prompt mode', multiline: 'Multi-line', contextTokens: 'Context size (tokens)', prefixLines: 'Lines before cursor',
+  template: 'Template', fimMode: 'Prompt mode', thinking: 'Thinking switch', multiline: 'Multi-line', contextTokens: 'Context size (tokens)', prefixLines: 'Lines before cursor',
   suffixLines: 'Lines after cursor', extraContext: 'Use other open files', temperature: 'Temperature', topP: 'Top P', topK: 'Top K', maxTokens: 'Max tokens',
   debounceMs: 'Wait after typing (ms)', timeoutMs: 'Timeout (ms)', stop: 'Stop sequences', headers: 'Extra HTTP headers', extraBody: 'Extra request body (JSON)',
 };
@@ -216,11 +219,14 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
   const own = resolveFim({ ...cfg, fim: undefined }, model, s);
   const { values, sources, extraContextAllowed } = template === undefined ? own : resolveFim({ ...cfg, fim: { template } }, model, s);
   const hosted = isHostedFlavor(inferHostFlavor(cfg));
-  const native = planRoute(cfg.kind, { ...createBackend(cfg, async () => undefined).routes(), chat: false }, values, cfg.fimMode) === 'native';
+  const route = planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes(), values, cfg.fimMode);
+  const native = route === 'native';
+  const chat = route === 'chat';
   const num = (n: number | undefined): string => (n === undefined ? '' : String(n));
   const defaults: Record<FormField, { text: string; source: ValueSource; hint?: string }> = {
     template: { text: own.values.fimTemplate ?? '', source: own.sources.template },
     fimMode: { text: 'auto', source: 'builtin' },
+    thinking: { text: values.thinking, source: sources.thinking },
     multiline: { text: values.multiline, source: sources.multiline },
     contextTokens: { text: num(values.contextTokens), source: sources.contextTokens },
     prefixLines: { text: num(values.prefixLines), source: sources.prefixLines },
@@ -231,15 +237,18 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
     topK: { text: num(values.sampling.topK), source: sources.topK },
     maxTokens: { text: num(values.maxTokens), source: sources.maxTokens },
     debounceMs: values.debounceMs === null ? { text: 'auto', source: sources.debounceMs, hint: ADAPTIVE } : { text: String(values.debounceMs), source: sources.debounceMs },
-    timeoutMs: { text: num(values.timeoutMs), source: sources.timeoutMs },
-    stop: { text: values.stop.join('\n'), source: sources.stop },
+    // The chat route has its own timeout and stop list; the typed values replace them as they replace the FIM ones.
+    timeoutMs: { text: num(chat ? values.chatTimeoutMs : values.timeoutMs), source: sources.timeoutMs },
+    stop: { text: (chat ? chatStops(values) : values.stop).join('\n'), source: sources.stop },
     headers: { text: '', source: 'builtin' },
     extraBody: { text: Object.keys(values.extraBody).length > 0 ? JSON.stringify(values.extraBody) : '', source: sources.extraBody },
   };
-  const options: Partial<Record<FormField, string[]>> = { template: Object.keys(TEMPLATES), fimMode: FIM_MODES, multiline: MULTILINE };
+  const options: Partial<Record<FormField, string[]>> = { template: Object.keys(TEMPLATES), fimMode: FIM_MODES, thinking: THINKING, multiline: MULTILINE };
   const disabled: Partial<Record<FormField, string>> = {};
   if (hosted) disabled.topK = 'not sent to hosted servers';
   if (native) disabled.template = 'the server builds the prompt';
+  if (chat) disabled.template = 'the chat prompt does not use a template';
+  if (!chat) disabled.thinking = 'used only by the chat prompt';
   if (cfg.kind === 'mistral') disabled.topP = 'not sent while temperature is set';
   if (!extraContextAllowed) disabled.extraContext = 'off in your settings';
 
@@ -265,12 +274,15 @@ export function formWarnings(f: BackendForm, model: string | undefined, s: Setti
   if (!cfg) return [];
   const out: string[] = [];
   const values = resolveFim(cfg, model, s).values;
-  if (isHostedFlavor(inferHostFlavor(cfg)) && values.stop.length > MAX_HOSTED_STOPS) out.push(`only the first ${MAX_HOSTED_STOPS} stop sequences are sent`);
+  const route = planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes(), values, cfg.fimMode);
+  const stops = route === 'chat' ? chatStops(values) : values.stop;
+  if (isHostedFlavor(inferHostFlavor(cfg)) && stops.length > MAX_HOSTED_STOPS) out.push(`only the first ${MAX_HOSTED_STOPS} stop sequences are sent`);
   const mismatch = templateMismatch(cfg, model, s);
   // On the native route the server builds the prompt, so the Template is not used.
-  if (mismatch && model !== undefined && planRoute(cfg.kind, { ...createBackend(cfg, async () => undefined).routes(), chat: false }, values, cfg.fimMode) !== 'native') {
+  if (mismatch && model !== undefined && route !== 'native' && route !== 'chat') {
     out.push(`${model}'s own template is ${mismatch.own}; reset Template unless you mean to override it`);
   }
+  if (route === 'chat' && model !== undefined && values.thinking === 'cannotDisable') out.push(`${model} cannot turn thinking off, so completions will be slow`);
   return out;
 }
 

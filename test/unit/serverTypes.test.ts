@@ -3,7 +3,7 @@ import { SERVER_TYPES, serverTypeOf, suggestId } from '../../src/manage/serverTy
 
 describe('server types', () => {
   test('table matches the spec', () => {
-    expect(SERVER_TYPES.map((t) => t.id)).toEqual(['llamacpp', 'lmstudio', 'ollama', 'vllm', 'sglang', 'mistral', 'deepseek', 'fireworks', 'together', 'other']);
+    expect(SERVER_TYPES.map((t) => t.id)).toEqual(['llamacpp', 'lmstudio', 'ollama', 'vllm', 'sglang', 'strata', 'mistral', 'deepseek', 'fireworks', 'together', 'openrouter', 'other']);
     const by = (id: string) => SERVER_TYPES.find((t) => t.id === id);
     expect(by('lmstudio')).toMatchObject({ kind: 'openai', hostFlavor: 'lmstudio', defaultUrl: 'http://127.0.0.1:1234/v1', key: 'no' });
     expect(by('mistral')).toMatchObject({ kind: 'mistral', defaultModel: 'codestral-latest', defaultUrl: 'https://codestral.mistral.ai', key: 'yes' });
@@ -20,8 +20,19 @@ describe('server types', () => {
     expect(serverTypeOf({ kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' })).toBe('llamacpp');
     expect(serverTypeOf({ kind: 'mistral', baseUrl: 'https://codestral.mistral.ai' })).toBe('mistral');
     expect(serverTypeOf({ kind: 'openai', baseUrl: 'https://example.com/v1' })).toBe('other');
-    expect(serverTypeOf({ kind: 'openai', hostFlavor: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' })).toBe('other');
+    expect(serverTypeOf({ kind: 'openai', hostFlavor: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' })).toBe('openrouter');
     expect(serverTypeOf({ kind: 'llamacpp', hostFlavor: 'vllm', baseUrl: 'http://x' })).toBe('other');
+  });
+
+  test('Strata and OpenRouter types', () => {
+    const by = (id: string) => SERVER_TYPES.find((t) => t.id === id);
+    expect(by('strata')).toMatchObject({ label: 'Strata', kind: 'openai', hostFlavor: 'strata', defaultUrl: 'http://127.0.0.1:8080/v1', key: 'optional' });
+    expect(by('openrouter')).toMatchObject({ label: 'OpenRouter', kind: 'openai', hostFlavor: 'openrouter', defaultUrl: 'https://openrouter.ai/api/v1', key: 'yes' });
+    expect(serverTypeOf({ kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1' })).toBe('openrouter');
+    // Strata has no host name or port to infer from: only its flavor identifies it
+    expect(serverTypeOf({ kind: 'openai', hostFlavor: 'strata', baseUrl: 'http://127.0.0.1:8080/v1' })).toBe('strata');
+    expect(serverTypeOf({ kind: 'openai', baseUrl: 'http://127.0.0.1:8080/v1' })).toBe('other');
+    expect(suggestId('openrouter', [])).toBe('openrouter');
   });
 
   test('suggestId', () => {

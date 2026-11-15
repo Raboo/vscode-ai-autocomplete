@@ -39,9 +39,12 @@ export function buildFimWindow(text: string, offset: number, o: FimWindowOptions
   const cursor = Math.max(0, Math.min(offset, text.length));
   const cursorLine = lineAt(starts, cursor);
 
-  let startLine = Math.max(0, cursorLine - o.prefixLines);
+  // The start moves in steps of a quarter of prefixLines, so the prompt start stays the same for many keystrokes (server prompt caches).
+  const step = Math.max(1, Math.floor(o.prefixLines / 4));
+  let startLine = Math.max(0, Math.floor((cursorLine - o.prefixLines) / step) * step);
   let startOffset = starts[startLine];
   if (cursor - startOffset > o.maxPrefixChars) {
+    // The cap binds: keep every whole line that fits. A step-aligned start could leave only the cursor line.
     let cut = cursor - o.maxPrefixChars;
     if (cut < starts[cursorLine]) {
       // Cut point is above the cursor line: drop the partial leading line.
@@ -50,6 +53,7 @@ export function buildFimWindow(text: string, offset: number, o: FimWindowOptions
       startLine = l;
       cut = starts[l];
     } else {
+      // The cursor line alone is over the cap: cut inside it.
       startLine = cursorLine;
     }
     startOffset = cut;
@@ -85,8 +89,13 @@ function overlapLines(a: { startLine: number; endLine: number }, b: { startLine:
   return Math.max(0, Math.min(a.endLine, b.endLine) - Math.max(a.startLine, b.startLine) + 1);
 }
 
+function chunkKey(c: Chunk): string {
+  return `${c.path}:${c.startLine}`;
+}
+
 export class ExtraContextRing {
   private chunks: Chunk[] = [];
+  private lastPicked: string[] = [];
   private readonly maxChunks: number;
   private readonly chunkLines: number;
 
@@ -98,6 +107,7 @@ export class ExtraContextRing {
   /** Forgets every chunk, e.g. after the settings that decide which files may be captured changed. */
   clear(): void {
     this.chunks = [];
+    this.lastPicked = [];
   }
 
   add(path: string, lines: string[], centerLine: number): void {
@@ -106,23 +116,32 @@ export class ExtraContextRing {
     const startLine = Math.max(0, Math.min(centerLine - Math.floor(size / 2), lines.length - size));
     const endLine = startLine + size - 1;
     const chunk: Chunk = { path, startLine, endLine, text: lines.slice(startLine, endLine + 1).join('\n') };
-    // "Overlap" = shared lines are at least half of the shorter chunk.
+    // "Overlap" = shared lines are at least half of the shorter chunk. Re-capturing the same lines makes the chunk the newest
+    // under the same key (`path:startLine`), so pick() still keeps its place in the prompt.
     this.chunks = this.chunks.filter((c) => c.path !== path || overlapLines(c, chunk) * 2 < Math.min(c.endLine - c.startLine + 1, size));
     this.chunks.push(chunk);
     if (this.chunks.length > this.maxChunks) this.chunks.splice(0, this.chunks.length - this.maxChunks);
   }
 
-  /** Newest chunks that fit the budget, returned oldest-first so the prompt prefix stays stable (llama.cpp cache). */
+  /**
+   * The newest chunks that fit the budget. Those returned last time (same `path:startLine`) come first in the same order,
+   * the others follow oldest-first, so the prompt prefix stays stable while the set does not change (server prompt caches).
+   */
   pick(exclude: { path: string; startLine: number; endLine: number }, budgetChars: number): ContextFile[] {
     let remaining = budgetChars;
-    const chosen: Chunk[] = [];
+    const members: Chunk[] = [];
     for (let i = this.chunks.length - 1; i >= 0; i--) {
       const c = this.chunks[i];
       if (c.path === exclude.path && overlapLines(c, exclude) > 0) continue;
       if (c.text.length > remaining) continue;
       remaining -= c.text.length;
-      chosen.push(c);
+      members.push(c);
     }
-    return chosen.reverse().map((c) => ({ path: c.path, text: c.text }));
+    members.reverse();
+    const byKey = new Map(members.map((c) => [chunkKey(c), c]));
+    const kept = this.lastPicked.flatMap((key) => byKey.get(key) ?? []);
+    const chosen = [...kept, ...members.filter((c) => !kept.includes(c))];
+    this.lastPicked = chosen.map(chunkKey);
+    return chosen.map((c) => ({ path: c.path, text: c.text }));
   }
 }

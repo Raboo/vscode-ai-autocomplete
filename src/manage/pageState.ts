@@ -1,6 +1,6 @@
 import { createBackend } from '../backends';
 import { resolveFim } from '../completion/effective';
-import { noRouteText, planRoute, whyNoRoute, type NoRoute } from '../completion/route';
+import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoRoute } from '../completion/route';
 import { parseBackendEntry, type Settings } from '../config/settings';
 import type { BackendConfig } from '../types';
 import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
@@ -32,22 +32,31 @@ export function dotFor(steps: TestStep[] | undefined, offlineWarning: boolean, l
 
 const typeLabel = (id: string): string => SERVER_TYPES.find((t) => t.id === id)?.label ?? id;
 
-/** Why the backend has no route for `model`, or undefined when it has one. */
-function noRoute(cfg: BackendConfig, model: string, s: Settings): NoRoute | undefined {
-  const native = createBackend(cfg, async () => undefined).supportsNativeFim();
-  return planRoute(cfg.kind, native, resolveFim(cfg, model, s).values, cfg.fimMode) === 'unsupported' ? whyNoRoute(cfg.kind, native, cfg.fimMode) : undefined;
+/** How the backend would send `model`: its route (or why there is none) and whether the model's thinking cannot be switched off. */
+function planFor(cfg: BackendConfig, model: string, s: Settings): { route: FimRoute; cannotDisable: boolean } | { why: NoRoute } {
+  const caps = createBackend(cfg, async () => undefined).routes();
+  const values = resolveFim(cfg, model, s).values;
+  const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
+  return route === 'unsupported' ? { why: whyNoRoute(caps, cfg.fimMode) } : { route, cannotDisable: values.thinking === 'cannotDisable' };
 }
 
-/** The model list's tag for `model`: "ready", or why the backend has no route for it. */
-export function modelTag(cfg: BackendConfig, model: string, s: Settings): string {
-  const why = noRoute(cfg, model, s);
-  return why === undefined ? 'ready' : noRouteText(why, cfg.fimMode);
+/** The model list's tag for `model`: "ready", "chat prompt" (", cannot turn thinking off" when it cannot be turned off), or why the backend has no route for it. */
+export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkingMandatory = false): string {
+  const p = planFor(cfg, model, s);
+  if ('why' in p) return noRouteText(p.why, cfg.fimMode, cfg.kind);
+  if (p.route !== 'chat') return 'ready';
+  return p.cannotDisable || thinkingMandatory ? 'chat prompt, cannot turn thinking off' : 'chat prompt';
 }
 
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
-  const why = model ? noRoute(cfg, model, s) : undefined;
-  if (why === undefined) return undefined;
-  return why === 'template' ? 'No completion template for this model' : noRouteText(why, cfg.fimMode);
+  const p = model ? planFor(cfg, model, s) : undefined;
+  if (p === undefined) return undefined;
+  if ('why' in p) {
+    if (p.why === 'mode') return noRouteText(p.why, cfg.fimMode);
+    // Mistral's FIM endpoint serves Codestral models only: a template cannot help there.
+    return cfg.kind === 'mistral' ? `This model cannot complete through Mistral's FIM endpoint; ${noRouteFix(false, cfg.kind)}` : 'No completion template for this model';
+  }
+  return p.route === 'chat' && p.cannotDisable ? 'This model cannot turn thinking off; completions are disabled' : undefined;
 }
 
 export function buildPageState(i: PageInputs): PageState {

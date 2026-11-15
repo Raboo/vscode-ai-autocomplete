@@ -6,7 +6,7 @@ import type { CardView, Dot, EditView, ErrorField, FieldView, FormField, PageSta
 export interface LocalUi { typedKey: string; advancedOpen: boolean }
 
 const SECTIONS: readonly { title: string; fields: readonly FormField[] }[] = [
-  { title: 'Prompt', fields: ['template', 'fimMode', 'multiline'] },
+  { title: 'Prompt', fields: ['template', 'fimMode', 'thinking', 'multiline'] },
   { title: 'Context', fields: ['contextTokens', 'prefixLines', 'suffixLines', 'extraContext'] },
   { title: 'Generation', fields: ['temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs'] },
 ];
@@ -104,7 +104,7 @@ function formField(v: FieldView): string {
   const attrs = `${cls ? ` class="${cls}"` : ''}${n.describedBy}${v.error ? ' aria-invalid="true"' : ''}${v.disabledReason ? ' disabled' : ''}`;
   let control: string;
   if (v.field === 'extraContext') control = `<input type="checkbox" id="f-${name}"${v.value === 'true' ? ' checked' : ''}${attrs}>`;
-  else if (v.options) control = select(id, v.value, v.options.map((o) => ({ value: o, label: o })), attrs);
+  else if (v.options) control = select(id, v.value, v.options.map((o) => ({ value: o, label: v.optionLabels?.[o] ?? o })), attrs);
   // The parser drops one newline right after <textarea>, so a value that starts with a newline survives.
   else if (ADVANCED.includes(v.field)) control = `<textarea id="f-${name}" rows="3" spellcheck="false"${attrs}>\n${e(v.value)}</textarea>`;
   else control = textInput(id, v.value, ` inputmode="${DECIMAL.has(v.field) ? 'decimal' : 'numeric'}"${attrs}`);

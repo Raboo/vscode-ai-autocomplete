@@ -391,7 +391,8 @@ export class BackendsPanel implements vscode.Disposable {
         const started = Date.now();
         try {
           const info = await backend.listModels(ctl.signal, RELOAD_TIMEOUT_MS);
-          models = info.models.map((id) => ({ id, tag: modelTag(cfg, id, s) }));
+          const mandatory = new Set(info.thinkingMandatory ?? []);
+          models = info.models.map((id) => ({ id, tag: modelTag(cfg, id, s, mandatory.has(id)) }));
         } catch (err) {
           const f = explainFailure(err);
           error = f.hint ? `${f.text}: ${f.hint}` : f.text;

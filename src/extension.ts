@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ErrorBackoff } from './backends/backoff';
 import { createBackend } from './backends/index';
+import { Capabilities } from './models/capabilities';
 import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
 import { ExtraContextRing } from './completion/context';
@@ -31,6 +32,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   let settings = readSettings().settings;
   let backends = new Map<string, FimBackend>();
+  const capabilities = new Capabilities();
   const backoffs = new Map<string, ErrorBackoff>();
   const debouncers = new Map<string, Debouncer>();
   const isLocal = memoizeIsLocal((url) => isLocalEndpoint(url), IS_LOCAL_TTL_MS);
@@ -63,6 +65,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     for (const b of backoffs.values()) b.reset();
     debouncers.clear();
     isLocal.clear();
+    capabilities.clear();
     return r.problems;
   };
 
@@ -86,6 +89,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     status,
     log,
     snoozedUntil,
+    capabilities,
     backoff: (id) => {
       let b = backoffs.get(id);
       if (!b) backoffs.set(id, (b = new ErrorBackoff()));
@@ -116,6 +120,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     // As "Retry now" does, for the backend that answered the test completion.
     onTestPassed: (id) => {
       backoffs.get(id)?.reset();
+      capabilities.forgetLearned(id);
       if (id === settings.fim.backendId) provider.clearError();
       log.info(`backend "${id}": connection test got a completion, backoff cleared`);
     },
@@ -127,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   sub(
     secrets.onDidChange((id) => {
       backoffs.get(id)?.reset();
+      capabilities.forgetLearned(id);
       if (id === settings.fim.backendId) provider.clearError();
       log.info(`backend "${id}": API key changed`);
     }),
@@ -141,6 +147,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     manageBackends,
     retry: () => {
       for (const b of backoffs.values()) b.reset();
+      for (const id of backends.keys()) capabilities.forgetLearned(id);
       provider.clearError();
       log.info('retry: backoffs cleared');
     },

@@ -96,13 +96,40 @@ describe('OpenAiCompatBackend', () => {
     expect(body.foo).toBe(1);
   });
 
-  test('supportsNativeFim only for deepseek and ollama', () => {
-    const s = (f: HostFlavor) => new OpenAiCompatBackend(cfg('http://x/v1', { hostFlavor: f }), key()).supportsNativeFim();
-    expect(s('deepseek')).toBe(true);
-    expect(s('ollama')).toBe(true);
+  test('routes per flavor', () => {
+    const r = (f: HostFlavor) => new OpenAiCompatBackend(cfg('http://x/v1', { hostFlavor: f }), key()).routes();
+    expect(r('deepseek')).toEqual({ native: true, template: true, chat: true, nativeChatModels: true });
+    expect(r('ollama')).toEqual({ native: true, template: true, chat: true, nativeChatModels: false });
+    expect(r('strata')).toEqual({ native: false, template: false, chat: true, nativeChatModels: false });
     for (const f of ['generic', 'vllm', 'lmstudio', 'openrouter', 'together', 'fireworks', 'mistral', 'llamacpp'] as const) {
-      expect(s(f)).toBe(false);
+      expect(r(f)).toEqual({ native: false, template: true, chat: true, nativeChatModels: false });
     }
+  });
+
+  test('chat URL joins baseUrl and chat/completions', async () => {
+    m = await startMockHttp(() => ({ sse: ['[DONE]'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
+    for await (const _ of b.streamChat({ messages: [], maxTokens: 1, stop: [], sampling: {}, thinking: {}, extraBody: {}, signal: new AbortController().signal, timeoutMs: 5000 })) void _;
+    expect(m.requests[0].url).toBe('/v1/chat/completions');
+  });
+
+  test('the FIM body omits an empty stop', async () => {
+    const empty = await hosted('vllm', { stop: [] });
+    expect('stop' in empty).toBe(false);
+    expect((await hosted('vllm', { stop: ['x'] })).stop).toEqual(['x']);
+  });
+
+  test('hosted flavors drop top_k and keep 4 stops; an empty stop is not sent', async () => {
+    const b = await hosted('together', { stop: ['1', '2', '3', '4', '5'], sampling: { maxTokens: 8, topK: 20 } });
+    expect(b.stop).toEqual(['1', '2', '3', '4']);
+    expect('top_k' in b).toBe(false);
+    expect('stop' in (await hosted('together', { stop: [] }))).toBe(false);
+  });
+
+  test('listModels reads Strata meta.n_ctx', async () => {
+    m = await startMockHttp(() => ({ json: { data: [{ id: 's', meta: { n_ctx: 262144 } }] } }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'strata' }), key());
+    expect(await b.listModels(new AbortController().signal)).toMatchObject({ models: ['s'], contextWindows: { s: 262144 } });
   });
 
   test('tolerates events without choices and empty data; malformed JSON throws', async () => {

@@ -2,7 +2,7 @@ import { codestralPrefix } from '../models/templates';
 import type { BackendConfig } from '../types';
 import { authHeaders, HttpError, joinUrl, postJson, throwIfStreamError } from './http';
 import { parseSse } from './sse';
-import type { ApiKeyProvider, FimBackend, FimRequest, ServerInfo } from './types';
+import type { ApiKeyProvider, ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from './types';
 
 const CODESTRAL_HOST = 'codestral.mistral.ai';
 const API_HOST = 'api.mistral.ai';
@@ -51,8 +51,13 @@ export class MistralBackend implements FimBackend {
     this.resolveBase = opts.resolveBase ?? ((b) => b);
   }
 
-  supportsNativeFim(): boolean {
-    return true;
+  routes(): RouteCaps {
+    return { native: true, template: false, chat: false, nativeChatModels: false };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, require-yield -- interface signature; Mistral has no chat route
+  async *streamChat(_req: ChatRequest): AsyncGenerator<ChatEvent> {
+    throw new Error('Mistral backends serve FIM only');
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- interface signature; no network probe for a hosted API

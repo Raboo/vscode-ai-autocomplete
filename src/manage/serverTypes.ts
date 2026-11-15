@@ -12,10 +12,12 @@ export const SERVER_TYPES: readonly ServerType[] = [
   { id: 'ollama', label: 'Ollama', kind: 'openai', hostFlavor: 'ollama', defaultUrl: 'http://127.0.0.1:11434/v1', key: 'no' },
   { id: 'vllm', label: 'vLLM', kind: 'openai', hostFlavor: 'vllm', defaultUrl: 'http://127.0.0.1:8000/v1', key: 'optional' },
   { id: 'sglang', label: 'SGLang', kind: 'openai', hostFlavor: 'sglang', defaultUrl: 'http://127.0.0.1:30000/v1', key: 'optional' },
+  { id: 'strata', label: 'Strata', kind: 'openai', hostFlavor: 'strata', defaultUrl: 'http://127.0.0.1:8080/v1', key: 'optional' },
   { id: 'mistral', label: 'Mistral Codestral', kind: 'mistral', defaultUrl: 'https://codestral.mistral.ai', defaultModel: 'codestral-latest', key: 'yes' },
   { id: 'deepseek', label: 'DeepSeek', kind: 'openai', hostFlavor: 'deepseek', defaultUrl: 'https://api.deepseek.com/beta', key: 'yes' },
   { id: 'fireworks', label: 'Fireworks', kind: 'openai', hostFlavor: 'fireworks', defaultUrl: 'https://api.fireworks.ai/inference/v1', key: 'yes' },
   { id: 'together', label: 'Together', kind: 'openai', hostFlavor: 'together', defaultUrl: 'https://api.together.xyz/v1', key: 'yes' },
+  { id: 'openrouter', label: 'OpenRouter', kind: 'openai', hostFlavor: 'openrouter', defaultUrl: 'https://openrouter.ai/api/v1', key: 'yes' },
   { id: 'other', label: 'Other OpenAI-compatible', kind: 'openai', hostFlavor: 'generic', defaultUrl: '', key: 'optional' },
 ];
 

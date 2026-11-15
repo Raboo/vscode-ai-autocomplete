@@ -2,10 +2,10 @@ import { describe, expect, test } from 'vitest';
 import type { CardView, EditView, FieldView, FormField, PageState, TestStep } from '../../src/manage/protocol';
 import { escapeHtml, renderPage, type LocalUi } from '../../src/webview/backends/render';
 
-const FIELDS: FormField[] = ['template', 'fimMode', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
+const FIELDS: FormField[] = ['template', 'fimMode', 'thinking', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
   'temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs', 'stop', 'headers', 'extraBody'];
-const OPTIONS: Partial<Record<FormField, string[]>> = { template: ['qwen', 'seed-coder'], fimMode: ['auto', 'native', 'template', 'chat'], multiline: ['auto', 'always', 'never'] };
-const VALUES: Partial<Record<FormField, string>> = { template: 'qwen', fimMode: 'auto', multiline: 'auto', extraContext: 'true', temperature: '0.1', debounceMs: 'auto' };
+const OPTIONS: Partial<Record<FormField, string[]>> = { template: ['qwen', 'seed-coder'], fimMode: ['auto', 'native', 'template', 'chat'], thinking: ['none', 'cannotDisable'], multiline: ['auto', 'always', 'never'] };
+const VALUES: Partial<Record<FormField, string>> = { template: 'qwen', fimMode: 'auto', thinking: 'none', multiline: 'auto', extraContext: 'true', temperature: '0.1', debounceMs: 'auto' };
 
 const field = (f: FormField, over: Partial<FieldView> = {}): FieldView => ({
   field: f, label: `Label ${f}`, value: VALUES[f] ?? '1', isDefault: true, hint: 'Default (built-in preset for this model)',
@@ -62,6 +62,25 @@ describe('backends page render', () => {
     // the Advanced fields stay in the DOM while the section is collapsed
     expect(html).toMatch(/<details[^>]*id="advanced"(?![^>]*\sopen)[^>]*>/);
     expect(renderPage(state({ edit: edit() }), ui({ advancedOpen: true }))).toMatch(/<details[^>]*id="advanced"[^>]*\sopen/);
+  });
+
+  test('select options use optionLabels and escape them', () => {
+    const evil = '<b>x</b>';
+    const html = renderPage(state({ edit: edit({ fields: FIELDS.map((f) => field(f, f === 'thinking' ? { options: ['none', 'cannotDisable'], optionLabels: { none: 'Readable none', cannotDisable: evil } } : {})) }) }), ui());
+    const sel = fieldHtml(html, 'thinking');
+    expect(sel).toContain('<option value="none" selected>Readable none</option>');
+    expect(sel).toContain('<option value="cannotDisable">&lt;b&gt;x&lt;/b&gt;</option>');
+    expect(sel).not.toContain('<b>');
+  });
+
+  test('the thinking control has id f-thinking in the Prompt section', () => {
+    const html = renderPage(state({ edit: edit() }), ui());
+    expect(count(html, 'id="f-thinking"')).toBe(1);
+    expect(html).toMatch(/<select[^>]*id="f-thinking"/);
+    const prompt = html.indexOf('Prompt');
+    expect(html.indexOf('id="f-fimMode"')).toBeGreaterThan(prompt);
+    expect(html.indexOf('id="f-thinking"')).toBeGreaterThan(html.indexOf('id="f-fimMode"'));
+    expect(html.indexOf('id="f-thinking"')).toBeLessThan(html.indexOf('id="f-multiline"'));
   });
 
   test('changed field shows reset, default field shows default', () => {

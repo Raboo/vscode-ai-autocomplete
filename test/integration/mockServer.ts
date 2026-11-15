@@ -23,6 +23,18 @@ export interface MockOptions {
   nCtx?: number;
   /** Delays every answer by this many milliseconds (the request is recorded when it arrives). */
   delayMs?: number;
+  /**
+   * What `POST /v1/chat/completions` streams; default content `['<COMPLETION>a + b;']` (real servers drop the stop string) and finish `stop`.
+   * `stallMs` waits that long after the reasoning before the content, like a model that keeps thinking.
+   * `reasoningUnlessBody` skips the reasoning when the request body has all of those fields (a thinking switch that works).
+   */
+  chat?: { reasoning?: string[]; reasoningUnlessBody?: Record<string, unknown>; content?: string[]; finish?: string; stallMs?: number };
+  /** `POST /infill` answers 501 and `POST /completion` streams `a + b;`. */
+  infill501?: boolean;
+  /** `POST /v1/chat/completions` answers 400 "Unrecognized request argument supplied: <field>" while the body has that field. */
+  rejectField?: string;
+  /** `POST /infill` answers 404 with this body (a string) instead of streaming. */
+  infill404Body?: string;
 }
 
 /** A stand-in llama.cpp server on 127.0.0.1 with an ephemeral port. It also answers `GET /v1/models` like an OpenAI-compatible server. */
@@ -48,6 +60,32 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(props));
         } else if (path === '/v1/models' && req.method === 'GET') {
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));
+        } else if (path === '/infill' && o.infill404Body !== undefined) {
+          res.writeHead(404, { 'content-type': 'application/json' }).end(o.infill404Body);
+        } else if (path === '/infill' && o.infill501) {
+          res.writeHead(501, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Infill is not supported by this model' } }));
+        } else if (path === '/completion' && o.infill501) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);
+          res.end(`data: ${JSON.stringify({ content: '', stop: true })}\n\n`);
+        } else if (path === '/v1/chat/completions' && req.method === 'POST') {
+          if (o.rejectField !== undefined && body !== undefined && o.rejectField in body) {
+            res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: `Unrecognized request argument supplied: ${o.rejectField}` } }));
+          } else {
+            const chat = o.chat ?? {};
+            const delta = (d: Record<string, unknown>, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ delta: d, finish_reason: finish }] })}\n\n`;
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            const switchedOff = chat.reasoningUnlessBody !== undefined && body !== undefined && Object.entries(chat.reasoningUnlessBody).every(([k, v]) => body[k] === v);
+            if (!switchedOff) for (const r of chat.reasoning ?? []) res.write(delta({ reasoning_content: r }));
+            const rest = (): void => {
+              for (const c of chat.content ?? ['<COMPLETION>a + b;']) res.write(delta({ content: c }));
+              res.write(delta({}, chat.finish ?? 'stop'));
+              res.end('data: [DONE]\n\n');
+            };
+            // A client that gave up meanwhile gets nothing more.
+            if (chat.stallMs) setTimeout(() => (res.socket && !res.socket.destroyed ? rest() : undefined), chat.stallMs);
+            else rest();
+          }
         } else if (path === '/infill') {
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);

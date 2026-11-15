@@ -146,3 +146,17 @@ describe('shouldCompleteMultiline', () => {
     expect(shouldCompleteMultiline('auto', 'function f() {', '', 'typescript')).toBe(true);
   });
 });
+
+describe('CompletionAccumulator.replace', () => {
+  test('replace re-applies the rules to the new text', () => {
+    const acc = new CompletionAccumulator(opts({ multiline: false }));
+    expect(acc.replace('foo')).toBe(false);
+    expect(acc.text).toBe('foo');
+    expect(acc.replace('bar')).toBe(false);
+    expect(acc.text).toBe('bar');
+    expect(acc.replace('bar()\nmore')).toBe(true);
+    expect(acc.text).toBe('bar()');
+    expect(acc.replace('other')).toBe(true);
+    expect(acc.text).toBe('bar()');
+  });
+});

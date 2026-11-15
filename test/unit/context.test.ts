@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { buildFimWindow, ExtraContextRing } from '../../src/completion/context';
+import { contextCaps } from '../../src/completion/effective';
 
 const doc = (n: number, w = 10) => Array.from({ length: n }, (_, i) => String(i).padStart(w, '0'));
 const OPTS = { prefixLines: 200, suffixLines: 60, maxPrefixChars: 8000, maxSuffixChars: 2500 };
@@ -69,6 +70,66 @@ describe('buildFimWindow', () => {
     expect(w.suffix).toBe('CURSORzzzz');
     expect(w.startLine).toBe(1);
     expect(w.endLine).toBe(1);
+  });
+});
+
+describe('stepped prefix window', () => {
+  const o = { prefixLines: 8, suffixLines: 2, maxPrefixChars: 8000, maxSuffixChars: 2500 };
+  const lines = Array.from({ length: 100 }, (_, i) => `line${i}`);
+  const text = lines.join('\n');
+  const at = (line: number, col = 0) => text.indexOf(`line${line}\n`) + col;
+
+  test('the window start moves in steps', () => {
+    expect(buildFimWindow(text, at(20), o).startLine).toBe(12);
+    expect(buildFimWindow(text, at(21), o).startLine).toBe(12);
+    expect(buildFimWindow(text, at(22), o).startLine).toBe(14);
+  });
+
+  test('stepped window respects the char cap', () => {
+    const wide = Array.from({ length: 100 }, () => 'x'.repeat(99)).join('\n'); // 100 chars per line
+    const w = buildFimWindow(wide, 50 * 100 + 3, { ...o, maxPrefixChars: 450 });
+    expect(w.prefix.length).toBeLessThanOrEqual(450);
+    expect(w.prefix.startsWith('x'.repeat(99) + '\n')).toBe(true);
+    expect(w.startLine).toBe(46);
+  });
+
+  test('when the cap binds, every whole line that fits is kept, not only whole steps', () => {
+    const wide = Array.from({ length: 100 }, () => 'x'.repeat(99)).join('\n'); // 100 chars per line
+    const w = buildFimWindow(wide, 50 * 100 + 3, { ...o, maxPrefixChars: 550 });
+    expect(w.startLine).toBe(45); // 5 lines + 3 chars = 503 fit; a step-aligned start (46) would drop one
+    expect(w.prefix).toBe(wide.slice(45 * 100, 50 * 100 + 3));
+  });
+
+  test('stepped window never drops every line that fits', () => {
+    // prefixLines 1000 (step 250), 40-char lines, the default cap: no step-aligned start fits, but 205 lines do.
+    const cap = contextCaps(4700).maxPrefixChars;
+    const lines = doc(1300, 39);
+    const text = lines.join('\n');
+    const offset = 1210 * 40;
+    const w = buildFimWindow(text, offset, { prefixLines: 1000, suffixLines: 2, maxPrefixChars: cap, maxSuffixChars: 2500 });
+    expect(cap).toBe(8225);
+    expect(w.startLine).toBe(1005);
+    expect(w.prefix).toBe(text.slice(1005 * 40, offset));
+    expect(w.prefix.length + 40).toBeGreaterThan(cap); // one more line would not fit
+  });
+
+  test('200-char lines at the default prefixLines and cap keep the lines that fit', () => {
+    const cap = contextCaps(4700).maxPrefixChars;
+    const lines = doc(1300, 200);
+    const text = lines.join('\n');
+    const offset = 1201 * 201 + 4; // just past a step boundary (step 50)
+    const w = buildFimWindow(text, offset, { prefixLines: 200, suffixLines: 60, maxPrefixChars: cap, maxSuffixChars: 2500 });
+    expect(w.startLine).toBe(1161); // 40 whole lines above the cursor line fit
+    expect(w.prefix).toBe(text.slice(1161 * 201, offset));
+    expect(w.prefix.length).toBeLessThanOrEqual(cap);
+  });
+
+  test('stepped window keeps the cursor line', () => {
+    const w = buildFimWindow(text, at(50, 3), { ...o, maxPrefixChars: 3 });
+    expect(w.startLine).toBe(50);
+    expect(w.prefix).toBe('lin');
+    const w2 = buildFimWindow(text, at(50, 5), { ...o, maxPrefixChars: 3 });
+    expect(w2.prefix).toBe('ne5');
   });
 });
 
@@ -147,5 +208,59 @@ describe('ExtraContextRing', () => {
     const first = r.pick(ex('z', 0, 0), 1e6);
     expect(r.pick(ex('z', 0, 0), 1e6)).toEqual(first);
     expect(first.map((c) => c.path)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('order stays stable when the picked set is unchanged', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('a', lines, 200); // a is now the newest, but the set is the same
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('b', lines, 200);
+    r.add('a', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+  });
+
+  /** Budget for exactly two default (64-line) chunks of `lines`. */
+  const TWO = 2 * lines.slice(0, 64).join('\n').length;
+
+  test('membership follows recency: after 13 newer files are viewed the oldest earlier picks drop out', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'b']);
+    for (let i = 1; i <= 13; i++) r.add(`n${i}`, lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['n12', 'n13']);
+  });
+
+  test('a re-added identical chunk counts as recent and stays in the set', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('c', lines, 200);
+    r.add('a', lines, 200); // same text as before: a is the newest again
+    expect(r.pick(ex('z', 0, 0), TWO).map((c) => c.path)).toEqual(['a', 'c']);
+  });
+
+  test('pick keeps earlier picks first and appends new ones', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('c', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c']);
+    r.add('a', lines, 600); // new chunk of a: appended last
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c', 'a']);
+  });
+
+  test('a smaller budget keeps the newest chunks, earlier picks first in their order', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    for (const p of ['a', 'b', 'c']) r.add(p, ['xxxx'], 0);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c']);
+    r.add('d', ['xxxx'], 0);
+    expect(r.pick(ex('z', 0, 0), 8).map((c) => c.path)).toEqual(['c', 'd']);
+    expect(r.pick(ex('z', 0, 0), 12).map((c) => c.path)).toEqual(['c', 'd', 'b']);
   });
 });

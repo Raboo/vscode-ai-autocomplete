@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Raboo/vscode-ai-autocomplete/actions/workflows/ci.yml/badge.svg)](https://github.com/Raboo/vscode-ai-autocomplete/actions/workflows/ci.yml)
 
-Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no agents and no telemetry. It is self-hosted first, working with llama.cpp, LM Studio and vLLM, and it also supports Mistral Codestral. OpenRouter support follows later.
+Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no agents and no telemetry. It is self-hosted first, working with llama.cpp, LM Studio and vLLM, and it also supports Mistral Codestral, Strata and OpenRouter.
 
 **Status: pre-release.**
 
@@ -79,7 +79,7 @@ Each backend can carry a `fim` object with its own completion settings. The Back
   "fim": { "contextTokens": 8000, "temperature": 0.1, "multiline": "auto" } }
 ```
 
-Fields: `template`, `contextTokens` (default 4700), `prefixLines`, `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`. A backend can also set `fimMode` and `headers` at the top level.
+Fields: `template`, `contextTokens` (default 4700), `prefixLines` (lines before the cursor; the window starts on a multiple of a quarter of this value so the prompt start stays stable (unless the `contextTokens` budget cuts it), so it can hold up to `prefixLines + step − 1` lines, with `step` being `prefixLines / 4` rounded down and at least 1), `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`. A backend can also set `fimMode` and `headers` at the top level.
 
 A value is taken from the first of these that sets it: the backend's `fim` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.fim.*` settings, then the built-in preset for the model. Three fields work differently: the backend's `stop` sequences are added to the preset's and the override's, not used instead of them; its `extraBody` is merged over the override's; and its `extraContext` can only switch extra context off: it cannot turn it on while `aiAutocomplete.fim.extraContext` is off.
 
@@ -91,21 +91,50 @@ A value is taken from the first of these that sets it: the backend's `fim` objec
 
 With this on, requests go only to backends on loopback or private-network addresses. Anything else is blocked and the status bar shows an error.
 
-### Chat-only models
+### Chat models (Strata, OpenRouter, general instruct models)
 
-Strata and the Qwen3.8 models it serves are chat-only, so this release cannot complete with them: it needs a coder model with fill-in-the-middle support, like those listed above. Fill-in-the-middle through a chat prompt arrives in v0.2.
+A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. Chat models must be able to turn thinking off: autocomplete waits 5 s for an answer, and a model that reasons first cannot give one. With `fimMode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
+
+Thinking is turned off per model family and server. The Thinking dropdown on the Backends page (the `thinking` field of the backend's `fim` object) overrides what the extension picks. Reasoning text is never shown.
+
+A model that cannot turn thinking off (gpt-oss, DeepSeek R1 and similar, or an OpenRouter model that must reason) is not used: the model list tags it `chat prompt, cannot turn thinking off`, the Test fails, and the status bar shows `cannot turn thinking off`. A model that keeps thinking although thinking was asked off fails the same way, and the status bar shows `keeps thinking`. For a model that keeps thinking, **Retry now**, a passing Test or a changed API key lets the extension try it again; a settings change clears everything it learned.
+
+When a model keeps thinking, **Test connection** tries the other thinking switches on a sample and suggests one that works ("choose ... as the Thinking switch"). On Strata, DeepSeek, Ollama and OpenRouter the server decides how thinking is turned off, so only the `/no_think` switch is tried.
+
+Every request has a 5 s deadline. Set the backend's Timeout (`timeoutMs`) to change it.
+
+With the cursor after only indentation, a chat model often types the indentation again; the extension drops it when the rest of the answer lines up with it.
+
+**Strata** serves chat only. Strata's default address is `http://127.0.0.1:8080/v1`:
+
+```jsonc
+{ "id": "strata", "kind": "openai", "hostFlavor": "strata", "baseUrl": "http://127.0.0.1:8080/v1" }
+```
+
+On Strata the extension pins the unchanged start of the prompt so Strata can reuse its cache between keystrokes. Measured on a test Strata server (Qwen3.8, 2026-11-15), a 1750-token prompt took 3.6 s without the pin and 0.9 s with it (1691 tokens reused). The first request of a file still reads the whole prompt (about 4 s there), so on a large file the first suggestion can miss the 5 s deadline: raise the backend's Timeout on the Backends page.
+
+**OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request (the server rejects turning reasoning off) and then treated like one that cannot turn thinking off. OpenRouter completes through the chat prompt only, because a raw FIM prompt reaches the model only with some of the providers OpenRouter picks. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
+
+```jsonc
+{ "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "fimModel": "z-ai/glm-5" }
+```
+
+**LM Studio:** when the status bar says the model keeps thinking, turn thinking off in LM Studio; the extension cannot switch it per request there. For a model from LM Studio's catalog, switch off **Enable Thinking** in its settings. For a model downloaded from Hugging Face, add `{%- set enable_thinking = false %}` as the first line of its prompt template (My Models → the model's settings → Prompt Template).
+
+**Other autocomplete extensions** (for example Predicte, Kilo Code or Continue) can show their own ghost text or take the `Tab` key, so `Tab` may indent or insert their suggestion instead. Turn their autocomplete off while you use this one.
 
 ## Privacy
 
 - No telemetry. The extension sends nothing except completion requests to the backend you configure.
 - Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
+- OpenRouter forwards your code to the model's provider. The extension sends no attribution headers to it.
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.
 - With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
 - Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
 - Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem` and `*.key`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
-- Prompt and completion text is written to the log only when `aiAutocomplete.debug.logPrompts` is on.
+- Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.
 - Known limitation: the local-only check resolves the backend's hostname before the request, and the request then does its own lookup. It guards against a misconfigured `baseUrl`, not against a hostile DNS server that answers differently the second time. Use an IP address in `baseUrl` if that matters to you.
 
 ## License

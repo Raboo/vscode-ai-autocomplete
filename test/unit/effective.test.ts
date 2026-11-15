@@ -105,3 +105,23 @@ describe('templateMismatch', () => {
     expect(templateMismatch(backend({ template: 'seed-coder' }), 'zeta-2.1', s)).toEqual({ template: 'seed-coder', own: 'qwen' });
   });
 });
+
+describe('chat values', () => {
+  test('chat family values', () => {
+    const r = resolveFim(backend(), 'Qwen3.8-Flash-Next', settings());
+    expect(r.values).toMatchObject({ chat: true, thinking: 'templateKwarg:enable_thinking', sampling: { temperature: 0.2, topP: 0.8, topK: 20 }, samplingParams: 'send', timeoutMs: 5000, backendStop: [] });
+    expect(r.sources.thinking).toBe('preset');
+  });
+  test('backend thinking beats an override, which beats the preset', () => {
+    const s = settings({ overrides: { qwen: { thinking: 'cannotDisable' } } });
+    const o = resolveFim(backend(), 'Qwen3.8-Flash-Next', s);
+    expect(o.values.thinking).toBe('cannotDisable'); expect(o.sources.thinking).toBe('modelOverride');
+    const b = resolveFim(backend({ thinking: 'none' }), 'Qwen3.8-Flash-Next', s);
+    expect(b.values.thinking).toBe('none'); expect(b.sources.thinking).toBe('backend');
+  });
+  test('backend fim.timeoutMs replaces the 5000 default; backendStop is only the backend list', () => {
+    const r = resolveFim(backend({ timeoutMs: 2000, stop: ['Z'] }), QWEN, settings());
+    expect(r.values.timeoutMs).toBe(2000); expect(r.values.backendStop).toEqual(['Z']);
+    expect(r.values.stop).toContain('Z');
+  });
+});

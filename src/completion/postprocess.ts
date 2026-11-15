@@ -1,11 +1,15 @@
 // Final cleanup of a completion before it is shown as ghost text.
 // Written from the ideas in Continue's postprocessing; no upstream code is copied.
 
+import { stripLeadingReasoning } from '../models/thinking';
+
 export interface PostCtx {
   linePrefix: string;
   lineSuffix: string;
   prevLine: string;
   suffix: string;
+  /** Chat-route output: the stream already removed the reasoning, so nothing is stripped here. */
+  chat: boolean;
 }
 
 const MIN_SUFFIX_RETYPE = 4;
@@ -29,12 +33,14 @@ const toLf = (s: string): string => s.replace(/\r\n/g, '\n');
 
 /** Accepts raw document text (CRLF allowed); the result uses `\n` line breaks. */
 export function postprocess(rawInput: string, ctxInput: PostCtx): string | undefined {
-  const raw = toLf(rawInput);
+  // FIM output is code: only a reasoning block at its very start is removed.
+  const raw = toLf(ctxInput.chat ? rawInput : stripLeadingReasoning(rawInput));
   const c: PostCtx = {
     linePrefix: toLf(ctxInput.linePrefix),
     lineSuffix: toLf(ctxInput.lineSuffix),
     prevLine: toLf(ctxInput.prevLine),
     suffix: toLf(ctxInput.suffix),
+    chat: ctxInput.chat,
   };
   if (raw.trim() === '') return undefined;
 

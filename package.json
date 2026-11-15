@@ -137,7 +137,7 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 10000,
-                    "description": "Maximum lines of code before the cursor."
+                    "description": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
                   },
                   "suffixLines": {
                     "type": "integer",
@@ -192,6 +192,11 @@
                     "minimum": 500,
                     "maximum": 60000,
                     "description": "Request timeout in milliseconds."
+                  },
+                  "thinking": {
+                    "type": "string",
+                    "enum": ["none", "templateKwarg:enable_thinking", "templateKwarg:thinking", "templateKwarg:thinking_mode=disabled", "templateKwarg:thinking_budget=0", "reasoningEffortNone", "systemSoftSwitch:/no_think", "vendorThinkingDisabled", "cannotDisable"],
+                    "description": "How thinking is turned off for this backend's model on the chat prompt."
                   },
                   "stop": {
                     "type": "array",
@@ -250,7 +255,7 @@
           "type": "number",
           "default": 200,
           "scope": "resource",
-          "markdownDescription": "Number of lines before the cursor sent as context."
+          "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
         },
         "aiAutocomplete.fim.suffixLines": {
           "type": "number",
@@ -305,7 +310,7 @@
           "type": "object",
           "default": {},
           "scope": "machine",
-          "markdownDescription": "Per-model overrides. Keys are regular expressions matched against the model name; values may set `fimTemplate`, `stop`, `sampling` and `extraBody`. Machine-scoped.\n\n```json\n{ \"qwen.*coder\": { \"fimTemplate\": \"qwen\", \"stop\": [\"<|endoftext|>\"] } }\n```"
+          "markdownDescription": "Per-model overrides. Keys are regular expressions matched against the model name; values may set `fimTemplate`, `stop`, `sampling`, `thinking` and `extraBody`. Machine-scoped.\n\n```json\n{ \"qwen.*coder\": { \"fimTemplate\": \"qwen\", \"stop\": [\"<|endoftext|>\"] } }\n```"
         },
         "aiAutocomplete.debug.logPrompts": {
           "type": "boolean",

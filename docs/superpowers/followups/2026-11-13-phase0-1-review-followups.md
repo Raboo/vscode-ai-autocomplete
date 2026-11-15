@@ -2,11 +2,6 @@
 
 Known issues found by the per-task reviews and the final whole-branch review of the Phase 0–1 plan, and left open on purpose. None blocks v0.1.0. Pick them up when you next touch the area, or fold them into a later phase's plan. Remove an entry when it is fixed.
 
-## Recommended next (small, behaviour-visible)
-
-- **Requests waiting in the debouncer during a settings change use the old settings.** A request not yet in `InFlight` still goes out up to ~600 ms after the change, with the old backend and the old `localOnly` value. Fix: in `FimProvider.provide()`, return `[]` when `this.d.getSettings()` is no longer the object read at the start, checked after the awaits and before `inflight.add`. (`src/completion/provider.ts`)
-- **A string `"true"` for `privacy.localOnly` fails open**, because the check is `=== true`. Fix: type-check boolean settings in `parseSettings` (report a problem; treat `"true"` as true for restrict-only keys).
-
 ## Settings
 
 - `fim.disableInLanguages` and `fim.extraContext` keep normal resource precedence. A workspace can therefore widen what the extra-context ring captures, or turn extra context back on. The data still goes only to the user's own backend.
@@ -17,12 +12,10 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 ## Backends and transport
 
-- The 5 s timeout covers the whole stream, so output from a slow stream is thrown away. The spec's "show what we have at X ms" time cap is not implemented (Phase 2).
 - An abort with a custom reason is classified as a network failure. Callers must use a plain `abort()`.
 - Late in-flight failures count as consecutive. After the circuit expires, a single failure re-opens it.
 - Failed model detection (`GET /models`) is not backed off. It probes again on every debounced keystroke while the server is down, or while a server lists several models and the backend sets no `fimModel`.
 - `0.0.0.0` and `::` count as not local. This fails safe.
-- `stop: []` is always sent by the OpenAI-compatible backend.
 - A `/props` response that is not ok is not cancelled. A missing `res.body` silently ends as an empty completion.
 - A user `Authorization` header in a different case is sent alongside the stored key.
 - `Content-Type` can be duplicated the same way.
@@ -46,7 +39,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 ## Tests
 
-- Integration test 1 waits a fixed 300 ms before committing; poll instead.
 - Integration test 2's `requests.length === 0` is trivially true.
 - The cache "newest wins" test does not tell the two orders apart.
 - `Debouncer` boundary cases are untested: `elapsed == delay`, and the call time recorded after an abort.
@@ -77,10 +69,8 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - A cancelled test of a new draft keeps its result under the proposed id, and a rename does not move test results or detected models.
 - The panel does not post a new state when workspace folders change.
 - `backendsPanel.ts` is about 460 lines; split it when next touched.
-- `getJson` duplicates `postJson`'s non-ok handling; `form.ts` duplicates the fimMode and multiline value lists of `settings.ts` (`FIM_MODES`, `MULTILINE`); the hosted check is duplicated in `fieldViews` and `formWarnings`.
+- `getJson` duplicates `postJson`'s non-ok handling; the hosted check is duplicated in `fieldViews` and `formWarnings`.
 - Header names typed on the page are not validated, so a bad name fails as "request failed".
-- `contextWindows[model]` uses a plain object, so a model id like `constructor` reads a prototype value.
-- `resolvePreset` drops the stops of an earlier override when a later override sets `fimTemplate` (only odd multi-override configs).
 - `.vscode-test.mjs` writes the test profile's settings at import time.
 - With a typed template, the Stop field's default follows that template's stops, but its hint still says "built-in preset for this model".
 - On llama.cpp, a model with no built-in template (for example Zeta) routes natively in `auto` mode, so the page disables the Template field; choosing seed-coder there means switching the prompt mode to `template` first.
@@ -91,3 +81,113 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 - The connection test sends a tiny sample prompt, so it can pass while real prompts fail. oMLX (an LM Studio engine) rejects larger prompts with a prefill memory guard when the model barely fits in RAM. A test step with a prompt near the backend's context size would catch this.
 - Kilo Code, Continue and other installed autocomplete extensions compete for the same ghost text. Detecting another active inline-completion provider and saying so on the Backends page would save a debugging round.
+
+## From Phase 2 (2026-11-15)
+
+- The connection test's chat sample and thinking step run once; a model that thinks only on longer prompts passes it.
+- LM Studio's native `/api/v1/chat` (`reasoning: "off"`) is not used, so thinking cannot be switched off per request there (see the main spec's "To verify").
+
+Parked by the Phase 2 reviews (the final review's fix wave did the rest):
+
+### Thinking control and the reasoning filter
+
+- `THINKING_STRATEGIES` is a hand-kept copy of the `ThinkingStrategy` union, with no type-level check that the two agree.
+- On the chat route a bare closing tag still drops everything before it, so a chat answer whose code contains `</think>` (or `[/THINK]`, `<channel|>`) loses the text before it. FIM routes strip only a leading reasoning block.
+- FIM routes pass no finish reason. An unclosed reasoning block at the start of FIM output shows nothing and a later opener is kept as code, so this matters only if a FIM model ever reasons mid-output.
+- `thinking.test.ts` gaps: `thinking` for an unclosed block, a closer split across pushes inside a block, Harmony's `<|end|>` followed by the final marker, and a bare `[/THINK]`.
+- `TAGS.find` relies on no tag being a prefix of another; a comment should say the list must stay prefix-free.
+
+### Chat transport and OpenRouter
+
+- No test covers a 400 that names a field and whose retry also fails.
+- The `hosted` flag that `OpenAiCompatBackend.streamChat` passes is untested.
+- `HOSTED_MAX_STOPS` is defined twice (`chat.ts` and `openaiCompat.ts`); the FIM and chat limits must stay equal.
+- A delta with an empty `reasoning` string and a non-empty `reasoning_details` yields no reasoning event, so the thinking signal is lost.
+- `openrouter.test.ts` has no `__proto__` model id case.
+- `OpenRouterBackend.detectModel()` takes no `signal` on purpose; a comment should say so.
+
+### Hole filler and the stream loop
+
+- No table-driven test pins that streamed answers only grow (each one a prefix of the next and of the final answer).
+- Without an opening tag, a closing tag followed by whitespace (`a + b;</COMPLETION>\n`) stays in the answer.
+- `<COMPLETION>` quoted inside leaked reasoning can become the answer. It needs single-line mode, a server that does not split reasoning out, a template that prefills `<think>`, and reasoning that quotes `<COMPLETION>draft` plus a newline. A fix would ignore `<COMPLETION>` before a later bare closer.
+- `stoppedEarly` is true for a chat stream that had already finished when the final settle hits a stop rule.
+
+### Routes
+
+- `SAMPLING_WIRE` (`route.ts`) and `SAMPLING_FIELDS` (`chat.ts`) both own the wire names of the sampling fields.
+- No test uses llama.cpp's real 501 body (`Infill is not supported by this model`).
+- A cast in `route.test.ts` (`as unknown as HoleFillerInput`) hides a missing `filePath`.
+
+### Provider
+
+- The `kind` argument of `explainUnsupported` is optional, so a caller that leaves it out loses the Mistral text.
+- Not covered by integration tests: no chat text logged while `logPrompts` is off (needs a `Log` spy); a backend `fim.stop` stopping the chat answer on the client side; the debouncer's settings-change guard.
+
+### Backends page
+
+- The connection test for the mandatory-reasoning `z-ai/glm-5` asserts only `state: 'warn'`; it should assert the text and the hint.
+- On the chat route the Stop field's source label names the preset or the overrides, though `</COMPLETION>` comes from neither; it should say built-in.
+- A `form.test.ts` fixture is declared with `kind: 'openai'` and then changed to `llamacpp`.
+
+### Integration tests
+
+- The 2500 ms sleep in the 404-mentions-a-model test proves "tried again after backoff" only weakly.
+- Backoff is a hard 2 s window. On a slow CI host the second trigger in the no-fallback test could land after it; watch for flakes.
+- `commitWhen` returns silently on timeout; its callers assert afterwards.
+- The Strata test checks for no `[thinking]` right after the commit, before a late status update could land.
+
+## Twinny ideas (2026-11-15, Twinny @ 48e5ee52)
+
+Not done in the revisions:
+
+- Complete while the suggest widget is open (needs a spec decision).
+- Prefetch the next line for local servers.
+- Recent-edit hunks as context, designed with the Phase 3 edit-history tracker.
+- Warm-up request for local servers.
+- Structural stop rules.
+- Bounded LSP definitions and signature help.
+- Test chat-wrapped FIM for Qwen3-Coder.
+- Twinny's secret shield for hosted providers.
+
+## Strata gaps (2026-11-15)
+
+Measured on the user's Strata (no address here):
+
+- No raw-prompt endpoint: `/v1/completions`, `/completion` and `/infill` answer 404.
+- Its chat path treats FIM tokens as text.
+- It applies `presence_penalty` 1.5 by default, so the extension always sends an explicit value.
+- It caps stop strings at 4.
+- It has no `t_max_predict_ms`.
+- Raw FIM, or the sweep and zeta Next Edit formats, would need a Strata PR first.
+
+## Phase 2 smoke test (2026-11-15)
+
+- LM Studio cannot turn thinking off per request for Hugging Face downloads (spec "To verify"). A raw `/v1/completions` route that sends the chat prompt in the model's chat format, with an empty think block and `<COMPLETION>` already filled in, avoided thinking there (0.8–1.5 s on Qwen3.5-4B) and would need no LM Studio setup.
+- Qwen3.5-4B on LM Studio, chat route: at the end of a line it often answers the next line with neither a line break nor indentation, so the suggestion continues the cursor line (the line-break rule needs leading indentation); on an empty line at column 0 it sometimes starts with a line break.
+
+## Phase 2 revisions (2026-11-15)
+
+Parked by the revisions' task reviews and final review (the fix wave did the rest).
+
+### Code
+
+- `NoRoute` has a `'thinking'` variant that `whyNoRoute` never returns, so `noRouteText('thinking')` is dead and untested: use it (for example in `explainUnsupported` or `pageState`) or drop it.
+- The `cannotDisable` log reads `model "the model" cannot turn thinking off…` when no model is known, and names no backend although it is logged once per backend.
+- `reportThinking` builds a local `outcome` only to return it.
+- `Collected.thinking` has no production reader left, and in literal mode `visible` and `thinking` can be garbled for answers that contain tags (only the `logPrompts` debug line shows them): drop `thinking`, or document that it is approximate.
+- `inlineThinking` parses the whole raw content again on every chunk (quadratic; negligible at 160 tokens).
+- An unnamed 400 on the chat route drops the thinking fields, not the Strata pin (`strata_prefix`): a design note.
+- The probe hint "this server turns thinking off one way only" is unreachable (documented in the Backends page spec, harmless).
+- The Backends page spec says only the `/no_think` switch is tried on Strata, DeepSeek, Ollama and OpenRouter; when `/no_think` is the current switch, the request without it is tried instead.
+- When the character cap cuts the prefix window, its start moves line by line, so server prompt caches miss on each new line in files with long lines; a coarser fallback grid (`step / 2`, …) could keep some of the stability (found in the fix wave).
+
+### Tests
+
+- The keeps-thinking integration test's "second trigger sends no POST" would also pass under a backoff: assert the status has no `retrying in`.
+- The `unwrapped … is code` stream test asserts only `toBeDefined`.
+- The "5 s deadline" form test pins the chat route only.
+- The integration suite no longer runs the Strata-flavor chat connection test: add one asserting the thinking failure and exactly 2 requests.
+- No test covers the non-BMP branch of `stableUserChars`.
+- No test checks that the user's `extraBody` overrides the Strata pin.
+- No integration test covers "a settings change unblocks" or "a passing Test unblocks" a model that keeps thinking; only code reading confirms them (`extension.ts` settings rebuild, `backendsPanel.ts` → `onTestPassed`).

@@ -1,5 +1,5 @@
 import { TEMPLATES } from '../models/templates';
-import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling } from '../types';
+import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
 
 export interface Settings {
   backends: BackendConfig[];
@@ -37,9 +37,11 @@ export function withFolderValues(root: RawSettingsSource, folders: RawSettingsSo
 }
 
 const KINDS: readonly BackendKind[] = ['llamacpp', 'openai', 'mistral'];
-const FIM_MODES: readonly FimMode[] = ['auto', 'native', 'template', 'chat'];
-const FLAVORS: readonly HostFlavor[] = ['llamacpp', 'vllm', 'sglang', 'lmstudio', 'ollama', 'strata', 'deepseek', 'fireworks', 'together', 'openrouter', 'mistral', 'generic'];
-const MULTILINE: readonly Multiline[] = ['auto', 'always', 'never'];
+export const FIM_MODES: readonly FimMode[] = ['auto', 'native', 'template', 'chat'];
+export const HOST_FLAVORS: readonly HostFlavor[] = ['llamacpp', 'vllm', 'sglang', 'lmstudio', 'ollama', 'strata', 'deepseek', 'fireworks', 'together', 'openrouter', 'mistral', 'generic'];
+export const MULTILINE: readonly Multiline[] = ['auto', 'always', 'never'];
+export const THINKING_STRATEGIES: readonly ThinkingStrategy[] = ['none', 'templateKwarg:enable_thinking', 'templateKwarg:thinking', 'templateKwarg:thinking_mode=disabled',
+  'templateKwarg:thinking_budget=0', 'reasoningEffortNone', 'systemSoftSwitch:/no_think', 'vendorThinkingDisabled', 'cannotDisable'];
 const SAMPLING_KEYS: readonly (keyof Sampling)[] = ['temperature', 'topP', 'topK', 'maxTokens'];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -88,6 +90,9 @@ function parseBackendFim(raw: unknown, at: string, problems: string[]): BackendF
     } else if (k === 'multiline') {
       if (typeof v === 'string' && MULTILINE.includes(v as Multiline)) out.multiline = v as Multiline;
       else bad(`expected one of ${MULTILINE.join(', ')}`);
+    } else if (k === 'thinking') {
+      if (typeof v === 'string' && THINKING_STRATEGIES.includes(v as ThinkingStrategy)) out.thinking = v as ThinkingStrategy;
+      else bad(`unknown thinking switch ${JSON.stringify(v)} (use one of ${THINKING_STRATEGIES.join(', ')})`);
     } else if (k === 'extraContext') {
       if (typeof v === 'boolean') out.extraContext = v;
       else bad('expected true or false');
@@ -127,7 +132,7 @@ export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, pr
   }
   seen.add(id);
   const backend: BackendConfig = { id, kind: raw.kind as BackendKind, baseUrl, fimMode: fimMode as FimMode, headers };
-  if (typeof raw.hostFlavor === 'string' && FLAVORS.includes(raw.hostFlavor as HostFlavor)) backend.hostFlavor = raw.hostFlavor as HostFlavor;
+  if (typeof raw.hostFlavor === 'string' && HOST_FLAVORS.includes(raw.hostFlavor as HostFlavor)) backend.hostFlavor = raw.hostFlavor as HostFlavor;
   const fimModel = str(raw.fimModel);
   if (fimModel) backend.fimModel = fimModel;
   const nextEditModel = str(raw.nextEditModel);
@@ -141,10 +146,14 @@ export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, pr
 function parseOverride(pattern: string, body: Record<string, unknown>, problems: string[]): ModelOverrideBody {
   const at = `aiAutocomplete.modelOverrides[${JSON.stringify(pattern)}]`;
   const out: ModelOverrideBody = {};
-  const { fimTemplate, stop, sampling, extraBody } = body;
+  const { fimTemplate, stop, sampling, extraBody, thinking } = body;
   if (fimTemplate !== undefined) {
     if (typeof fimTemplate === 'string' && Object.hasOwn(TEMPLATES, fimTemplate)) out.fimTemplate = fimTemplate as FimTemplateId;
     else problems.push(`${at}.fimTemplate: unknown template ${JSON.stringify(fimTemplate)} (use one of ${Object.keys(TEMPLATES).join(', ')}), ignored`);
+  }
+  if (thinking !== undefined) {
+    if (typeof thinking === 'string' && THINKING_STRATEGIES.includes(thinking as ThinkingStrategy)) out.thinking = thinking as ThinkingStrategy;
+    else problems.push(`${at}.thinking: unknown thinking switch ${JSON.stringify(thinking)} (use one of ${THINKING_STRATEGIES.join(', ')}), ignored`);
   }
   if (stop !== undefined) {
     if (Array.isArray(stop) && stop.every((x) => typeof x === 'string')) out.stop = stop;
@@ -181,8 +190,10 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
 
   // Restrict-only: any level (or any workspace folder) set to true wins, so a workspace can turn it on but never off.
   const restrictOnly = (key: string): boolean => {
-    const i = src.inspect<boolean>(key);
-    return [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])].some((v) => v === true);
+    const i = src.inspect<boolean | string>(key);
+    const levels = [i?.defaultValue, i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue, ...(i?.folderValues ?? [])];
+    if (levels.some((v) => v === 'true')) problems.push(`aiAutocomplete.${key}: expected true or false; "true" read as true`);
+    return levels.some((v) => v === true || v === 'true');
   };
   // Restrict-only list: the user's list (else the default) plus whatever a workspace or folder adds; a workspace cannot remove entries.
   const unionStrs = (key: string, d: string[]): string[] => {

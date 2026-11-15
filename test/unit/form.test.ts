@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldViews, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
+import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
@@ -78,7 +78,9 @@ describe('form model', () => {
   });
 
   test('formToEntry keeps an unlisted kind/flavor pair under type other', () => {
-    const original = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' };
+    const original = { id: 'or', kind: 'openai', hostFlavor: 'vllm', baseUrl: 'https://example.com/v1' };
+    // vllm is listed, so use a pair no type lists
+    original.kind = 'llamacpp';
     const f = entryToForm(original);
     expect(f.type).toBe('other');
     expect(formToEntry(f, original)).toEqual(original);
@@ -112,13 +114,72 @@ describe('form model', () => {
 
   test('fieldViews prefill defaults with sources', () => {
     const vs = fieldViews(form({ type: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' }), 'qwen2.5-coder-1.5b', settings(), []);
-    expect(vs.map((v) => v.field)).toEqual(['template', 'fimMode', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext', 'temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs', 'stop', 'headers', 'extraBody']);
+    expect(vs.map((v) => v.field)).toEqual(['template', 'fimMode', 'thinking', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext', 'temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs', 'stop', 'headers', 'extraBody']);
     expect(view(vs, 'temperature')).toMatchObject({ label: 'Temperature', value: '0.1', isDefault: true, hint: 'Default (built-in preset for this model)' });
     expect(view(vs, 'prefixLines')).toMatchObject({ value: '200', hint: 'Default (your settings)' });
     expect(view(vs, 'contextTokens')).toMatchObject({ value: '4700', hint: 'Default (built-in default)' });
     expect(view(vs, 'debounceMs')).toMatchObject({ value: 'auto', isDefault: true, hint: 'adaptive, starts at 75 ms (local) or 250 ms (hosted)' });
     expect(view(vs, 'template').options).toContain('qwen');
     expect(view(vs, 'fimMode').options).toEqual(['auto', 'native', 'template', 'chat']);
+  });
+
+  const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', changed: { fimMode: 'chat' }, ...o });
+
+  test('thinking round-trips through fim.thinking and validates', () => {
+    const f = form({ changed: { thinking: 'reasoningEffortNone' } });
+    expect(formToEntry(f)).toMatchObject({ fim: { thinking: 'reasoningEffortNone' } });
+    expect(entryToForm(formToEntry(f)).changed.thinking).toBe('reasoningEffortNone');
+    expect(validateForm(f, [])).toEqual([]);
+    expect(validateForm(form({ changed: { thinking: 'bogus' } }), [])).toEqual([{ field: 'thinking', message: 'unknown thinking switch' }]);
+  });
+
+  test('fieldViews: thinking default from the model, disabled off the chat route; template disabled on it', () => {
+    const off = fieldViews(form(), 'qwen2.5-coder-7b', settings(), []);
+    expect(view(off, 'thinking')).toMatchObject({ label: 'Thinking switch', disabledReason: 'used only by the chat prompt', isDefault: true });
+    expect(view(off, 'thinking').options).toContain('cannotDisable');
+    expect(view(off, 'template').disabledReason).toBeUndefined();
+    const on = fieldViews(form({ changed: { fimMode: 'chat' } }), 'gpt-oss-20b', settings(), []);
+    expect(view(on, 'thinking')).toMatchObject({ value: 'cannotDisable', hint: 'Default (built-in preset for this model)' });
+    expect(view(on, 'thinking').disabledReason).toBeUndefined();
+    expect(view(on, 'template').disabledReason).toBe('the chat prompt does not use a template');
+  });
+
+  test('the Thinking field carries readable labels', () => {
+    const v = view(fieldViews(or(), 'z-ai/glm-5', settings(), []), 'thinking');
+    expect(v.options).toContain('reasoningEffortNone');
+    expect(v.optionLabels!.reasoningEffortNone).toBe(THINKING_LABELS.reasoningEffortNone);
+    expect(THINKING_LABELS.reasoningEffortNone).toBe('reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)');
+    expect(Object.keys(v.optionLabels!).sort()).toEqual([...v.options!].sort());
+    expect(view(fieldViews(form(), 'qwen2.5-coder-7b', settings(), []), 'template').optionLabels).toBeUndefined();
+  });
+
+  test('the chat route shows the 5 s deadline', () => {
+    expect(view(fieldViews(or({ changed: { fimMode: 'chat' } }), 'z-ai/glm-5', settings(), []), 'timeoutMs').value).toBe('5000');
+  });
+
+  test('chat route: Stop shows the chat list, Timeout is the one deadline, and the stop warning counts them', () => {
+    const vs = fieldViews(or(), 'z-ai/glm-5', settings(), []);
+    expect(view(vs, 'timeoutMs').value).toBe('5000');
+    expect(view(vs, 'stop').value).toBe('</COMPLETION>');
+    expect(formWarnings(or(), 'z-ai/glm-5', settings()).join()).not.toContain('4 stop sequences');
+    const four = or({ changed: { fimMode: 'chat', stop: 'a\nb\nc\nd' } });
+    expect(formWarnings(four, 'z-ai/glm-5', settings())).toContain('only the first 4 stop sequences are sent');
+    expect(view(fieldViews(or({ changed: { fimMode: 'chat', timeoutMs: '9000' } }), 'z-ai/glm-5', settings(), []), 'timeoutMs')).toMatchObject({ value: '9000', isDefault: false });
+  });
+
+  test('the stop warning counts the chat list, not the FIM one; the template mismatch is skipped on the chat route', () => {
+    // qwen2.5-coder has 10 FIM stops but one chat stop
+    expect(formWarnings(or(), 'qwen2.5-coder-7b', settings())).toEqual([]);
+    expect(formWarnings(form({ type: 'together', baseUrl: 'https://api.together.xyz/v1', changed: {} }), 'qwen2.5-coder-7b', settings())).toContain('only the first 4 stop sequences are sent');
+    const mismatched = { changed: { fimMode: 'chat', template: 'seed-coder' } };
+    expect(formWarnings(or(mismatched), 'qwen2.5-coder-7b', settings())).toEqual([]);
+    expect(formWarnings(or({ changed: { fimMode: 'template', template: 'seed-coder' } }), 'qwen2.5-coder-7b', settings()).join()).toContain('own template is');
+  });
+
+  test('formWarnings flags a chat model that cannot turn thinking off', () => {
+    expect(formWarnings(or(), 'gpt-oss-20b', settings())).toContain('gpt-oss-20b cannot turn thinking off; completions are disabled');
+    expect(formWarnings(or(), 'z-ai/glm-5', settings())).toEqual([]);
+    expect(formWarnings(or({ changed: { fimMode: 'chat', thinking: 'cannotDisable' } }), 'z-ai/glm-5', settings())).toContain('z-ai/glm-5 cannot turn thinking off; completions are disabled');
   });
 
   test('fieldViews shows a changed field with its default in the hint', () => {

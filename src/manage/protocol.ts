@@ -1,7 +1,7 @@
 // Message and view types shared by the extension host and the Backends page script. A leaf module: no imports.
 
-export type ServerTypeId = 'llamacpp' | 'lmstudio' | 'ollama' | 'vllm' | 'sglang' | 'mistral' | 'deepseek' | 'fireworks' | 'together' | 'other';
-export type FormField = 'template' | 'fimMode' | 'multiline' | 'contextTokens' | 'prefixLines' | 'suffixLines' | 'extraContext'
+export type ServerTypeId = 'llamacpp' | 'lmstudio' | 'ollama' | 'vllm' | 'sglang' | 'strata' | 'mistral' | 'deepseek' | 'fireworks' | 'together' | 'openrouter' | 'other';
+export type FormField = 'template' | 'fimMode' | 'thinking' | 'multiline' | 'contextTokens' | 'prefixLines' | 'suffixLines' | 'extraContext'
   | 'temperature' | 'topP' | 'topK' | 'maxTokens' | 'debounceMs' | 'timeoutMs' | 'stop' | 'headers' | 'extraBody';
 /** The controls a validation error can point at. */
 export type ErrorField = FormField | 'id' | 'baseUrl';
@@ -18,11 +18,14 @@ export interface BackendForm {
   changed: Partial<Record<FormField, string>>;
 }
 
-export type StepId = 'reach' | 'model' | 'completion' | 'context';
+export type StepId = 'reach' | 'model' | 'completion' | 'thinking' | 'context';
 export interface TestStep { id: StepId; state: 'ok' | 'warn' | 'fail'; text: string; hint?: string; ms?: number }
 export interface FieldView {
   field: FormField; label: string; value: string; isDefault: boolean; hint: string;
-  options?: string[]; disabledReason?: string; error?: string;
+  options?: string[];
+  /** value → label, for the option text when the value is not readable. */
+  optionLabels?: Record<string, string>;
+  disabledReason?: string; error?: string;
 }
 export type Dot = 'grey' | 'green' | 'yellow' | 'red' | 'lock';
 export interface CardView {
@@ -31,7 +34,7 @@ export interface CardView {
 }
 export interface EditView {
   cardId: string | null; form: BackendForm; keyMode: 'no' | 'optional' | 'yes'; keyStored: boolean; fields: FieldView[];
-  /** `tag` is "ready", or why the backend has no route for that model. */
+  /** `tag` is "ready", "chat prompt" (with ", cannot turn thinking off" for a model that cannot do so), or why the backend has no route for that model. */
   models?: { id: string; tag: string }[]; modelsError?: string; errors: { field: ErrorField; message: string }[]; warnings: string[];
   testing: boolean; test?: TestStep[];
 }

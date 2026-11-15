@@ -1,7 +1,8 @@
 import type { BackendConfig } from '../types';
 import { authHeaders, getJson, joinUrl, postJson, throwIfStreamError } from './http';
+import { streamOpenAiChat } from './chat';
 import { parseSse } from './sse';
-import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type FimBackend, type FimRequest, type ServerInfo } from './types';
+import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type FimBackend, type FimRequest, type RouteCaps, type ServerInfo } from './types';
 
 export class LlamaCppBackend implements FimBackend {
   constructor(
@@ -9,8 +10,16 @@ export class LlamaCppBackend implements FimBackend {
     private readonly apiKey: ApiKeyProvider,
   ) {}
 
-  supportsNativeFim(): boolean {
-    return true;
+  routes(): RouteCaps {
+    return { native: true, template: true, chat: true, nativeChatModels: false };
+  }
+
+  streamChat(req: ChatRequest): AsyncIterable<ChatEvent> {
+    return this.chat(req);
+  }
+
+  private async *chat(req: ChatRequest): AsyncGenerator<ChatEvent> {
+    yield* streamOpenAiChat(joinUrl(this.config.baseUrl, '/v1/chat/completions'), await this.authHeaders(), req, false);
   }
 
   private async authHeaders(): Promise<Record<string, string>> {

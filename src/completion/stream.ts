@@ -7,7 +7,7 @@ export type PlannedRequest =
   | { route: 'native' | 'template'; req: FimRequest }
   | { route: 'chat'; req: ChatRequest; linePrefix: string };
 
-export interface Collected { text: string; stoppedEarly: boolean; thinking: boolean; timedOut: boolean }
+export interface Collected { text: string; stoppedEarly: boolean; thinking: boolean; timedOut: boolean; /** Chat route: the visible model output before answer extraction. */ visible?: string }
 
 const isTimeout = (err: unknown): boolean => (err as { name?: unknown } | null)?.name === 'TimeoutError';
 
@@ -23,7 +23,7 @@ export async function collectCompletion(
   ctl: AbortController,
 ): Promise<Collected> {
   let stopped = false;
-  const seen = { thinking: false }; // updated as the chat stream goes, so a timeout keeps it
+  const seen = { thinking: false, visible: '' }; // updated as the chat stream goes, so a timeout keeps it
   try {
     if (p.route === 'chat') {
       stopped = await collectChat(backend.streamChat(p.req), new HoleFillerAnswer(p.linePrefix), acc, ctl, seen);
@@ -40,9 +40,9 @@ export async function collectCompletion(
     const text = acc.text;
     const nl = text.lastIndexOf('\n');
     if (!isTimeout(err) || nl < 0) throw err;
-    return { text: text.slice(0, nl), stoppedEarly: stopped, thinking: seen.thinking, timedOut: true };
+    return { text: text.slice(0, nl), stoppedEarly: stopped, thinking: seen.thinking, timedOut: true, ...(p.route === 'chat' ? { visible: seen.visible } : {}) };
   }
-  return { text: acc.text, stoppedEarly: stopped, thinking: seen.thinking, timedOut: false };
+  return { text: acc.text, stoppedEarly: stopped, thinking: seen.thinking, timedOut: false, ...(p.route === 'chat' ? { visible: seen.visible } : {}) };
 }
 
 async function collectChat(
@@ -50,7 +50,7 @@ async function collectChat(
   answer: HoleFillerAnswer,
   acc: CompletionAccumulator,
   ctl: AbortController,
-  seen: { thinking: boolean },
+  seen: { thinking: boolean; visible: string },
 ): Promise<boolean> {
   const filter = new ReasoningFilter();
   // Only answers that extend the previous one reach `acc`: a shorter one (visible shrank on a bare closing tag) waits for the end.
@@ -70,6 +70,7 @@ async function collectChat(
     }
     filter.push(ev.text);
     seen.thinking = filter.thinking;
+    seen.visible = filter.visible;
     const next = answer.update(filter.visible, false);
     if (!next.startsWith(fed)) continue;
     fed = next;
@@ -84,5 +85,6 @@ async function collectChat(
     stopped = acc.replace(answer.update(filter.visible, true));
   }
   seen.thinking = filter.thinking;
+  seen.visible = filter.visible;
   return stopped;
 }

@@ -123,6 +123,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     // As "Retry now" does, for the backend that answered the test completion.
     onTestPassed: (id) => {
       backoffs.get(id)?.reset();
+      capabilities.forgetRoutes(id);
       if (id === settings.fim.backendId) provider.clearError();
       log.info(`backend "${id}": connection test got a completion, backoff cleared`);
     },
@@ -134,6 +135,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   sub(
     secrets.onDidChange((id) => {
       backoffs.get(id)?.reset();
+      capabilities.forgetRoutes(id);
       if (id === settings.fim.backendId) provider.clearError();
       log.info(`backend "${id}": API key changed`);
     }),
@@ -148,6 +150,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     manageBackends,
     retry: () => {
       for (const b of backoffs.values()) b.reset();
+      for (const id of backends.keys()) capabilities.forgetRoutes(id);
       provider.clearError();
       log.info('retry: backoffs cleared');
     },

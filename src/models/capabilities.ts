@@ -58,6 +58,11 @@ export class Capabilities {
     return first;
   }
 
+  /** Forgets the routes learned as missing for one backend (rejected fields and thinking latency stay). */
+  forgetRoutes(backendId: string): void {
+    for (const [k, e] of this.entries) if ((JSON.parse(k) as [string, string | null])[0] === backendId) e.failedRoutes.clear();
+  }
+
   clear(): void {
     this.entries.clear();
   }

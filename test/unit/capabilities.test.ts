@@ -18,6 +18,20 @@ describe('Capabilities', () => {
     c.clear();
     expect(c.get('a', 'm')).toEqual({ rejected: new Set(), failedRoutes: new Set() });
   });
+  test('forgetRoutes clears the failed routes of one backend only', () => {
+    const c = new Capabilities();
+    c.failRoute('a', 'm', 'native');
+    c.failRoute('a', undefined, 'template');
+    c.failRoute('b', 'm', 'native');
+    c.reject('a', 'm', ['top_k']);
+    c.sawThinking('a', 'm', 500);
+    c.forgetRoutes('a');
+    expect(c.get('a', 'm').failedRoutes.size).toBe(0);
+    expect(c.get('a', undefined).failedRoutes.size).toBe(0);
+    expect(c.get('a', 'm').rejected).toEqual(new Set(['top_k']));
+    expect(c.get('a', 'm').thinkingMs).toBe(500);
+    expect(c.get('b', 'm').failedRoutes).toEqual(new Set(['native']));
+  });
   test('sawThinking is true once and keeps the latest latency', () => {
     const c = new Capabilities();
     expect(c.sawThinking('a', 'm', 900)).toBe(true);

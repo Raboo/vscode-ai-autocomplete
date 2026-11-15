@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { ErrorBackoff } from '../backends/backoff';
-import { classifyError, type ErrorClass } from '../backends/http';
+import { classifyError, HttpError, type ErrorClass } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { FimBackend } from '../backends/types';
@@ -17,7 +17,7 @@ import { gate } from './gate';
 import { collectCompletion, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
-import { buildChatRequest, buildFimRequest, chatStops, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
+import { buildChatRequest, buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
 const MAX_LINES = 16;
@@ -194,7 +194,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     }
 
     const debouncer = this.d.debouncer(id);
-    if (!(await debouncer.wait(signal))) return [];
+    if (!(await debouncer.wait(signal)) || this.d.getSettings() !== s) return [];
 
     const model = await this.model(backend, signal);
     if (signal.aborted || this.d.getSettings() !== s) return [];
@@ -240,7 +240,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
         },
       });
       planned = { route: 'chat', req, linePrefix };
-      stop = chatStops(fim);
+      stop = req.stop;
     } else {
       planned = { route, req: buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input }) };
     }
@@ -279,7 +279,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       );
       if (j.logPrompts) {
         this.d.log.debug(`fim prompt: ${JSON.stringify(j.planned.route === 'chat' ? j.planned.req.messages : j.planned.req.payload)}`);
-        this.d.log.debug(`fim completion: raw ${JSON.stringify(collected.text)} → shown ${JSON.stringify(text)}`);
+        const raw = collected.visible ?? collected.text;
+        this.d.log.debug(`fim completion: raw ${JSON.stringify(raw)} → shown ${JSON.stringify(text)}`);
       }
       if (collected.thinking && this.d.capabilities.sawThinking(id, j.model, ms)) {
         this.d.log.warn(`backend "${id}": ${j.model ?? 'the model'} still thinks with thinking off (${ms} ms); completions will be slow`);
@@ -306,11 +307,13 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
       return { state: 'error', detail: `Set API key for ${id}` };
     }
-    if (j.mode === 'auto' && j.planned.route !== 'chat' && isRouteMissing(err) && j.hasFallback) {
+    if (j.mode === 'auto' && j.planned.route !== 'chat' && err instanceof HttpError && isRouteMissing(err) && j.hasFallback) {
       // A server without this endpoint is not failing: the next request takes the next prompt route.
+      const status = err.status;
+      this.models.delete(j.backend); // the server may have restarted with another model
       this.d.capabilities.failRoute(id, j.model, j.planned.route);
       this.once(`missing:${id}:${j.model ?? ''}:${j.planned.route}`, () =>
-        this.d.log.info(`backend "${id}": no ${j.planned.route} endpoint for ${j.model ?? 'the model'}; the next request uses the next prompt route`),
+        this.d.log.info(`backend "${id}": no ${j.planned.route} endpoint for ${j.model ?? 'the model'} (HTTP ${status}); the next request uses the next prompt route`),
       );
       return { state: 'idle' };
     }
@@ -342,9 +345,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const key = JSON.stringify([id, model ?? null]);
     if (this.notified.has(key)) return;
     this.notified.add(key);
-    const who = model ?? 'This model';
-    this.d.log.warn(`backend "${id}": ${who} cannot turn thinking off; completions will be slow`);
-    this.d.notify(`AI Autocomplete: ${who} cannot turn thinking off, so completions will be slow. A coder model, or a model that can turn thinking off, fits autocomplete better.`);
+    this.d.log.warn(`backend "${id}": ${model ?? 'the model'} cannot turn thinking off; completions will be slow`);
+    this.d.notify(`AI Autocomplete: ${model ?? 'This model'} cannot turn thinking off, so completions will be slow. A coder model, or a model that can turn thinking off, fits autocomplete better.`);
   }
 
   private items(text: string, at: Spot): vscode.InlineCompletionItem[] {

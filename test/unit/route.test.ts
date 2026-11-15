@@ -222,6 +222,11 @@ describe('buildChatRequest', () => {
     expect(buildChatRequest(plan('Qwen3.8-Flash', {}, 'strata', { fim: { stop: ['X', '</COMPLETION>'] } })).stop).toEqual(['</COMPLETION>', 'X']);
     expect(chatStops({ backendStop: ['X'] })).toEqual(['</COMPLETION>', 'X']);
   });
+  test('a request with the reasoning allowance waits 30 s, unless the backend sets its own timeout', () => {
+    expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp')).timeoutMs).toBe(30000);
+    expect(buildChatRequest(plan('gpt-oss-20b', {}, 'llamacpp', { fim: { timeoutMs: 2000 } })).timeoutMs).toBe(2000);
+    expect(buildChatRequest(plan('Qwen3.8-Flash')).timeoutMs).toBe(15000);
+  });
   test('onRejected is passed through', () => {
     const onRejected = (): void => undefined;
     expect(buildChatRequest(plan('Qwen3.8-Flash', { onRejected })).onRejected).toBe(onRejected);

@@ -171,6 +171,8 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
   const tf = thinkingFields(fim.thinking, p.flavor);
   const thinking = Object.fromEntries(Object.entries(tf.body).filter(([k]) => !rejected.has(k)));
   const budget = (input.multiline ? fim.maxTokens : Math.min(fim.maxTokens, SINGLE_LINE_MAX_TOKENS)) + CHAT_OVERHEAD_TOKENS;
+  // A model that reasons anyway needs room for it, and time.
+  const allowance = fim.thinking === 'cannotDisable';
   const sampling: ChatRequest['sampling'] = {};
   if (fim.samplingParams !== 'omit') {
     const all: ChatRequest['sampling'] = { ...fim.sampling, presencePenalty: 0 };
@@ -181,13 +183,13 @@ export function buildChatRequest(p: ChatRequestPlan): ChatRequest {
   return {
     ...(p.model !== undefined ? { model: p.model } : {}),
     messages: holeFillerMessages(input, tf.systemSuffix),
-    maxTokens: budget + (fim.thinking === 'cannotDisable' ? REASONING_ALLOWANCE_TOKENS : 0),
+    maxTokens: budget + (allowance ? REASONING_ALLOWANCE_TOKENS : 0),
     stop: chatStops(fim),
     sampling,
     thinking,
     extraBody: fim.extraBody,
     signal: p.signal,
-    timeoutMs: fim.chatTimeoutMs,
+    timeoutMs: allowance ? fim.reasoningTimeoutMs : fim.chatTimeoutMs,
     ...(p.onRejected ? { onRejected: p.onRejected } : {}),
   };
 }

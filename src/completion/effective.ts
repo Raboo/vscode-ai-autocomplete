@@ -6,6 +6,8 @@ export const DEFAULT_CONTEXT_TOKENS = 4700;
 export const CHARS_PER_TOKEN = 3.5;
 export const DEFAULT_TIMEOUT_MS = 5000;
 export const DEFAULT_CHAT_TIMEOUT_MS = 15000;
+/** The chat timeout for a request with the reasoning allowance: 1024 more tokens take longer. */
+export const DEFAULT_REASONING_TIMEOUT_MS = 30000;
 
 export type ValueSource = 'backend' | 'modelOverride' | 'settings' | 'preset' | 'builtin';
 export type FimField = 'template' | 'temperature' | 'topP' | 'topK' | 'maxTokens' | 'multiline' | 'prefixLines' | 'suffixLines'
@@ -32,6 +34,8 @@ export interface FimValues {
   samplingParams: SamplingParams;
   /** The chat route's timeout: the backend's `fim.timeoutMs`, else a longer default than the FIM one. */
   chatTimeoutMs: number;
+  /** The chat timeout for a request with the reasoning allowance: the backend's `fim.timeoutMs`, else 30 s. */
+  reasoningTimeoutMs: number;
   /** The backend's own `fim.stop`, without preset stops. */
   backendStop: string[];
 }
@@ -89,6 +93,7 @@ export function resolveFim(backend: BackendConfig, model: string | undefined, s:
     thinking: b.thinking ?? preset.thinking,
     samplingParams: preset.samplingParams,
     chatTimeoutMs: b.timeoutMs ?? DEFAULT_CHAT_TIMEOUT_MS,
+    reasoningTimeoutMs: b.timeoutMs ?? DEFAULT_REASONING_TIMEOUT_MS,
     backendStop: [...(b.stop ?? [])],
   };
   const sources: Record<FimField, ValueSource> = {

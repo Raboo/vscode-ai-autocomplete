@@ -164,6 +164,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const rejected = new Set<string>();
     let planned: PlannedRequest;
     let stop = values.stop;
+    let limit = values.timeoutMs; // the timeout the editor's request would use; the test itself waits longer
     if (route === 'chat') {
       const req = buildChatRequest({
         fim: values, flavor: inferHostFlavor(cfg), model, input: { ...SAMPLE, languageId: 'typescript', multiline: false },
@@ -171,18 +172,21 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       });
       planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix };
       stop = req.stop; // the request's own list, as in the provider
+      limit = req.timeoutMs;
     } else {
       planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
     }
     const collected = await stream(planned, ctl, stop);
     const text = postprocess(collected.text, POST) ?? '';
     const elapsed = now() - stageStart;
-    const limit = route === 'chat' ? values.chatTimeoutMs : values.timeoutMs;
     if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
-    if (text === '') {
+    if (text === '' && collected.timedOut) {
+      emit({ id: 'completion', state: 'fail', text: 'timed out' }, stageStart, 'timed out');
+    } else if (text === '') {
       emit({ id: 'completion', state: 'warn', text: 'the server answered but returned no completion' }, stageStart);
-    } else if (elapsed > limit) {
-      emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint: `slower than the ${limit} ms timeout; run the test again if the model was loading` }, stageStart);
+    } else if (collected.timedOut || elapsed > limit) {
+      const hint = collected.timedOut ? `timed out after ${TEST_TIMEOUT_MS} ms; only the complete lines are shown` : `slower than the ${limit} ms timeout; run the test again if the model was loading`;
+      emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint }, stageStart);
     } else {
       emit({ id: 'completion', state: 'ok', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"` }, stageStart);
     }

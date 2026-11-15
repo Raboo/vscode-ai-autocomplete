@@ -14,7 +14,7 @@ import { buildFimWindow, type ExtraContextRing } from './context';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
-import { collectCompletion, type PlannedRequest } from './stream';
+import { ChatTimeoutError, collectCompletion, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
 import { buildChatRequest, buildFimRequest, explainUnsupported, planInsertion, planRoute, whyNoRoute, type FimRoute } from './route';
@@ -282,27 +282,28 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
         const raw = collected.visible ?? collected.text;
         this.d.log.debug(`fim completion: raw ${JSON.stringify(raw)} → shown ${JSON.stringify(text)}`);
       }
-      if (collected.thinking && this.d.capabilities.sawThinking(id, j.model, ms)) {
-        this.d.log.warn(`backend "${id}": ${j.model ?? 'the model'} still thinks with thinking off (${ms} ms); completions will be slow`);
-      }
-      // Re-read: the latency learned before the request is stale. Another backend or model has its own entry, so it clears the warning.
-      const thinkingMs = this.d.capabilities.get(id, j.model).thinkingMs;
-      this.d.thinking(thinkingMs !== undefined ? thinkingNote(j.model, thinkingMs) : undefined);
+      if (collected.thinking) this.sawThinking(id, j.model, ms);
+      this.showThinking(id, j.model);
       outcome = { state: 'idle' };
       return text;
     } catch (err) {
-      outcome = this.failed(err, j);
+      outcome = this.failed(err, j, Date.now() - started);
       return undefined;
     } finally {
       this.requests.end(outcome);
     }
   }
 
-  private failed(err: unknown, j: Job): Outcome | undefined {
+  private failed(err: unknown, j: Job, ms: number): Outcome | undefined {
     // Our own controller is only aborted by a newer request or an early stop: that is a cancel, never a failure.
     const cls: ErrorClass = j.ctl.signal.aborted ? { kind: 'abort' } : classifyError(err);
     if (cls.kind === 'abort') return undefined;
     const id = j.backend.config.id;
+    if (err instanceof ChatTimeoutError && err.thinking) {
+      // A model that reasoned until the timeout: say so, then fail as any timeout does.
+      this.sawThinking(id, j.model, ms);
+      this.showThinking(id, j.model);
+    }
     if (err instanceof MissingApiKeyError) {
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
       return { state: 'error', detail: `Set API key for ${id}` };
@@ -325,6 +326,19 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     this.failing.set(id, detail);
     this.models.delete(j.backend); // the server may have restarted with another model
     return { state: 'error', detail: withRetry(detail, j.backoff) };
+  }
+
+  /** Remembers that the model reasoned with thinking off (and its latency); the first time also writes a warn line. */
+  private sawThinking(id: string, model: string | undefined, ms: number): void {
+    if (this.d.capabilities.sawThinking(id, model, ms)) {
+      this.d.log.warn(`backend "${id}": ${model ?? 'the model'} still thinks with thinking off (${ms} ms); completions will be slow`);
+    }
+  }
+
+  /** The status bar thinking note for this backend and model; another backend or model has its own entry, so it clears the note. */
+  private showThinking(id: string, model: string | undefined): void {
+    const thinkingMs = this.d.capabilities.get(id, model).thinkingMs;
+    this.d.thinking(thinkingMs !== undefined ? thinkingNote(model, thinkingMs) : undefined);
   }
 
   /** Model id from settings, else detected once per backend instance (only a detected id is remembered). */

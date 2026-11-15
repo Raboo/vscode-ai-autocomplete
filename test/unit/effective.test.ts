@@ -109,7 +109,7 @@ describe('templateMismatch', () => {
 describe('chat values', () => {
   test('chat family values', () => {
     const r = resolveFim(backend(), 'Qwen3.8-Flash-Next', settings());
-    expect(r.values).toMatchObject({ chat: true, thinking: 'templateKwarg:enable_thinking', sampling: { temperature: 0.2, topP: 0.8, topK: 20 }, samplingParams: 'send', chatTimeoutMs: 15000, backendStop: [] });
+    expect(r.values).toMatchObject({ chat: true, thinking: 'templateKwarg:enable_thinking', sampling: { temperature: 0.2, topP: 0.8, topK: 20 }, samplingParams: 'send', chatTimeoutMs: 15000, reasoningTimeoutMs: 30000, backendStop: [] });
     expect(r.sources.thinking).toBe('preset');
   });
   test('backend thinking beats an override, which beats the preset', () => {
@@ -119,9 +119,9 @@ describe('chat values', () => {
     const b = resolveFim(backend({ thinking: 'none' }), 'Qwen3.8-Flash-Next', s);
     expect(b.values.thinking).toBe('none'); expect(b.sources.thinking).toBe('backend');
   });
-  test('backend timeoutMs sets both timeouts; backendStop is only the backend list', () => {
+  test('backend timeoutMs sets every timeout; backendStop is only the backend list', () => {
     const r = resolveFim(backend({ timeoutMs: 2000, stop: ['Z'] }), QWEN, settings());
-    expect(r.values.timeoutMs).toBe(2000); expect(r.values.chatTimeoutMs).toBe(2000); expect(r.values.backendStop).toEqual(['Z']);
+    expect(r.values.timeoutMs).toBe(2000); expect(r.values.chatTimeoutMs).toBe(2000); expect(r.values.reasoningTimeoutMs).toBe(2000); expect(r.values.backendStop).toEqual(['Z']);
     expect(r.values.stop).toContain('Z');
   });
 });

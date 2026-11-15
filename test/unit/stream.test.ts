@@ -114,4 +114,27 @@ describe('collectCompletion', () => {
     );
     expect(r).toMatchObject({ text: 'l1\nl2', timedOut: true, thinking: true });
   });
+
+  test('a single-line chat timeout keeps the thinking flag', async () => {
+    const chat: ChatEvent[] = [{ type: 'reasoning', text: 'hm' }, content('<COMPLETION>a + b')];
+    await expect(
+      collectCompletion(backend({ chat, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts()), new AbortController()),
+    ).rejects.toMatchObject({ name: 'TimeoutError', message: 't', thinking: true });
+  });
+
+  test('a chat timeout without reasoning reports thinking false', async () => {
+    await expect(
+      collectCompletion(backend({ chat: [content('<COMPLETION>a')], fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts()), new AbortController()),
+    ).rejects.toMatchObject({ name: 'TimeoutError', thinking: false });
+  });
+
+  test('a multi-line timeout after a bare closer does not return pre-closer lines', async () => {
+    const chat = [content('<COMPLETION>l1\nl2\n'), content('</think><COMPLETION>x')];
+    await expect(
+      collectCompletion(backend({ chat, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts({ multiline: true })), new AbortController()),
+    ).rejects.toMatchObject({ name: 'TimeoutError', thinking: true });
+    const after = [content('<COMPLETION>l1\nl2\n'), content('</think><COMPLETION>a\nb')];
+    const r = await collectCompletion(backend({ chat: after, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts({ multiline: true })), new AbortController());
+    expect(r).toMatchObject({ text: 'a', timedOut: true, thinking: true });
+  });
 });

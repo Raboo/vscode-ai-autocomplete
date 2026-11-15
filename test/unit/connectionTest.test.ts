@@ -10,7 +10,7 @@ import type { TestStep } from '../../src/manage/protocol';
 
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
-interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void }
+interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void; failAfter?: Error }
 function fake(o: FakeOpts = {}) {
   const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, ...o.config };
   const listModels = vi.fn(async (): Promise<ServerInfo> => {
@@ -27,6 +27,7 @@ function fake(o: FakeOpts = {}) {
       if (o.clock) o.clock.t += o.streamCost ?? 0;
       if (c instanceof Error) throw c;
       yield* c;
+      if (o.failAfter) throw o.failAfter;
     })();
   });
   const chatRequests: ChatRequest[] = [];
@@ -153,6 +154,13 @@ describe('runConnectionTest', () => {
   test('empty completion warns', async () => {
     const { res } = await run(fake({ chunks: [''] }));
     expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'warn', text: 'the server answered but returned no completion' });
+  });
+
+  test('a timeout after only blank lines fails as a timeout', async () => {
+    const timeout = Object.assign(new Error('t'), { name: 'TimeoutError' });
+    const { res } = await run(fake({ chunks: ['\n\na'], failAfter: timeout }));
+    expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'fail', text: 'timed out' });
+    expect(completionServed(res)).toBe(false);
   });
 
   test('completion failure is a fail step', async () => {
@@ -307,6 +315,9 @@ describe('explainFailure', () => {
       const f = fake({ config: chatCfg, caps, clock, streamCost: 6000, chatEvents: ev('<COMPLETION>a + b;') });
       const { res } = await run(f, { now: () => clock.t });
       expect(res.steps[2]).toMatchObject({ state: 'ok' }); // 6 s is over the FIM timeout of 5 s but under the chat timeout of 15 s
+      // A model that cannot turn thinking off gets 30 s.
+      const slow = fake({ config: { ...chatCfg, fimModel: 'gpt-oss-20b' }, caps, clock, streamCost: 20000, chatEvents: ev('<COMPLETION>a + b;') });
+      expect((await run(slow, { now: () => clock.t })).res.steps[2]).toMatchObject({ state: 'ok' });
     });
 
     test('context step ignores inherited keys', async () => {

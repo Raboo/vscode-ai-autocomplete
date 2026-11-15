@@ -72,6 +72,36 @@ describe('buildFimWindow', () => {
   });
 });
 
+describe('stepped prefix window', () => {
+  const o = { prefixLines: 8, suffixLines: 2, maxPrefixChars: 8000, maxSuffixChars: 2500 };
+  const lines = Array.from({ length: 100 }, (_, i) => `line${i}`);
+  const text = lines.join('\n');
+  const at = (line: number, col = 0) => text.indexOf(`line${line}\n`) + col;
+
+  test('the window start moves in steps', () => {
+    expect(buildFimWindow(text, at(20), o).startLine).toBe(12);
+    expect(buildFimWindow(text, at(21), o).startLine).toBe(12);
+    expect(buildFimWindow(text, at(22), o).startLine).toBe(14);
+  });
+
+  test('stepped window respects the char cap', () => {
+    const wide = Array.from({ length: 100 }, () => 'x'.repeat(99)).join('\n'); // 100 chars per line
+    const w = buildFimWindow(wide, 50 * 100 + 3, { ...o, maxPrefixChars: 450 });
+    expect(w.prefix.length).toBeLessThanOrEqual(450);
+    expect(w.startLine % 2).toBe(0);
+    expect(w.prefix.startsWith('x'.repeat(99) + '\n')).toBe(true);
+    expect(w.startLine).toBe(46);
+  });
+
+  test('stepped window keeps the cursor line', () => {
+    const w = buildFimWindow(text, at(50, 3), { ...o, maxPrefixChars: 3 });
+    expect(w.startLine).toBe(50);
+    expect(w.prefix).toBe('lin');
+    const w2 = buildFimWindow(text, at(50, 5), { ...o, maxPrefixChars: 3 });
+    expect(w2.prefix).toBe('ne5');
+  });
+});
+
 describe('ExtraContextRing', () => {
   const lines = doc(1000);
 
@@ -147,5 +177,33 @@ describe('ExtraContextRing', () => {
     const first = r.pick(ex('z', 0, 0), 1e6);
     expect(r.pick(ex('z', 0, 0), 1e6)).toEqual(first);
     expect(first.map((c) => c.path)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('re-adding identical text keeps the chunk position', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    r.add('a', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+  });
+
+  test('pick keeps earlier picks first and appends new ones', () => {
+    const r = new ExtraContextRing();
+    r.add('a', lines, 200);
+    r.add('b', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b']);
+    r.add('c', lines, 200);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c']);
+    r.add('a', lines, 600); // new chunk of a: appended last
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c', 'a']);
+  });
+
+  test('pick keeps earlier picks in order when the budget shrinks', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    for (const p of ['a', 'b', 'c']) r.add(p, ['xxxx'], 0);
+    expect(r.pick(ex('z', 0, 0), 1e6).map((c) => c.path)).toEqual(['a', 'b', 'c']);
+    r.add('d', ['xxxx'], 0);
+    expect(r.pick(ex('z', 0, 0), 8).map((c) => c.path)).toEqual(['a', 'b']);
+    expect(r.pick(ex('z', 0, 0), 12).map((c) => c.path)).toEqual(['a', 'b', 'd']);
   });
 });

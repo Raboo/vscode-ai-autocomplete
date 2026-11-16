@@ -119,6 +119,20 @@ describe('LlamaCppBackend', () => {
     expect(onTruncated).toHaveBeenCalledTimes(1);
   });
 
+  test('an older llama.cpp reports a length stop with stopped_limit', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"content":"a"}', '{"content":"","stop":true,"stopped_limit":true,"stopped_eos":false}'] }));
+    const onTruncated = vi.fn();
+    expect(await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req({ onTruncated })))).toEqual(['a']);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  test('an older llama.cpp normal stop is not a truncation', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"content":"a"}', '{"content":"","stop":true,"stopped_limit":false,"stopped_eos":true}'] }));
+    const onTruncated = vi.fn();
+    await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req({ onTruncated })));
+    expect(onTruncated).not.toHaveBeenCalled();
+  });
+
   test('a normal stop is not a truncation', async () => {
     const onTruncated = vi.fn();
     for (const type of ['eos', 'word']) {

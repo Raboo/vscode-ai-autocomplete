@@ -14,7 +14,7 @@ import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
 import { decorationPlan, displayFor } from '../decorations';
 import { toItemText, type LineEdit } from '../diff';
-import { pickFormat } from '../formats';
+import { formatRoute, pickFormat } from '../formats';
 import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, type RecentSnippets } from '../history';
 import { nextEditBudgets } from '../region';
@@ -506,11 +506,10 @@ export class NextEditController implements vscode.Disposable {
 
   /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */
   private routeFor(backend: FimBackend, format: NextEditFormat): boolean {
-    const routes = backend.routes();
-    if (format.transport === 'chat' ? routes.chat : routes.template) return true;
+    const { ok, name } = formatRoute(format, backend.routes());
+    if (ok) return true;
     const id = backend.config.id;
-    const route = format.transport === 'chat' ? 'chat completions' : 'raw completions';
-    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${route} route; the ${format.id} format needs one`));
+    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${name} route; the ${format.id} format needs one`));
     return false;
   }
 

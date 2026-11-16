@@ -22,7 +22,7 @@ export interface BackendForm {
   changed: Partial<Record<FormField, string>>;
 }
 
-export type StepId = 'reach' | 'model' | 'completion' | 'thinking' | 'context';
+export type StepId = 'reach' | 'model' | 'completion' | 'thinking' | 'context' | 'nextEdit';
 export interface TestStep { id: StepId; state: 'ok' | 'warn' | 'fail'; text: string; hint?: string; ms?: number }
 export interface FieldView {
   field: FormField; label: string; value: string; isDefault: boolean; hint: string;

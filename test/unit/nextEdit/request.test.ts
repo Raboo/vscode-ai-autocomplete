@@ -37,10 +37,11 @@ function run(
   events: ChatEvent[],
   o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error; format?: NextEditFormat; chunks?: string[]; truncate?: boolean } = {},
 ) {
-  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[]; truncated: number } = {
+  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[]; truncated: number; parsed: FormatAnswer[] } = {
     pulled: 0,
     prompts: [],
     truncated: 0,
+    parsed: [],
   };
   const backend = {
     streamChat: async function* (req: ChatRequest) {
@@ -66,7 +67,7 @@ function run(
   const result = runNextEdit({
     backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', format: o.format ?? pickFormat('chatXtab', 'm'), snapshot: snap,
     rejected: new Set(), signal: ctl.signal, onRejected: undefined, onPrompt: (p) => captured.prompts.push(p),
-    onTruncated: () => captured.truncated++,
+    onTruncated: () => captured.truncated++, onParsed: (a) => captured.parsed.push(a),
   });
   return { result, captured, ctl, snap };
 }
@@ -229,6 +230,25 @@ describe('runNextEdit with a completion format', () => {
     const whole = run([], { format: stubFormat(), chunks: ['x'] });
     await whole.result;
     expect(whole.captured.truncated).toBe(0);
+  });
+
+  test('onParsed receives the parsed answer, also when it gives no result, and is not called for a truncated answer', async () => {
+    const noChange = run([], { format: stubFormat(), chunks: ['x'] });
+    await noChange.result;
+    expect(noChange.captured.parsed).toEqual([{ kind: 'noChange' }]);
+    const invalid = run([], { format: stubFormat(() => ({ kind: 'invalid', why: 'markers' })), chunks: ['x'] });
+    await expect(invalid.result).resolves.toBeUndefined();
+    expect(invalid.captured.parsed).toEqual([{ kind: 'invalid', why: 'markers' }]);
+    const cut = run([], { format: stubFormat(), chunks: ['x'], truncate: true });
+    await cut.result;
+    expect(cut.captured.parsed).toEqual([]);
+  });
+
+  test('onParsed also receives a chat answer', async () => {
+    const snap = snapshot();
+    const r = run([content(regionOf(snap, renamed))], { snap });
+    await r.result;
+    expect(r.captured.parsed).toEqual([{ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }]);
   });
 
   test('an empty rewrite of a non-blank region gives no result', async () => {

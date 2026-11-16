@@ -1,5 +1,6 @@
 import type { NextEditFormatSetting } from '../../config/settings';
 import { chatXtabFormat } from './chatXtab';
+import type { RouteCaps } from '../../backends/types';
 import type { FormatId, NextEditFormat } from './format';
 import { sweepFormat } from './sweep';
 import { zeta21Format } from './zeta21';
@@ -57,4 +58,9 @@ export function pickFormat(setting: NextEditFormatSetting, model: string | undef
     case 'chatXtab':
       return chatXtabFormat;
   }
+}
+
+/** Whether the backend has the route the format is sent on (chat for chat formats, raw completions for the others), and the route's name. */
+export function formatRoute(format: NextEditFormat, routes: Pick<RouteCaps, 'chat' | 'template'>): { ok: boolean; name: 'chat completions' | 'raw completions' } {
+  return format.transport === 'chat' ? { ok: routes.chat, name: 'chat completions' } : { ok: routes.template, name: 'raw completions' };
 }

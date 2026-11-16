@@ -30,6 +30,8 @@ export interface Settings {
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
+  /** Machine-scoped paths of the local runtimes; unset means look on PATH and in the usual places. */
+  local: { llamaServerPath?: string; lmsPath?: string };
 }
 
 export interface Inspected<T> {
@@ -231,6 +233,10 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     const i = src.inspect<T>(key);
     return i?.globalValue ?? i?.defaultValue ?? fallback;
   };
+  const localPath = (key: string): string | undefined => {
+    const v = machine<unknown>(key, '');
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+  };
   const resource = <T>(key: string, fallback: T): T => {
     const i = src.inspect<T>(key);
     return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue ?? i?.defaultValue ?? fallback;
@@ -359,6 +365,10 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,
     debug: { logPrompts: machine('debug.logPrompts', false) },
+    local: {
+      ...(localPath('local.llamaServerPath') !== undefined ? { llamaServerPath: localPath('local.llamaServerPath') } : {}),
+      ...(localPath('local.lmsPath') !== undefined ? { lmsPath: localPath('local.lmsPath') } : {}),
+    },
   };
   return { settings, problems };
 }

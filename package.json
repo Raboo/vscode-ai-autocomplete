@@ -434,6 +434,18 @@
           "default": false,
           "scope": "machine",
           "markdownDescription": "Write prompt and completion text to the output channel. Off by default because it contains your code. Timings, status codes and sizes are always logged at debug level."
+        },
+        "aiAutocomplete.local.llamaServerPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to `llama-server`. Empty: look on PATH and in the usual install places. Machine-scoped."
+        },
+        "aiAutocomplete.local.lmsPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to LM Studio's `lms` command. Empty: look on PATH and in the usual install places. Machine-scoped."
         }
       }
     },

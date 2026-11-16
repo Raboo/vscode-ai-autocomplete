@@ -20,7 +20,7 @@ test('webview bundle is built and packaged', () => {
 test('commands are categorised and the internal commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
   expect(cmds.map((c) => c.command).sort()).toEqual(
-    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggleEnabled']
+    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'stopLocalModels', 'toggleEnabled']
       .map((c) => `aiAutocomplete.${c}`)
       .sort(),
   );
@@ -30,6 +30,7 @@ test('commands are categorised and the internal commands are hidden from the pal
   }
   expect(pkg.contributes.menus.commandPalette).not.toContainEqual({ command: 'aiAutocomplete.openSettings', when: 'false' });
   expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.openSettings')?.title).toBe('Open Settings');
+  expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.stopLocalModels')?.title).toBe('Stop Local Models');
 });
 test('Tab and Esc act on a pending Next Edit decoration only, never over a suggestion, inline edit, snippet, selection or multiple cursors', () => {
   expect(pkg.contributes.keybindings).toEqual([

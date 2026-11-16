@@ -12,6 +12,7 @@ import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
+import { LocalServers } from './local/vscode/servers';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
@@ -25,6 +26,9 @@ const REMOTE_DEBOUNCE_MS = 250;
 const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
+
+/** Kept for deactivate(), which has no context to reach the manager through. */
+let localServers: LocalServers | undefined;
 
 export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean; nextEditPending: () => ReturnType<NextEditController['pendingEdit']> } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
@@ -172,8 +176,13 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     }),
   );
 
+  const servers = new LocalServers({ context, log, settings: () => settings });
+  localServers = servers;
+  sub(servers);
+
   for (const d of registerCommands({
     context,
+    localServers: servers,
     status,
     secrets,
     channel,
@@ -225,7 +234,14 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
+  // Not awaited: a model can take a minute to load, and activation must not wait for it.
+  void servers.startSelected();
   return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native, nextEditPending: () => nextEdit.pendingEdit() };
 }
 
-export function deactivate(): void {}
+/** Stops the llama-servers the extension started; VS Code waits briefly for the promise. */
+export function deactivate(): Promise<void> | undefined {
+  const servers = localServers;
+  localServers = undefined;
+  return servers?.stopAll();
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type Inspected, type RawSettingsSource, type Settings } from '../../../src/config/settings';
-import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, serversToStart, type ManagedServer } from '../../../src/local/backendEntry';
+import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, portFor, serversToStart, type ManagedServer } from '../../../src/local/backendEntry';
 import { RECIPES, type Recipe } from '../../../src/local/recipes';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
@@ -143,5 +143,17 @@ describe('serversToStart', () => {
   });
   test('the master switch off starts nothing', () => {
     expect(serversToStart([a, b, c], settings({ enabled: false, 'fim.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([]);
+  });
+});
+
+describe('portFor', () => {
+  test('a free saved port is kept', async () => {
+    const asked: number[] = [];
+    const free = (p: number): Promise<number> => (asked.push(p), Promise.resolve(p));
+    expect(await portFor(8012, free)).toEqual({ port: 8012, changed: false });
+    expect(asked).toEqual([8012]);
+  });
+  test('a taken saved port gets the new one', async () => {
+    expect(await portFor(8012, () => Promise.resolve(53117))).toEqual({ port: 53117, changed: true });
   });
 });

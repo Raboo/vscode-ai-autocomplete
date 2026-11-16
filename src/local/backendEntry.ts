@@ -55,3 +55,9 @@ export function serversToStart(managed: ManagedServer[], s: Settings): ManagedSe
   const existing = new Set(s.backends.map((b) => b.id));
   return managed.filter((m) => existing.has(m.backendId) && selected.has(m.backendId));
 }
+
+/** The saved port when `free` gives it back, otherwise the one `free` found instead (`changed`: the backend's URL must follow). */
+export async function portFor(saved: number, free: (preferred: number) => Promise<number>): Promise<{ port: number; changed: boolean }> {
+  const port = await free(saved);
+  return { port, changed: port !== saved };
+}

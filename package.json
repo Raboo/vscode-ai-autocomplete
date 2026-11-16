@@ -529,6 +529,11 @@
         "command": "aiAutocomplete.nextEditDismiss",
         "title": "Next Edit: Dismiss (internal)",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.stopLocalModels",
+        "title": "Stop Local Models",
+        "category": "AI Autocomplete"
       }
     ],
     "menus": {

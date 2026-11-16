@@ -37,6 +37,8 @@ export interface CommandDeps {
   nextEditTab(): Promise<void>;
   /** Esc on a Next Edit shown as decorations. */
   nextEditDismiss(): void;
+  /** The llama-servers the extension started. */
+  localServers: { running(): string[]; stopAll(): Promise<void> };
 }
 
 /** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
@@ -184,6 +186,15 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('nextEditAccepted', () => d.nextEditAccepted()),
     reg('nextEditTab', () => d.nextEditTab()),
     reg('nextEditDismiss', () => d.nextEditDismiss()),
+    reg('stopLocalModels', async () => {
+      const ids = d.localServers.running();
+      if (ids.length === 0) {
+        void vscode.window.showInformationMessage('No local models are running.');
+        return;
+      }
+      await d.localServers.stopAll();
+      void vscode.window.showInformationMessage(`Stopped local models: ${ids.join(', ')}.`);
+    }),
     reg('enableNativeNextEdit', async () => {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');

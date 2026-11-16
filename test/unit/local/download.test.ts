@@ -191,16 +191,141 @@ describe('downloadModel', () => {
       // never ends
     };
     const ac = new AbortController();
+    let counted = 0;
     const o = opts({
       signal: ac.signal,
       onProgress: (r) => {
-        if (r >= 3000) setTimeout(() => ac.abort(), 50);
+        counted = r;
+        if (r > 0) ac.abort();
       },
     });
     const e = await failure(downloadModel(o));
     expect(e.kind).toBe('cancelled');
+    expect(counted).toBeGreaterThan(0);
     const kept = (await stat(`${o.dest}.part`)).size;
-    expect(kept).toBe(3000);
+    expect(kept).toBeLessThanOrEqual(counted);
+  });
+
+  it('throws cancelled while hashing a present dest', async () => {
+    const o = opts();
+    await downloadModel(o);
+    const ac = new AbortController();
+    ac.abort();
+    const e = await failure(downloadModel({ ...o, signal: ac.signal }));
+    expect(e.kind).toBe('cancelled');
+  });
+
+  it('throws cancelled while hashing the finished download, keeps the .part and never returns downloaded', async () => {
+    const o = opts();
+    await seedPart(o.dest, CONTENT); // complete: no request, straight to verification
+    const ac = new AbortController();
+    ac.abort();
+    const e = await failure(downloadModel({ ...o, signal: ac.signal }));
+    expect(e.kind).toBe('cancelled');
+    expect((await stat(`${o.dest}.part`)).size).toBe(CONTENT.length);
+    await expect(stat(o.dest)).rejects.toThrow();
+    expect(ranges).toEqual([]);
+  });
+
+  it('treats a 206 with a wrong Content-Range start as an error', async () => {
+    handler = (_req, res) => {
+      res.writeHead(206, { 'content-range': `bytes 0-${CONTENT.length - 1}/${CONTENT.length}` });
+      res.end(CONTENT);
+    };
+    const o = opts();
+    await seedPart(o.dest, CONTENT.subarray(0, 4000));
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('http');
+  });
+
+  it('treats a 206 without Content-Range as an error', async () => {
+    handler = (_req, res) => {
+      res.writeHead(206);
+      res.end(CONTENT.subarray(4000));
+    };
+    const o = opts();
+    await seedPart(o.dest, CONTENT.subarray(0, 4000));
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('http');
+  });
+
+  it('deletes the .part on a 416 so the next run starts over', async () => {
+    let first = true;
+    handler = (req, res) => {
+      if (first) {
+        first = false;
+        res.writeHead(416);
+        res.end();
+      } else {
+        serveWithRange(req, res);
+      }
+    };
+    const o = opts();
+    await seedPart(o.dest, CONTENT.subarray(0, 4000));
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('http');
+    await expect(stat(`${o.dest}.part`)).rejects.toThrow();
+    expect(await downloadModel(o)).toBe('downloaded');
+    expect(ranges).toEqual(['bytes=4000-', undefined]);
+  });
+
+  it('stops and deletes the .part when more than the expected bytes arrive', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200);
+      res.end(Buffer.concat([CONTENT, Buffer.from('extra')]));
+    };
+    const o = opts();
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('http');
+    await expect(stat(`${o.dest}.part`)).rejects.toThrow();
+    await expect(stat(o.dest)).rejects.toThrow();
+  });
+
+  it('drops a stale .part larger than bytes and downloads from scratch', async () => {
+    const o = opts();
+    await seedPart(o.dest, Buffer.concat([CONTENT, CONTENT]));
+    expect(await downloadModel(o)).toBe('downloaded');
+    expect(ranges).toEqual([undefined]);
+    expect(await readFile(o.dest)).toEqual(CONTENT);
+  });
+
+  it('downloads again when dest has the right size but a wrong hash', async () => {
+    const o = opts();
+    await mkdir(dirname(o.dest), { recursive: true });
+    await writeFile(o.dest, Buffer.alloc(CONTENT.length, 1));
+    expect(await downloadModel(o)).toBe('downloaded');
+    expect(ranges).toHaveLength(1);
+    expect(await readFile(o.dest)).toEqual(CONTENT);
+  });
+
+  it('maps ENOSPC to space', async () => {
+    const e = await failure(
+      downloadModel(
+        opts({
+          freeBytes: async () => {
+            throw Object.assign(new Error('no space left on device /secret/path'), { code: 'ENOSPC' });
+          },
+        }),
+      ),
+    );
+    expect(e.kind).toBe('space');
+    expect(e.message).not.toContain('/secret/path');
+  });
+
+  it('maps other file system errors to write with a fixed message', async () => {
+    const o = opts();
+    await writeFile(join(dir, 'models'), 'a file, not a directory'); // mkdir of dest dir fails
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('write');
+    expect(e.message).toBe('Could not write the model file.');
+  });
+
+  it('maps a write stream error to write', async () => {
+    const o = opts();
+    await mkdir(`${o.dest}.part`, { recursive: true }); // the .part path is a directory
+    const e = await failure(downloadModel(o));
+    expect(e.kind).toBe('write');
+    expect(e.message).toBe('Could not write the model file.');
   });
 
   it('keeps the .part and throws http when the stream ends early', async () => {

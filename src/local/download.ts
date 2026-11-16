@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat, statfs } from 'node:fs/promises';
+import { once } from 'node:events';
 import { dirname } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 
-export type DownloadErrorKind = 'space' | 'http' | 'checksum' | 'url' | 'cancelled';
+export type DownloadErrorKind = 'space' | 'http' | 'checksum' | 'url' | 'cancelled' | 'write';
 
 export class DownloadError extends Error {
   constructor(
@@ -34,10 +35,21 @@ const MAX_REDIRECTS = 5;
 const SPACE_MARGIN = 1.1;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
-export async function sha256File(path: string): Promise<string> {
+function cancelled(): DownloadError {
+  return new DownloadError('The download was cancelled.', 'cancelled');
+}
+
+/** Hashes a file; with a `signal`, stops with a `cancelled` DownloadError between chunks. */
+export async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(path)) {
+    if (signal?.aborted) {
+      throw cancelled();
+    }
     hash.update(chunk as Buffer);
+  }
+  if (signal?.aborted) {
+    throw cancelled();
   }
   return hash.digest('hex');
 }
@@ -45,9 +57,23 @@ export async function sha256File(path: string): Promise<string> {
 async function sizeOf(path: string): Promise<number | undefined> {
   try {
     return (await stat(path)).size;
-  } catch {
-    return undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw err;
   }
+}
+
+/** Turns a file system error into a DownloadError with fixed text (never the raw error). */
+function fsError(err: unknown): DownloadError {
+  if (err instanceof DownloadError) {
+    return err;
+  }
+  if ((err as NodeJS.ErrnoException | undefined)?.code === 'ENOSPC') {
+    return new DownloadError('The disk ran out of space while saving the model.', 'space');
+  }
+  return new DownloadError('Could not write the model file.', 'write');
 }
 
 async function defaultFreeBytes(dir: string): Promise<number> {
@@ -99,13 +125,16 @@ async function stream(
   let offset = partBytes;
   if (res.status === 206) {
     const m = /^bytes (\d+)-/.exec(res.headers.get('content-range') ?? '');
-    if (m && Number(m[1]) !== partBytes) {
+    if (!m || Number(m[1]) !== partBytes) {
       await res.body?.cancel();
       throw new DownloadError('The server resumed from the wrong position.', 'http');
     }
   } else if (res.status === 200) {
     offset = 0; // the server ignored the Range header: start over
   } else {
+    if (res.status === 416) {
+      await rm(part, { force: true }); // the partial file does not fit the server's file: start over next time
+    }
     await res.body?.cancel();
     throw new DownloadError(`The server answered with status ${res.status}.`, 'http');
   }
@@ -117,21 +146,56 @@ async function stream(
   const counter = new Transform({
     transform(chunk: Buffer, _enc, cb) {
       received += chunk.length;
+      if (received > o.bytes) {
+        cb(new DownloadError('The server sent more data than expected.', 'http'));
+        return;
+      }
       o.onProgress(received, o.bytes);
       cb(null, chunk);
     },
   });
   const sink = createWriteStream(part, { flags: offset === 0 ? 'w' : 'a' });
-  await pipeline(Readable.fromWeb(res.body as WebReadableStream<Uint8Array>), counter, sink);
+  try {
+    await pipeline(Readable.fromWeb(res.body as WebReadableStream<Uint8Array>), counter, sink);
+  } catch (err) {
+    // File system errors carry a `syscall`; network and abort errors do not.
+    if (typeof (err as NodeJS.ErrnoException | undefined)?.syscall === 'string') {
+      throw fsError(err);
+    }
+    if (err instanceof DownloadError) {
+      if (!sink.closed) {
+        await once(sink, 'close'); // the file may still be opening: remove it only once it is closed
+      }
+      await rm(part, { force: true }); // more bytes than the recipe says: the file is wrong
+    }
+    throw err;
+  }
 }
 
 /** Downloads `o.url` to `o.dest` (resuming `<dest>.part`) and verifies the SHA-256. */
 export async function downloadModel(o: DownloadOptions): Promise<'downloaded' | 'present'> {
+  try {
+    return await run(o);
+  } catch (err) {
+    if (err instanceof DownloadError) {
+      throw err;
+    }
+    if (o.signal.aborted) {
+      throw cancelled();
+    }
+    throw fsError(err);
+  }
+}
+
+async function run(o: DownloadOptions): Promise<'downloaded' | 'present'> {
   const part = `${o.dest}.part`;
   const dir = dirname(o.dest);
   await mkdir(dir, { recursive: true });
 
-  if ((await sizeOf(o.dest)) === o.bytes && (await sha256File(o.dest)) === o.sha256.toLowerCase()) {
+  if (
+    (await sizeOf(o.dest)) === o.bytes &&
+    (await sha256File(o.dest, o.signal)) === o.sha256.toLowerCase()
+  ) {
     return 'present';
   }
 
@@ -145,28 +209,31 @@ export async function downloadModel(o: DownloadOptions): Promise<'downloaded' | 
     throw new DownloadError('There is not enough free disk space for this model.', 'space');
   }
 
-  try {
-    if (partBytes < o.bytes) {
+  if (partBytes < o.bytes) {
+    try {
       const res = await open(o, partBytes);
       await stream(o, res, part, partBytes);
+    } catch (err) {
+      if (err instanceof DownloadError) {
+        throw err;
+      }
+      if (o.signal.aborted) {
+        throw cancelled();
+      }
+      throw new DownloadError('The download failed: the connection was interrupted.', 'http');
     }
-  } catch (err) {
-    if (err instanceof DownloadError) {
-      throw err;
-    }
-    if (o.signal.aborted) {
-      throw new DownloadError('The download was cancelled.', 'cancelled');
-    }
-    throw new DownloadError('The download failed: the connection was interrupted.', 'http');
   }
 
   const size = await sizeOf(part);
   if (size !== undefined && size < o.bytes) {
     throw new DownloadError('The download ended early; run it again to resume.', 'http');
   }
-  if ((await sha256File(part)) !== o.sha256.toLowerCase()) {
+  if ((await sha256File(part, o.signal)) !== o.sha256.toLowerCase()) {
     await rm(part, { force: true });
     throw new DownloadError('The downloaded file does not match its checksum.', 'checksum');
+  }
+  if (o.signal.aborted) {
+    throw cancelled();
   }
   await rename(part, o.dest);
   return 'downloaded';

@@ -150,7 +150,9 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
         void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
       };
-      const path = argvPath(vscode.env.appName, homedir(), process.env);
+      // Running on the remote side of a remote window, this home is the remote machine's; VS Code reads the local argv.json.
+      const remoteSide = vscode.env.remoteName !== undefined && d.context.extension.extensionKind === vscode.ExtensionKind.Workspace;
+      const path = remoteSide ? undefined : argvPath(vscode.env.appName, homedir(), process.env);
       if (!path) return manual();
       try {
         const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {

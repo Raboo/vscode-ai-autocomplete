@@ -470,7 +470,10 @@ export class NextEditController implements vscode.Disposable {
   private notifyOnce(key: string, text: string): void {
     if (this.notified.has(key)) return;
     this.notified.add(key);
-    void vscode.window.showWarningMessage(text, 'Show Log').then((c) => c && vscode.commands.executeCommand('aiAutocomplete.showLog'));
+    void vscode.window
+      .showWarningMessage(text, 'Show Log')
+      .then((c) => (c ? vscode.commands.executeCommand('aiAutocomplete.showLog') : undefined))
+      .then(undefined, (err: unknown) => this.d.log.debug(`next edit: notification failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
   private once(key: string, log: () => void): void {

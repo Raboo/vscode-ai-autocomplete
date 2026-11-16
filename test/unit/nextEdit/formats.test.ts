@@ -9,6 +9,11 @@ describe('pickFormat', () => {
     expect(pickFormat('auto', undefined).id).toBe('chatXtab');
   });
 
+  it('auto picks sweep for Sweep model ids, and an explicit sweep wins over the model', () => {
+    expect(pickFormat('auto', 'sweep-next-edit-1.5b').id).toBe('sweep');
+    expect(pickFormat('sweep', 'x').id).toBe('sweep');
+  });
+
   it('an explicit setting wins over the model id', () => {
     expect(pickFormat('chatXtab', 'zeta-2.1').id).toBe('chatXtab');
   });

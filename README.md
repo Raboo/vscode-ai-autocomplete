@@ -151,7 +151,7 @@ With a decoration showing:
 
 - `Tab` moves the cursor to the edit when it is away from the cursor line; a second `Tab` applies it. When the edit is at the cursor line, one `Tab` applies it.
 - `Esc` dismisses it, and nothing shows again for 5 s.
-- `Tab` keeps its normal job when something else wants it: accepting ghost text or a suggest-widget item, moving through snippet placeholders, and indenting a selection.
+- `Tab` keeps its normal job when something else wants it: accepting ghost text, a native inline edit or a suggest-widget item, moving through snippet placeholders, and indenting a selection or multiple cursors. `Esc` keeps its normal job with multiple cursors, ghost text, the suggest widget or snippet mode.
 - Any change to the file, a switch to another editor, snooze or a new result clears the decoration. `Tab` never applies an edit to text that changed.
 
 **Native inline edits:** run **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code (not just reload the window). The command adds this extension to `enable-proposed-api` in VS Code's `argv.json`. It keeps the comments in that file; if the file is malformed it is left alone and VS Code's runtime-arguments file opens with instructions to paste. Until you opt in, VS Code logs an error that the extension declares a proposed API it may not use. That is expected.

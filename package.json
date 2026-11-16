@@ -516,12 +516,12 @@
       {
         "command": "aiAutocomplete.nextEditTab",
         "key": "tab",
-        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !inlineSuggestionVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly"
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !editorHasMultipleSelections && !inlineSuggestionVisible && !inlineEditIsVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly"
       },
       {
         "command": "aiAutocomplete.nextEditDismiss",
         "key": "escape",
-        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible"
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasMultipleSelections && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible"
       }
     ]
   },

@@ -31,17 +31,17 @@ test('commands are categorised and the internal commands are hidden from the pal
   expect(pkg.contributes.menus.commandPalette).not.toContainEqual({ command: 'aiAutocomplete.openSettings', when: 'false' });
   expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.openSettings')?.title).toBe('Open Settings');
 });
-test('Tab and Esc act on a pending Next Edit decoration only, never over a suggestion, snippet or selection', () => {
+test('Tab and Esc act on a pending Next Edit decoration only, never over a suggestion, inline edit, snippet, selection or multiple cursors', () => {
   expect(pkg.contributes.keybindings).toEqual([
     {
       command: 'aiAutocomplete.nextEditTab',
       key: 'tab',
-      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !inlineSuggestionVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly',
+      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !editorHasMultipleSelections && !inlineSuggestionVisible && !inlineEditIsVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly',
     },
     {
       command: 'aiAutocomplete.nextEditDismiss',
       key: 'escape',
-      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible',
+      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !editorHasMultipleSelections && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible',
     },
   ]);
 });

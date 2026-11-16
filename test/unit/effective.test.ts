@@ -144,6 +144,15 @@ describe('Next Edit values', () => {
     expect(resolveNextEdit(strata({ fim }), 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
     expect(resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
   });
+  test('a separate Next Edit model keeps the backend extraBody and its extra-context restriction, nothing else', () => {
+    const fim = { extraContext: false, extraBody: { cache_prompt: true }, temperature: 0.9, maxTokens: 7 };
+    const v = resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings());
+    expect(v.extraContext).toBe(false);
+    expect(v.extraBody).toMatchObject({ cache_prompt: true });
+    expect(v.maxTokens).not.toBe(7);
+    expect(resolveNextEdit(strata({ fim: { extraContext: false }, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).extraBody).not.toHaveProperty('cache_prompt');
+    expect(resolveNextEdit(strata({ nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).extraContext).toBe(true);
+  });
   test('resolveNextEdit keeps omitted sampling omitted', () => {
     const b = strata({ fim: { temperature: 0.7 } });
     const v = resolveNextEdit(b, 'kimi-k3', settings());

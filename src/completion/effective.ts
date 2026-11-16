@@ -128,11 +128,13 @@ export function nextEditModel(backend: BackendConfig, detected: string | undefin
 
 /**
  * The values one Next Edit request uses. The backend's `fim` block belongs to the FIM model, so a separate Next Edit model
- * keeps only its `extraBody`; sampling and the deadline are Next Edit's own.
+ * keeps only what belongs to the backend: its `extraBody` and its `extraContext` restriction. Sampling and the deadline are Next Edit's own.
  */
 export function resolveNextEdit(backend: BackendConfig, model: string | undefined, s: Settings): FimValues {
   const own = backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
-  const target: BackendConfig = own ? { ...backend, fim: backend.fim?.extraBody ? { extraBody: backend.fim.extraBody } : undefined } : backend;
+  const b = backend.fim;
+  const kept = { ...(b?.extraBody ? { extraBody: b.extraBody } : {}), ...(b?.extraContext !== undefined ? { extraContext: b.extraContext } : {}) };
+  const target: BackendConfig = own ? { ...backend, fim: Object.keys(kept).length > 0 ? kept : undefined } : backend;
   const { values } = resolveFim(target, model, s);
   return { ...values, sampling: values.samplingParams === 'omit' ? values.sampling : { ...NEXT_EDIT_SAMPLING }, timeoutMs: s.nextEdit.timeoutMs };
 }

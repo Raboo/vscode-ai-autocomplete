@@ -93,8 +93,9 @@ describe('freePort', () => {
 describe('LlamaServerProcess.start', () => {
   it('resolves once /health answers 200 (503 first) and logs each output line', async () => {
     let calls = 0;
+    const urls: Array<string | undefined> = [];
     const server = await listen((req, res) => {
-      expect(req.url).toBe('/health');
+      urls.push(req.url);
       calls += 1;
       res.writeHead(calls === 1 ? 503 : 200);
       res.end();
@@ -109,6 +110,7 @@ describe('LlamaServerProcess.start', () => {
     const proc = await pending;
     expect(proc.port).toBe(port);
     expect(calls).toBeGreaterThanOrEqual(2);
+    expect(urls.every((u) => u === '/health')).toBe(true);
     await new Promise((r) => setTimeout(r, 20));
     expect(lines).toEqual(expect.arrayContaining(['loading model', 'partial line', 'ready']));
   });
@@ -147,6 +149,22 @@ describe('LlamaServerProcess.start', () => {
     const child = new FakeChild();
     await expect(LlamaServerProcess.start(startOpts(child, port, { timeoutMs: 100 }))).rejects.toBeInstanceOf(LocalRuntimeError);
     expect(child.signals).toEqual(['SIGTERM']);
+  });
+});
+
+describe('LlamaServerProcess.start deadline escalation', () => {
+  it('escalates to SIGKILL when the child ignores SIGTERM at the deadline', async () => {
+    vi.useFakeTimers();
+    const child = new FakeChild();
+    child.exitOnSignal = undefined;
+    const loading = (async () => new Response(null, { status: 503 })) as unknown as typeof fetch;
+    const pending = LlamaServerProcess.start(startOpts(child, 1, { fetchFn: loading, timeoutMs: 100 }));
+    const assertion = expect(pending).rejects.toBeInstanceOf(LocalRuntimeError);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(child.signals).toEqual(['SIGTERM']);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+    expect(child.signals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 });
 
@@ -189,10 +207,30 @@ describe('LlamaServerProcess.stop', () => {
   });
 });
 
+describe('stream errors', () => {
+  it('does not throw when an output stream errors', async () => {
+    const server = await listen((_req, res) => res.writeHead(200).end());
+    const child = new FakeChild();
+    const pending = LlamaServerProcess.start(startOpts(child, (server.address() as AddressInfo).port));
+    child.stdout.destroy(new Error('pipe broke'));
+    await expect(pending).resolves.toBeInstanceOf(LlamaServerProcess);
+  });
+});
+
 describe('defaultSpawn', () => {
   it('reports a missing binary as an exit instead of an unhandled error', async () => {
     const child = defaultSpawn('/definitely/not/a/binary', []);
     const code = await new Promise((r) => child.once('exit', (c) => r(c)));
-    expect(code).not.toBe(0);
+    expect(code).toBeNull();
+    expect(child.spawnError?.message).toContain('ENOENT');
+  });
+
+  it('start fails with the spawn error message for a missing binary', async () => {
+    const closed = await listen(() => {});
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise<void>((r) => closed.close(() => r()));
+    await expect(
+      LlamaServerProcess.start({ binary: '/definitely/not/a/binary', args: [], port, spawnFn: defaultSpawn, log: () => {}, pollMs: 10 }),
+    ).rejects.toThrow(/Could not start llama-server: spawn .*ENOENT/);
   });
 });

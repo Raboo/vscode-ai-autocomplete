@@ -55,6 +55,8 @@ export async function freePort(preferred?: number): Promise<number> {
 
 export interface ChildLike {
   readonly pid?: number;
+  /** Set when the process could not be started at all (for example ENOENT). */
+  readonly spawnError?: Error;
   stdout: NodeJS.ReadableStream | null;
   stderr: NodeJS.ReadableStream | null;
   kill(signal?: NodeJS.Signals): boolean;
@@ -65,8 +67,13 @@ export type SpawnLike = (cmd: string, args: string[]) => ChildLike;
 
 export const defaultSpawn: SpawnLike = (cmd, args) => {
   const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  // A binary that cannot start (ENOENT, EACCES) emits 'error' and no 'exit': report it as an exit.
-  child.once('error', () => child.emit('exit', null, null));
+  // A binary that cannot start (ENOENT, EACCES) emits 'error' and no 'exit': keep the error and
+  // report an exit. Without a pid the spawn itself failed; other errors (a failed kill) are ignored.
+  child.on('error', (err) => {
+    if (child.pid !== undefined) return;
+    Object.assign(child, { spawnError: err });
+    child.emit('exit', null, null);
+  });
   return child;
 };
 
@@ -93,6 +100,7 @@ function forEachLine(stream: NodeJS.ReadableStream | null, onLine: (line: string
     };
     stream.once('end', end);
     stream.once('close', end);
+    stream.on('error', end);
   });
 }
 
@@ -149,13 +157,14 @@ export class LlamaServerProcess {
       }
       if (proc.hasExited) break;
       if (Date.now() >= deadline) {
-        child.kill('SIGTERM');
+        await proc.stop();
         throw new LocalRuntimeError(`llama-server did not become ready within ${Math.round(timeoutMs / 1000)} s.${formatTail(tail)}`);
       }
       await Promise.race([sleep(pollMs), proc.exited]);
     }
     // Let the last output reach the log before building the message.
     await Promise.race([drained, sleep(OUTPUT_DRAIN_MS)]);
+    if (child.spawnError) throw new LocalRuntimeError(`Could not start llama-server: ${child.spawnError.message}`);
     throw new LocalRuntimeError(`llama-server exited (${proc.exitInfo}) before it was ready.${formatTail(tail)}`);
   }
 

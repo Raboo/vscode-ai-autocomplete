@@ -54,6 +54,15 @@ export function modelListTag(cfg: BackendConfig, model: string, s: Settings, thi
   return cfg.use.completions ? modelTag(cfg, model, s, thinkingMandatory) : nextEditFormatLabel(s.nextEdit.format, model);
 }
 
+/**
+ * The loaded model list after the Completions box flipped, without a new request. Unticked: every tag becomes the Next Edit format,
+ * which needs only the id. Ticked: the completion tags need what the server said about mandatory thinking, which the draft does not keep, so undefined (clear the list).
+ */
+export function retagModels(models: readonly { id: string; tag: string }[], cfg: BackendConfig, s: Settings): { id: string; tag: string }[] | undefined {
+  if (cfg.use.completions) return undefined;
+  return models.map((m) => ({ id: m.id, tag: modelListTag(cfg, m.id, s) }));
+}
+
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
   const nextEditOnly = cfg.use.completions ? nextEditOnlyNote(model) : undefined;
   if (nextEditOnly) return `${nextEditOnly.text}; ${nextEditOnly.hint}`;

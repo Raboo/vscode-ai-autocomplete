@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
-import { buildPageState, dotFor, modelListTag, modelTag, type PageInputs } from '../../src/manage/pageState';
+import { buildPageState, dotFor, modelListTag, modelTag, retagModels, type PageInputs } from '../../src/manage/pageState';
 import type { BackendConfig } from '../../src/types';
 import type { BackendForm, TestStep } from '../../src/manage/protocol';
 
@@ -75,6 +75,14 @@ describe('page state', () => {
     expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', base())).toBe('chat prompt (chatXtab)');
     const forced = { ...base(), nextEdit: { ...base().nextEdit, format: 'zeta21' as const } };
     expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', forced)).toBe('Zeta 2.1 format');
+  });
+
+  test('retagModels: unticking Completions retags from the ids; ticking it needs the server again', () => {
+    const cfg = (use: BackendConfig['use']): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use });
+    const models = [{ id: 'zeta-2.1', tag: 'no completion template' }, { id: 'qwen2.5-coder-7b', tag: 'ready' }];
+    expect(retagModels(models, cfg({ completions: false, nextEdit: true }), base())).toEqual([{ id: 'zeta-2.1', tag: 'Zeta 2.1 format' }, { id: 'qwen2.5-coder-7b', tag: 'chat prompt (chatXtab)' }]);
+    expect(retagModels(models, cfg({ completions: true, nextEdit: true }), base())).toBeUndefined();
+    expect(models[0]!.tag).toBe('no completion template');
   });
 
   test('a draft with a malformed use counts as ticked', () => {

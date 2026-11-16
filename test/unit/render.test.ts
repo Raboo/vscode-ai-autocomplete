@@ -195,6 +195,15 @@ describe('backends page render', () => {
     expect(neIn).not.toContain('in use');
   });
 
+  test('cards name their uses', () => {
+    const meta = (uses: { completions: boolean; nextEdit: boolean }): string => renderPage(state({ cards: [card({ uses })] }), ui());
+    expect(meta({ completions: true, nextEdit: true })).toContain('Completions · Next Edit');
+    expect(meta({ completions: true, nextEdit: false })).toContain('Completions only');
+    expect(meta({ completions: true, nextEdit: false })).not.toContain('Next Edit only');
+    expect(meta({ completions: false, nextEdit: true })).toContain('Next Edit only');
+    expect(meta({ completions: false, nextEdit: true })).not.toContain('Completions only');
+  });
+
   test('the edit form shows the use buttons for the saved card', () => {
     const html = renderPage(state({ cards: [card({ id: 'lm' })], edit: edit() }), ui());
     expect(html).toMatch(/id="a-use-lm"[^>]*>Use for completions</);

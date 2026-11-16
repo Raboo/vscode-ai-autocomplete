@@ -75,7 +75,8 @@ function collapsedCard(c: CardView): string {
   // The Next Edit model is named when it differs from the completion model (always, for a Next Edit-only backend).
   const nextEdit = c.uses.nextEdit && (!c.uses.completions || (c.nextEditModel !== undefined && c.nextEditModel !== c.model))
     ? [`Next Edit model: ${c.nextEditModel ?? 'auto-detect'}`] : [];
-  const meta = [c.typeLabel, c.baseUrl, ...(c.uses.completions ? [model] : []), ...nextEdit, ...(c.keyStored ? ['API key set'] : [])].map(e).join(' · ');
+  const uses = c.uses.completions && c.uses.nextEdit ? 'Completions · Next Edit' : c.uses.completions ? 'Completions only' : 'Next Edit only';
+  const meta = [c.typeLabel, c.baseUrl, uses, ...(c.uses.completions ? [model] : []), ...nextEdit, ...(c.keyStored ? ['API key set'] : [])].map(e).join(' · ');
   const actions = button('test', 'Test', { id: `a-test-${c.id}`, dataId: c.id })
     + button('edit', 'Edit', { id: `a-edit-${c.id}`, dataId: c.id })
     + useButtons(c)

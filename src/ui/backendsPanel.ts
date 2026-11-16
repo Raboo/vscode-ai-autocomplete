@@ -7,7 +7,7 @@ import type { Settings } from '../config/settings';
 import type { Log } from '../log';
 import { completionServed, explainFailure, runConnectionTest, type ConnectionTestResult } from '../manage/connectionTest';
 import { entryToForm, formToConfig, formToEntry, knownChanged, newForm, planRename, removeBackend, retypeForm, upsertBackend, useFromUnknown, validateForm, type FieldError } from '../manage/form';
-import { buildPageState, modelListTag, type EditDraft } from '../manage/pageState';
+import { buildPageState, modelListTag, retagModels, type EditDraft } from '../manage/pageState';
 import type { BackendForm, HostMessage, PageMessage, PageState, ServerTypeId, TestStep } from '../manage/protocol';
 import { SERVER_TYPES } from '../manage/serverTypes';
 import type { BackendConfig } from '../types';
@@ -225,6 +225,13 @@ export class BackendsPanel implements vscode.Disposable {
       this.running.get('models')?.abort();
       delete d.models;
       delete d.modelsError;
+    }
+    if (d.models && next.use.completions !== d.form.use.completions) {
+      // The tags follow the Completions box: recompute them from the loaded ids, or drop the list when that is not possible.
+      const cfg = formToConfig(next);
+      const tagged = cfg ? retagModels(d.models, cfg, this.d.getSettings()) : undefined;
+      if (tagged) d.models = tagged;
+      else delete d.models;
     }
     d.form = next;
     this.hostErrors = [];

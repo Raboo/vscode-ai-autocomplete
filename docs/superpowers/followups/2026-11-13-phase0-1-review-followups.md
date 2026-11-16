@@ -212,3 +212,16 @@ Left open by the Phase 3a plan, its task reviews and its final review.
 - Two workspace folders with the same name still collide: paths carry the folder name (R24), not a unique folder id, so their same-named files share one history snapshot and one snippet.
 - A region with a line starting with ```` ``` ```` (a Markdown code block) is not sent (R22): the answer's own fence would close on it. Supporting it needs a longer outer fence, which is a prompt change.
 - Pull the controller's eligibility and store-or-drop decisions (version, editor, snooze, cursor, native UI) into pure functions with unit tests; today only the integration tests cover them.
+
+### Smaller review notes (Phase 3a)
+
+- A stream cut off at max tokens right after a bare ```` ``` ```` line counts as closed; treat `finish_reason: length` as truncated (R29).
+- If the cursor moves after a ghost result is stored but before VS Code runs the queued trigger, FIM runs once at the new cursor (R30). The ghost-cursor rule, remote eligibility, snooze during a request and the remote-side opt-in path have no automated tests.
+- `history.test.ts` "when the merged diff is too large, the edit becomes its own entry" relies on two ~400-edit diffs finishing inside the 50 ms bound; shrink the file if CI ever flakes (R31).
+- Unit-test gaps: history merge cancel-out and merge-then-cap paths, top-of-file insertion header; region tests with mixed line lengths and an exact-budget boundary; chatXtab lines after the region, real clipping, several snippets, `stableChars` with exactly 4 lines; classify on an empty file, a file without a trailing newline and the ghost path that starts above the cursor line; caller-abort propagation and a split empty think block in `request.test.ts`; the Backends page placeholder with a blank model.
+- `clipAroundRegion` throws on a region past the file end (callers pass matching line counts), and unused budget below the region does not flow back above it.
+- `parseChatXtab`'s think-block check duplicates `stream.ts`'s predicate; `runNextEdit` adds its abort listener before its `try`.
+- The provider does not guard `itemFor`; a throw there leaves FIM empty for that call.
+- argv.json is written in place, without a backup or an atomic rename.
+- `useNextEditBackend` repeats `useBackend`'s target rule and `pickBackend`'s lookup; the collapsed backend card does not show `nextEditModel`.
+- Integration: "without the proposed API an edit elsewhere is not applied" also passes when nothing is offered; the stale-result test may pass through cancellation; both launches share one user-data dir.

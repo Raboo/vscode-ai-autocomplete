@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.3.0...v0.4.0) (2026-11-16)
+
+
+### Features
+
+* Sweep and Zeta 2.1 Next Edit formats with a decoration fallback ([#11](https://github.com/Raboo/vscode-ai-autocomplete/issues/11)) ([cb73a88](https://github.com/Raboo/vscode-ai-autocomplete/commit/cb73a889b2b097fbfeb5292831608d11463afdfe))
+
 ## [0.3.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.2.0...v0.3.0) (2026-11-16)
 
 

@@ -2,7 +2,7 @@
   "name": "ai-autocomplete",
   "displayName": "AI Autocomplete",
   "publisher": "raboo",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
   "author": {
@@ -257,7 +257,12 @@
           "type": "string",
           "scope": "resource",
           "default": "auto",
-          "enum": ["auto", "chatXtab", "sweep", "zeta21"],
+          "enum": [
+            "auto",
+            "chatXtab",
+            "sweep",
+            "zeta21"
+          ],
           "enumDescriptions": [
             "Picks the format by the model name.",
             "Chat prompt with the chatXtab tags (our own wording).",
@@ -270,7 +275,11 @@
           "type": "string",
           "scope": "resource",
           "default": "auto",
-          "enum": ["auto", "native", "decorations"],
+          "enum": [
+            "auto",
+            "native",
+            "decorations"
+          ],
           "enumDescriptions": [
             "Native inline edits when the proposed API is enabled, otherwise decorations.",
             "Native ghost text and inline edits (needs the proposed API).",

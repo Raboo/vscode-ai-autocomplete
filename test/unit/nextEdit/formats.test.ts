@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { formatIdFor, nextEditFormatLabel, nextEditOnlyModel, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
 import { tooLong, type NextEditInput } from '../../../src/nextEdit/formats/format';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
+import { nextEditSample } from '../../../src/manage/nextEditSample';
+import { parseSettings } from '../../../src/config/settings';
 
 describe('nextEditOnlyModel', () => {
   it('names Zeta models only; Sweep models can do completions too', () => {
@@ -89,5 +91,18 @@ describe('nextEditFormatLabel', () => {
     expect(nextEditFormatLabel('sweep', 'qwen3.8')).toBe('Sweep v1 format');
     expect(nextEditFormatLabel('zeta21', 'qwen3.8')).toBe('Zeta 2.1 format');
     expect(nextEditFormatLabel('chatXtab', 'zeta-2.1')).toBe('chat prompt (chatXtab)');
+  });
+});
+
+describe('raw-format stops', () => {
+  it('contain no whitespace: LM Studio is sent only such stops, and raw Next Edit formats rely on the server to stop', () => {
+    const settings = parseSettings({ inspect: () => undefined }).settings;
+    for (const model of ['sweep-next-edit-1.5b', 'sweep-next-edit-v2-7b', 'zeta-2.1']) {
+      const format = pickFormat('auto', model);
+      if (format.transport !== 'completion') continue;
+      const { stop } = format.prompt(nextEditSample(format, settings));
+      expect(stop.length, model).toBeGreaterThan(0);
+      for (const s of stop) expect(/\s/.test(s), `${model}: ${JSON.stringify(s)}`).toBe(false);
+    }
   });
 });

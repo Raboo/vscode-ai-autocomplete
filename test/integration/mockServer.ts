@@ -60,7 +60,8 @@ export interface MockOptions {
   nextEditRaw?: { content: string[] };
   /**
    * `POST /v1/completions` (any prompt but Zeta's) streams this content as OpenAI events, ending with finish `stop`, after
-   * removing one leading space from the first non-empty text, as LM Studio's MLX engine does.
+   * removing one leading space from the first non-empty text, as LM Studio's MLX engine does. `GET /api/v0/models` then
+   * lists the model with `compatibility_type: "mlx"`.
    */
   mlx?: { content: string[] };
 }
@@ -95,6 +96,8 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(props));
         } else if (path === '/v1/models' && req.method === 'GET') {
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));
+        } else if (path === '/api/v0/models' && req.method === 'GET' && o.mlx !== undefined) {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, compatibility_type: 'mlx' }] }));
         } else if (path === '/infill' && o.infill404Body !== undefined) {
           res.writeHead(404, { 'content-type': 'application/json' }).end(o.infill404Body);
         } else if (path === '/infill' && o.infill501) {

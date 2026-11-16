@@ -4,9 +4,9 @@ import { heldText, repairFirstSpace } from '../../src/backends/firstSpace';
 async function* chunks(...xs: string[]): AsyncGenerator<string> {
   for (const x of xs) yield x;
 }
-const repaired = async (held: string, xs: string[], onMiss?: () => void): Promise<string> => {
+const repaired = async (held: string, xs: string[], onMiss?: () => void, lineStart = true): Promise<string> => {
   let out = '';
-  for await (const c of repairFirstSpace(chunks(...xs), held, onMiss)) out += c;
+  for await (const c of repairFirstSpace(chunks(...xs), { held, lineStart }, onMiss)) out += c;
   return out;
 };
 
@@ -56,6 +56,11 @@ describe('repairFirstSpace at the start of a line', () => {
   test('an answer that still starts with a space lost one, and gets it back', async () => {
     expect(await repaired('', ['   return', ' x'])).toBe('    return x');
     expect(await repaired('', ['', ' x'])).toBe('  x');
+  });
+  test('without the line-start rule (an engine not known to trim) nothing is added', async () => {
+    expect(await repaired('', ['    return'], undefined, false)).toBe('    return');
+    // The held text is still removed: the prompt was shortened either way.
+    expect(await repaired('n', ['n a'], undefined, false)).toBe(' a');
   });
   test('any other start is left alone, tabs included; later chunks are untouched', async () => {
     expect(await repaired('', ['return', ' x'])).toBe('return x');

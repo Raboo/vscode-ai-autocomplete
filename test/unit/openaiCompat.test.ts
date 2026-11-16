@@ -92,6 +92,27 @@ describe('OpenAiCompatBackend', () => {
     expect((await hosted('vllm', { stop })).stop).toEqual(stop);
   });
 
+  test('the line-start rule applies only to a model LM Studio reports as MLX', async () => {
+    const engines: Record<string, string> = { mlxm: 'mlx', ggufm: 'gguf' };
+    m = await startMockHttp((r) => (r.url === '/api/v0/models'
+      ? { json: { data: Object.entries(engines).map(([id, t]) => ({ id, compatibility_type: t })) } }
+      : { sse: ['{"choices":[{"text":"   return"}]}', '[DONE]'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+    const run = async (model: string) => (await collect(b.streamFim(req({ model, firstSpace: { held: '' } })))).join('');
+    expect(await run('mlxm')).toBe('    return');
+    expect(await run('ggufm')).toBe('   return');
+    expect(await run('unknown')).toBe('   return');
+    // One model list per backend while it answers; an unknown model asks again only after a while.
+    expect(m.requests.filter((r) => r.url === '/api/v0/models')).toHaveLength(1);
+  });
+
+  test('LM Studio chat requests also get only stops without whitespace', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"delta":{"content":"x"}}]}', '[DONE]'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+    for await (const _ of b.streamChat({ messages: [], maxTokens: 1, stop: ['</COMPLETION>', '\n\n'], sampling: {}, thinking: {}, extraBody: {}, signal: new AbortController().signal, timeoutMs: 5000 })) void _;
+    expect(m.requests[0].body.stop).toEqual(['</COMPLETION>']);
+  });
+
   test('a request with firstSpace repairs its stream; a miss is reported', async () => {
     m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"n a"}]}', '{"choices":[{"text":" + b"}]}', '[DONE]'] }));
     const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());

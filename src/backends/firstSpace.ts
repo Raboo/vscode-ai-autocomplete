@@ -4,7 +4,8 @@
  * - text on the cursor's line: the prompt leaves out the line's last non-space character and the spaces after it (the held
  *   text). The answer then starts with the held text, never with a space, and the repair removes it;
  * - an empty or indentation-only line: nothing is held. The trim removes a space only when the answer starts with one, so
- *   an answer that still starts with a space lost one, and one is added back.
+ *   an answer that still starts with a space lost one, and one is added back; only for a model LM Studio reports as MLX,
+ *   since another engine may not trim at all.
  * Design: docs/superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md.
  */
 
@@ -15,10 +16,12 @@ export function heldText(prefix: string): string {
 }
 
 /**
- * The answer `chunks` repaired for `held` (see heldText). Buffers until it can decide, as a chunk can end inside the held text.
+ * The answer `chunks` repaired for `held` (see heldText); `lineStart` applies the line-start rule when nothing is held.
+ * Buffers until it can decide, as a chunk can end inside the held text.
  * An answer that does not start with `held` yields nothing and calls `onMiss`; one that ends inside it yields nothing.
  */
-export async function* repairFirstSpace(chunks: AsyncIterable<string>, held: string, onMiss?: () => void): AsyncGenerator<string> {
+export async function* repairFirstSpace(chunks: AsyncIterable<string>, rules: { held: string; lineStart: boolean }, onMiss?: () => void): AsyncGenerator<string> {
+  const { held, lineStart } = rules;
   let head = '';
   let decided = false;
   for await (const chunk of chunks) {
@@ -30,7 +33,7 @@ export async function* repairFirstSpace(chunks: AsyncIterable<string>, held: str
     if (head === '') continue;
     if (held === '') {
       decided = true;
-      yield head.startsWith(' ') ? ` ${head}` : head;
+      yield lineStart && head.startsWith(' ') ? ` ${head}` : head;
       continue;
     }
     if (head.length < held.length) {

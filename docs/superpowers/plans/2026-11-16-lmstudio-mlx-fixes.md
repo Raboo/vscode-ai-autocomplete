@@ -48,7 +48,7 @@
 **Files:**
 - Modify: `test/integration/mockServer.ts` (`mlx?: { content: string[] }`: `POST /v1/completions` streams the content with one leading space removed from the first non-empty text, ends with finish `stop`), `test/integration/fim.test.ts`
 
-- [x] **Step 1: Tests:** an LM Studio backend (`hostFlavor: 'lmstudio'`, `${baseUrl}/v1`, qwen-coder alias) on `return` with mock content `['n a + b;']` completes to `return a + b;` and the request's prompt ends the prefix with `retur`; on an indented empty line with content `['    return x;']` (the mock trims it to three spaces) the completion has four spaces; the request carries no `\n\n\n` stop.
+- [x] **Step 1: Tests:** an LM Studio backend (`hostFlavor: 'lmstudio'`, `${baseUrl}/v1`, qwen-coder alias) on `return` with mock content `['n a + b;']` completes to `return a + b;` and the request's prompt ends the prefix with `retur`; on the empty line after `{` with content `['  return a + b;']` (the mock trims it to one space) the completion is indented two spaces; the request carries no `\n\n\n` stop.
 - [x] **Step 2: Run** `npm run test:integration`: the new tests pass, the known local failures are unchanged.
 - [x] **Step 3: Commit:** `test: LM Studio MLX repair end to end`
 

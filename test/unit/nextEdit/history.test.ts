@@ -137,3 +137,72 @@ test('renderDiff keeps no-newline markers out of the diff', () => {
 test('renderDiff numbers empty ranges with the line before them', () => {
   expect(renderDiff('f.py', 'a\nb\nc\nd\n', 'a\nb\nd\n')).toBe('--- f.py\n+++ f.py\n@@ -3,1 +2,0 @@\n-c');
 });
+
+test('renderDiff of an empty text adds no blank line', () => {
+  expect(renderDiff('f.py', '', 'x')).toBe('--- f.py\n+++ f.py\n@@ -0,0 +1,1 @@\n+x');
+  expect(renderDiff('f.py', 'x', '')).toBe('--- f.py\n+++ f.py\n@@ -1,1 +0,0 @@\n-x');
+});
+
+test('a change too large to diff quickly records no entry and keeps the new snapshot', () => {
+  const h = new EditHistory();
+  const lines = Array.from({ length: 3000 }, (_, i) => `x${i} = ${i}`);
+  h.open('f', lines.join('\n') + '\n');
+  const reindented = lines.map((l) => `    ${l}`).join('\n') + '\n';
+  const started = performance.now();
+  h.commit('f', reindented);
+  // Unbounded, this diff took seconds; the bound is loose for slow CI runners.
+  expect(performance.now() - started).toBeLessThan(1000);
+  expect(h.entries()).toEqual([]);
+  // The next edit is diffed against the new text.
+  h.commit('f', reindented.replace('    x0 = 0\n', '    x0 = 1\n'));
+  expect(h.entries().map((e) => e.text)).toEqual(['--- f\n+++ f\n@@ -1,1 +1,1 @@\n-    x0 = 0\n+    x0 = 1']);
+});
+
+test('edits that cancel out drop the merged entry', () => {
+  const h = new EditHistory();
+  h.open('f', 'x = 1\ny = 2\n');
+  h.commit('f', 'x = 1\ny = 2\nz = 3\n');
+  h.commit('f', 'x = 12\ny = 2\nz = 3\n');
+  h.commit('f', 'x = 1\ny = 2\nz = 3\n');
+  expect(h.entries().map((e) => e.text)).toEqual(['--- f\n+++ f\n@@ -2,0 +3,1 @@\n+z = 3']);
+});
+
+test('a merge keeps the count, and the next new entry drops the oldest', () => {
+  const h = new EditHistory();
+  const lines = Array.from({ length: 8 }, (_, i) => `l${i}`);
+  const text = () => lines.join('\n') + '\n';
+  h.open('f', text());
+  for (let i = 0; i < 5; i++) {
+    lines[i] = `L${i}`;
+    h.commit('f', text());
+  }
+  lines[4] = 'M4';
+  h.commit('f', text());
+  let e = h.entries();
+  expect(e).toHaveLength(5);
+  expect(e[4].text).toBe('--- f\n+++ f\n@@ -5,1 +5,1 @@\n-l4\n+M4');
+  lines[6] = 'L6';
+  h.commit('f', text());
+  e = h.entries();
+  expect(e).toHaveLength(5);
+  expect(e[0].text).toContain('-l1\n+L1');
+  expect(e[3].text).toContain('-l4\n+M4');
+  expect(e[4].text).toContain('-l6\n+L6');
+});
+
+test('when the merged diff is too large, the edit becomes its own entry', () => {
+  const h = new EditHistory();
+  const lines = Array.from({ length: 1000 }, (_, i) => `x${i}`);
+  const text = () => lines.join('\n') + '\n';
+  h.open('f', text());
+  // 200 changed lines: 400 edits, within the bound.
+  for (let i = 0; i < 200; i++) lines[i] = `y${i}`;
+  h.commit('f', text());
+  // Starts on the same line, so it would merge, but from the first snapshot it is 400 changed lines.
+  lines[0] = 'z0';
+  for (let i = 200; i < 400; i++) lines[i] = `y${i}`;
+  h.commit('f', text());
+  const e = h.entries();
+  expect(e).toHaveLength(2);
+  expect(e[1].text.startsWith('--- f\n+++ f\n@@ -1,1 +1,1 @@\n-y0\n+z0\n@@ -201,200 +201,200 @@\n')).toBe(true);
+});

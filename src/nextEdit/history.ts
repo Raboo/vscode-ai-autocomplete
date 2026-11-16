@@ -1,4 +1,4 @@
-import { structuredPatch } from 'diff';
+import { structuredPatch, type StructuredPatchHunk } from 'diff';
 
 export interface DiffEntry {
   path: string;
@@ -10,19 +10,22 @@ export interface Snippet {
   text: string;
 }
 
-function hunksOf(path: string, before: string, after: string) {
+/** Diff budget: a larger change (a reformat, a generated file) is not worth blocking the extension host for. */
+const MAX_EDIT_LENGTH = 500;
+const DIFF_TIMEOUT_MS = 50;
+
+/** Zero-context hunks, or `undefined` when the change exceeds the diff budget. */
+function hunksOf(path: string, before: string, after: string): StructuredPatchHunk[] | undefined {
   // A missing final newline would add "\ No newline at end of file" lines and make a bare final-newline change an edit.
+  // An empty text stays empty: "\n" would be one blank line.
   const norm = (s: string) => {
     const n = s.replace(/\r\n/g, '\n');
-    return n.endsWith('\n') ? n : n + '\n';
+    return n === '' || n.endsWith('\n') ? n : n + '\n';
   };
-  return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0 }).hunks;
+  return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
 }
 
-/** Zero-context unified diff of one file with 1-based line numbers, or `undefined` when the texts are equal. */
-export function renderDiff(path: string, before: string, after: string): string | undefined {
-  const hunks = hunksOf(path, before, after);
-  if (hunks.length === 0) return undefined;
+function render(path: string, hunks: StructuredPatchHunk[]): string {
   const out = [`--- ${path}`, `+++ ${path}`];
   for (const h of hunks) {
     // Standard numbering: an empty range names the line before it.
@@ -31,6 +34,12 @@ export function renderDiff(path: string, before: string, after: string): string 
     out.push(`@@ -${oldStart},${h.oldLines} +${newStart},${h.newLines} @@`, ...h.lines);
   }
   return out.join('\n');
+}
+
+/** Zero-context unified diff of one file with 1-based line numbers, or `undefined` when the texts are equal or the change exceeds the diff budget. */
+export function renderDiff(path: string, before: string, after: string): string | undefined {
+  const hunks = hunksOf(path, before, after);
+  return hunks === undefined || hunks.length === 0 ? undefined : render(path, hunks);
 }
 
 interface Entry {
@@ -60,16 +69,20 @@ export class EditHistory {
     this.snapshots.set(path, text);
     if (before === undefined) return;
     const hunks = hunksOf(path, before, text);
-    if (hunks.length === 0) return;
+    // Too large to diff within the budget: no entry, and the next edit is diffed against the new text.
+    if (hunks === undefined || hunks.length === 0) return;
     const last = this.list[this.list.length - 1];
     if (last && last.path === path && last.firstOldStart === hunks[0].oldStart) {
-      const merged = renderDiff(path, last.base, text);
-      this.list.pop();
-      if (merged === undefined) return; // the edits cancelled out
-      this.list.push({ ...last, text: merged, firstOldStart: hunksOf(path, last.base, text)[0].oldStart });
-      return;
+      const merged = hunksOf(path, last.base, text);
+      // A merged diff over the budget leaves the older entry and adds this edit as its own.
+      if (merged !== undefined) {
+        this.list.pop();
+        if (merged.length === 0) return; // the edits cancelled out
+        this.list.push({ ...last, text: render(path, merged), firstOldStart: merged[0].oldStart });
+        return;
+      }
     }
-    this.list.push({ path, text: renderDiff(path, before, text) as string, base: before, firstOldStart: hunks[0].oldStart });
+    this.list.push({ path, text: render(path, hunks), base: before, firstOldStart: hunks[0].oldStart });
     if (this.list.length > this.maxEntries) this.list.splice(0, this.list.length - this.maxEntries);
   }
 

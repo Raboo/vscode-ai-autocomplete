@@ -143,6 +143,12 @@ export class NextEditController implements vscode.Disposable {
     this.d.snippets.clear();
   }
 
+  /** Next Edit is on: only then are snapshots, history and idle timers kept (reset() re-snapshots when it is turned on). */
+  private tracking(): boolean {
+    const { nextEdit } = this.d.getSettings();
+    return nextEdit.enabled && nextEdit.backendId !== undefined;
+  }
+
   /** Workspace files and unsaved files that completions may use, as for extra context. */
   private eligible(doc: vscode.TextDocument): boolean {
     const { scheme } = doc.uri;
@@ -155,6 +161,7 @@ export class NextEditController implements vscode.Disposable {
   }
 
   private opened(doc: vscode.TextDocument): void {
+    if (!this.tracking()) return;
     if (!this.eligible(doc)) {
       // A document reopened in a disabled language (a language change closes and reopens it) must not keep diffs or a snippet that would be sent.
       const path = this.path(doc);
@@ -181,7 +188,7 @@ export class NextEditController implements vscode.Disposable {
   private changed(e: vscode.TextDocumentChangeEvent): void {
     const doc = e.document;
     // First, and silently: the log is a document too, so logging about its changes would loop.
-    if (e.contentChanges.length === 0 || !this.eligible(doc)) return;
+    if (e.contentChanges.length === 0 || !this.tracking() || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
     this.cancel(uri);
     this.restartIdle(doc);
@@ -198,7 +205,7 @@ export class NextEditController implements vscode.Disposable {
 
   private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
     const doc = e.textEditor.document;
-    if (!this.eligible(doc)) return;
+    if (!this.tracking() || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
     const seen = this.selectionVersions.get(uri);
     this.selectionVersions.set(uri, doc.version);
@@ -234,7 +241,7 @@ export class NextEditController implements vscode.Disposable {
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
-    this.history.commit(this.path(doc), doc.getText());
+    if (this.tracking()) this.history.commit(this.path(doc), doc.getText());
   }
 
   private schedulePause(uri: string, version: number, delayMs: number): void {

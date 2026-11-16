@@ -101,6 +101,7 @@
 11. **Tab jumps first when the edit is away from the cursor** (the cursor line is outside `[startLine - 1, max(endLine, startLine)]`): it moves the cursor to the edit's first line. A second Tab applies. Esc dismisses and counts as a rejection (the 5 s cooldown).
 12. **A pending decoration is cleared** by any change to its document, an active-editor change, a new result, Esc, apply, snooze or `reset()`. It is not cleared by cursor moves, because the jump is a cursor move. Applying checks the document version first and clears instead of applying when it changed.
 13. **The extra features vscode-nes has are follow-ups, not 3b:** suppression rules, diagnostics in the prompt, a hunk queue, piggybacking on typing, a cursor target after accept, and native `displayLocation` labels. The user asked to stick to the plan. The spec's optional `instinct` format is not in 3b either.
+14. **The status-bar menu gains two entries** (user request, 2026-11-16): **Enable native Next Edit UI...** while the proposed API is not enabled, and **Settings...**, which opens the Settings page filtered to this extension.
 
 ## Review Focus
 
@@ -617,7 +618,49 @@ git add src/nextEdit/vscode/decorations.ts src/nextEdit/vscode/controller.ts src
 git commit -m "feat: show Next Edit inline edits as decorations with Tab and Esc"
 ```
 
-### Task 9: Docs, notices, spec and roadmap
+### Task 9: Native UI and Settings entries in the status-bar menu
+
+Added at the user's request (2026-11-16, Ruling 14).
+
+**Files:**
+- Modify: `src/ui/statusModel.ts`, `src/ui/commands.ts`, `src/extension.ts`, `package.json` (command `aiAutocomplete.openSettings`)
+- Test: `test/unit/statusModel.test.ts`, `test/unit/manifest.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `menuEntries(shown: StatusState, backendCount: number, nextEditBackend: string | undefined, nativeNextEdit: boolean): MenuEntry[]`.
+    - With `nativeNextEdit` false, the entry `{ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' }` follows `selectNextEditBackend`. With it true, the entry is absent: the UI is already on.
+    - `{ label: 'Settings...', id: 'openSettings' }` follows `manageBackends`.
+  - The command `aiAutocomplete.openSettings` (title `Open Settings`) runs `workbench.action.openSettings` with `@ext:raboo.ai-autocomplete`.
+  - `CommandDeps` gains `nativeNextEdit(): boolean`, which `extension.ts` fills from the registration probe.
+
+- [ ] **Step 1: Write the failing tests**
+  - `statusModel.test.ts`: update the order tests.
+    - Idle without native: `['toggle', 'snooze', 'selectBackend', 'selectNextEditBackend', 'enableNativeNextEdit', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']`.
+    - With native: the same without `enableNativeNextEdit`.
+    - The error, snoozed and no-backend orderings keep their first entries as today.
+  - `manifest.test.ts`: the command list adds `openSettings`, categorised, visible in the palette.
+
+- [ ] **Step 2: Run them and see them fail**
+
+Run: `npx vitest run test/unit/statusModel.test.ts test/unit/manifest.test.ts`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement.**
+
+- [ ] **Step 4: Run all tests**
+
+Run: `npm run build && npx vitest run && npm run typecheck && npm run lint`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ui/statusModel.ts src/ui/commands.ts src/extension.ts package.json test/unit/statusModel.test.ts test/unit/manifest.test.ts
+git commit -m "feat: native Next Edit UI and Settings entries in the status-bar menu"
+```
+
+### Task 10: Docs, notices, spec and roadmap
 
 **Files:**
 - Modify: `README.md`, `AGENTS.md`, `THIRD_PARTY_NOTICES.md`, `docs/ROADMAP.md`, `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`, `docs/superpowers/followups/2026-11-13-phase0-1-review-followups.md`
@@ -627,7 +670,7 @@ git commit -m "feat: show Next Edit inline edits as decorations with Tab and Esc
     - Sweep next-edit 0.5B/1.5B/v2-7B and Zeta 2.1 on llama.cpp or LM Studio, with `nextEditModel` set when the server lists several models;
     - chatXtab for chat models such as Qwen3.8 on Strata.
   - The display modes: the native UI is the best view; decorations work everywhere with Tab (jump, then apply) and Esc.
-  - The six new settings.
+  - The six new settings, and the two new menu entries.
   - In the troubleshooting part: debug lines appear only with the output channel's log level at Debug (**Developer: Set Log Level…** → AI Autocomplete → Debug), and `debug.logPrompts` belongs in User settings.
   - Files containing a format's special strings get no Next Edit.
 
@@ -656,7 +699,8 @@ git commit -m "feat: show Next Edit inline edits as decorations with Tab and Esc
     - Sweep 1.5B (GGUF in LM Studio or llama.cpp): a rename propagates; note whether v1 or v2 answers better;
     - decorations without the opt-in: Tab jumps then applies, Esc dismisses, and Tab still indents, accepts ghost text and moves through snippets;
     - `display: decorations` with the opt-in;
-    - a file in this repo containing `<|file_sep|>` gets no request.
+    - a file in this repo containing `<|file_sep|>` gets no request;
+    - the status-bar menu shows **Enable native Next Edit UI...** until the opt-in is active, and **Settings...** opens the extension's settings.
 
 - [ ] **Step 6: Follow-ups doc**
   - A "Phase 3b" section with the vscode-nes ideas from Ruling 13, each with one line on why it would help:

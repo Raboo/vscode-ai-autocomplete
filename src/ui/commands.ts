@@ -4,10 +4,11 @@ import { homedir } from 'node:os';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
+import { usesFor, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
-import { menuEntries } from './statusModel';
+import { menuEntries, menuInputs } from './statusModel';
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -38,16 +39,25 @@ export interface CommandDeps {
   nextEditDismiss(): void;
 }
 
-/** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
+/** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
+async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+  const config = vscode.workspace.getConfiguration('aiAutocomplete');
+  const target = config.inspect(key)?.workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  await config.update(key, on, target);
+}
+
+/** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. Completions turned off are turned back on. */
 export async function useBackend(id: string): Promise<void> {
   const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+  if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
 }
 
-/** Selects the Next Edit backend ("" turns Next Edit off), in the same place `useBackend` writes. */
-async function useNextEditBackend(id: string): Promise<void> {
+/** Selects the Next Edit backend, in the same place `useBackend` writes. Next Edit turned off is turned back on. */
+export async function useNextEditBackend(id: string): Promise<void> {
   const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
+  if (!readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
 }
 
 /** The command argument as OpenOptions; anything else opens the page as it is. */
@@ -57,13 +67,40 @@ function openOptions(arg: unknown): OpenOptions {
   return { ...(o.add === true ? { add: true } : {}), ...(typeof o.focus === 'string' ? { focus: o.focus } : {}) };
 }
 
-async function pickBackend(placeHolder: string): Promise<string | undefined> {
-  const ids = readSettings().settings.backends.map((b) => b.id);
-  if (ids.length === 0) {
+const USE_NAMES: Record<BackendUse, string> = { completions: 'completions', nextEdit: 'Next Edit' };
+
+/** Backends the user can pick from, optionally only those serving `use`. Tells the user when there are none. */
+function pickableBackends(use?: BackendUse): string[] | undefined {
+  const all = readSettings().settings.backends;
+  if (all.length === 0) {
     void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
     return undefined;
   }
-  return vscode.window.showQuickPick(ids, { placeHolder });
+  const ids = all.filter((b) => use === undefined || usesFor(b, use)).map((b) => b.id);
+  if (ids.length === 0 && use !== undefined) {
+    void vscode.window.showInformationMessage(`AI Autocomplete: no backend is set up for ${USE_NAMES[use]}. Open "AI Autocomplete: Manage Backends" to set one up.`);
+    return undefined;
+  }
+  return ids;
+}
+
+async function pickBackend(placeHolder: string, use?: BackendUse): Promise<string | undefined> {
+  const ids = pickableBackends(use);
+  return ids ? vscode.window.showQuickPick(ids, { placeHolder }) : undefined;
+}
+
+const OFF = 'Off';
+
+/** The backends serving `use` plus Off, the current choice marked; resolves to the picked id, OFF, or undefined when dismissed. */
+async function pickBackendOrOff(placeHolder: string, use: BackendUse, current: string | undefined, off: boolean): Promise<string | undefined> {
+  const ids = pickableBackends(use);
+  if (!ids) return undefined;
+  const mark = (yes: boolean) => (yes ? { description: 'current' } : {});
+  const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+    [...ids.map((id) => ({ label: id, ...mark(!off && id === current) })), { label: OFF, ...mark(off) }],
+    { placeHolder },
+  );
+  return pick?.label;
 }
 
 export function registerCommands(d: CommandDeps): vscode.Disposable[] {
@@ -75,16 +112,15 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length, readSettings().settings.nextEdit.backendId, d.nativeNextEdit());
+      const entries = menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit()));
       const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
       else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),
     reg('retry', () => d.retry()),
-    reg('toggle', async () => {
-      const on = readSettings().settings.fim.enabled;
-      await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.enabled', !on, vscode.ConfigurationTarget.Global);
+    reg('toggleEnabled', async () => {
+      await setSwitch('enabled', !readSettings().settings.enabled);
       d.status.refresh();
     }),
     reg('snooze', async () => {
@@ -104,24 +140,18 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       else await d.snooze.set(Date.now() + pick.ms, true);
       d.status.refresh();
     }),
+    // Off turns the feature off and keeps its backend, so picking one again turns it back on.
     reg('selectBackend', async () => {
-      const id = await pickBackend('Select the completion backend');
-      if (id) await useBackend(id);
+      const { fim } = readSettings().settings;
+      const pick = await pickBackendOrOff('Select the completion backend', 'completions', fim.backendId, !fim.enabled);
+      if (pick === undefined) return;
+      await (pick === OFF ? setSwitch('fim.enabled', false) : useBackend(pick));
     }),
     reg('selectNextEditBackend', async () => {
-      const ids = readSettings().settings.backends.map((b) => b.id);
-      if (ids.length === 0) {
-        void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
-        return;
-      }
-      const OFF = 'Off';
-      const current = readSettings().settings.nextEdit.backendId;
-      const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(
-        [...ids.map((id) => ({ label: id, ...(id === current ? { description: 'current' } : {}) })), { label: OFF, ...(current === undefined ? { description: 'current' } : {}) }],
-        { placeHolder: 'Select the Next Edit backend' },
-      );
-      if (!pick) return;
-      await useNextEditBackend(pick.label === OFF ? '' : pick.label);
+      const { nextEdit } = readSettings().settings;
+      const pick = await pickBackendOrOff('Select the Next Edit backend', 'nextEdit', nextEdit.backendId, !nextEdit.enabled || nextEdit.backendId === undefined);
+      if (pick === undefined) return;
+      await (pick === OFF ? setSwitch('nextEdit.enabled', false) : useNextEditBackend(pick));
     }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
     reg('openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`)),

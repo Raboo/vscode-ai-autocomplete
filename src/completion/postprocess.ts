@@ -12,6 +12,9 @@ export interface PostCtx {
   chat: boolean;
 }
 
+/** Special tokens of the Next Edit formats (Zeta, Sweep, chatXtab); an answer is cut at the first one. */
+export const NEXT_EDIT_TOKENS = /<\|marker_\d+\|>|<\|user_cursor\|>|<\|file_sep\|>|<\|endoftext\|>|<\|cursor\|>/;
+
 const MIN_SUFFIX_RETYPE = 4;
 const REPEAT_WINDOW = 30;
 const REPEAT_COUNT = 3;
@@ -33,6 +36,8 @@ const toLf = (s: string): string => s.replace(/\r\n/g, '\n');
 
 /** Accepts raw document text (CRLF allowed); the result uses `\n` line breaks. */
 export function postprocess(rawInput: string, ctxInput: PostCtx): string | undefined {
+  const cut = rawInput.search(NEXT_EDIT_TOKENS);
+  if (cut >= 0) rawInput = rawInput.slice(0, cut);
   // FIM output is code: only a reasoning block at its very start is removed.
   const raw = toLf(ctxInput.chat ? rawInput : stripLeadingReasoning(rawInput));
   const c: PostCtx = {

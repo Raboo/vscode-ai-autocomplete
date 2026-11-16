@@ -20,7 +20,7 @@ test('webview bundle is built and packaged', () => {
 test('commands are categorised and the internal commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
   expect(cmds.map((c) => c.command).sort()).toEqual(
-    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle']
+    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggleEnabled']
       .map((c) => `aiAutocomplete.${c}`)
       .sort(),
   );
@@ -70,4 +70,8 @@ test('nextEdit format and display enums match the code', () => {
   const props = pkg.contributes.configuration.properties;
   expect(props['aiAutocomplete.nextEdit.format'].enum).toEqual([...NEXT_EDIT_FORMATS]);
   expect(props['aiAutocomplete.nextEdit.display'].enum).toEqual([...NEXT_EDIT_DISPLAYS]);
+});
+test('backends entries declare use', () => {
+  const use = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.use;
+  expect(use.items.enum).toEqual(['completions', 'nextEdit']);
 });

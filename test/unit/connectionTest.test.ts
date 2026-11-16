@@ -1,21 +1,23 @@
 import { describe, expect, test, vi } from 'vitest';
-import { completionServed, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
+import { completionServed, invalidAnswerText, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from '../../src/backends/types';
 import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
-import { parseSettings } from '../../src/config/settings';
+import { parseBackendEntry, parseSettings } from '../../src/config/settings';
 import { nullLog } from '../../src/log';
 import { THINKING_LABELS } from '../../src/models/thinking';
 import type { BackendConfig } from '../../src/types';
 import type { TestStep } from '../../src/manage/protocol';
 import { OpenRouterBackend } from '../../src/backends/openrouter';
 import { startMockHttp } from './helpers/mockHttp';
+import { nextEditSample } from '../../src/manage/nextEditSample';
+import { pickFormat } from '../../src/nextEdit/formats';
 
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
 interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void; chatFor?: (r: ChatRequest) => ChatEvent[]; failAfter?: Error }
 function fake(o: FakeOpts = {}) {
-  const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, ...o.config };
+  const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: false }, ...o.config };
   const listModels = vi.fn(async (): Promise<ServerInfo> => {
     const i = o.info ?? { models: ['qwen2.5-coder-7b'], contextWindows: {} };
     if (i instanceof Error) throw i;
@@ -98,11 +100,23 @@ describe('runConnectionTest', () => {
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
-  test('zeta model without template → warn naming seed-coder, no completion request', async () => {
-    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b' } });
+  test('a Next Edit-only model → warn naming Zeta 2.1, no completion request', async () => {
+    for (const config of [{ kind: 'openai' as const, fimModel: 'zeta-2.1' }, { kind: 'llamacpp' as const, fimModel: 'zeta-2.1' }]) {
+      const f = fake({ native: config.kind === 'llamacpp', config });
+      const { res } = await run(f);
+      expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn']]);
+      expect(res.steps[1]).toMatchObject({ text: 'zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions', hint: 'untick Completions, or choose a completion model' });
+      expect(f.streamFim).not.toHaveBeenCalled();
+      expect(f.streamChat).not.toHaveBeenCalled();
+    }
+  });
+
+  test('a Next Edit-only backend runs no completion step', async () => {
+    const f = fake({ native: false, config: { kind: 'openai', nextEditModel: 'zeta-2-7b', use: { completions: false, nextEdit: true } }, chunks: ['<|marker_1|><|marker_1|>'] });
     const { res } = await run(f);
-    expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'zeta-2-7b has no completion template', hint: 'pick a coder model, choose a template for it, or set the prompt mode to chat; seed-coder fits Zeta 2.x' });
-    expect(f.streamFim).not.toHaveBeenCalled();
+    expect(res.steps.map((s) => s.id)).toEqual(['reach', 'nextEdit']);
+    expect(f.streamFim).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(f.requests[0].payload)).toContain('<[fim-suffix]>');
   });
 
   test('a non-zeta model without template gets the plain hint', async () => {
@@ -128,10 +142,10 @@ describe('runConnectionTest', () => {
     expect(m.res.steps[1]).toMatchObject({ text: 'prompt mode "template" does not work with this server', hint });
   });
 
-  test('backend template seed-coder makes zeta pass', async () => {
-    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b', fim: { template: 'seed-coder' } } });
+  test('backend template seed-coder makes a template-less model pass', async () => {
+    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3', fim: { template: 'seed-coder' } } });
     const { res } = await run(f);
-    expect(res.steps[1]).toMatchObject({ state: 'ok', text: 'Model zeta-2-7b with the seed-coder template' });
+    expect(res.steps[1]).toMatchObject({ state: 'ok', text: 'Model llama-3 with the seed-coder template' });
     expect(f.requests[0].payload.route).toBe('template');
   });
 
@@ -237,6 +251,212 @@ describe('runConnectionTest', () => {
 
   test('SAMPLE', () => {
     expect(SAMPLE).toMatchObject({ prefix: 'function add(a: number, b: number): number {\n  return ', suffix: '\n}\n', filePath: 'sample.ts', repoName: 'sample', extra: [] });
+  });
+});
+
+describe('invalidAnswerText', () => {
+  test('puts each fixed reason of the formats in plain words, with a fallback', () => {
+    for (const why of ['noFence', 'truncated', 'special', 'empty', 'tooLong', 'markers', 'range', 'glued']) {
+      const text = invalidAnswerText(why);
+      expect(text).toMatch(/^the answer could not be read \([a-z ]+\)$/);
+      expect(text).not.toMatch(/\((noFence|truncated|special|empty|tooLong|markers|range|glued)\)/);
+    }
+    expect(invalidAnswerText('somethingNew')).toBe('the answer could not be read (it was not in the expected format)');
+    expect(invalidAnswerText('constructor')).toBe('the answer could not be read (it was not in the expected format)');
+  });
+});
+
+describe('the Next Edit step', () => {
+  const ZETA = { kind: 'llamacpp' as const, nextEditModel: 'zeta-2.1', use: { completions: false, nextEdit: true } };
+  const noNative = { native: false };
+  const zetaRewrite = '<|marker_1|>def total(width, height):\n    a = width * height\n    print(a)\n    return a * 2\n<|marker_2|>';
+  const stepIds = (r: { res: { steps: TestStep[] } }) => r.res.steps.map((s) => s.id);
+  /** The backends here have id 'b'; selecting it as the Next Edit backend makes the step run for a backend with both uses. */
+  const selected = { ...SETTINGS, nextEdit: { ...SETTINGS.nextEdit, backendId: 'b' } };
+
+  test('a Next Edit-only backend runs reach and the Next Edit step only, through the format the editor uses', async () => {
+    const f = fake({ ...noNative, config: ZETA, chunks: [zetaRewrite] });
+    const r = await run(f);
+    expect(r.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['nextEdit', 'ok']]);
+    expect(r.res.steps[1].text).toBe('Next Edit in 0 ms with zeta-2.1 (Zeta 2.1 format): suggests an edit');
+    expect(f.streamFim).toHaveBeenCalledTimes(1);
+    expect(f.streamChat).not.toHaveBeenCalled();
+    const req = f.requests[0];
+    expect(req.payload).toMatchObject({ route: 'template' });
+    expect(req.timeoutMs).toBe(TEST_TIMEOUT_MS);
+    expect(req.model).toBe('zeta-2.1');
+    expect(req.sampling.temperature).toBe(0);
+    expect(r.res.steps).toEqual(r.emitted);
+  });
+
+  test('both uses run the completion steps, then the Next Edit step', async () => {
+    const f = fake({
+      ...noNative, info: { models: ['qwen3-coder'], contextWindows: { 'qwen3-coder': 32768 } },
+      config: { kind: 'openai', fimModel: 'qwen3-coder', nextEditModel: 'zeta-2.1', use: { completions: true, nextEdit: true } },
+    });
+    // The first FIM request is the completion; the second one the Next Edit.
+    let n = 0;
+    const answers = ['a + b;', zetaRewrite];
+    f.streamFim.mockImplementation((req: FimRequest) => {
+      f.requests.push(req);
+      const text = answers[n++]!;
+      return (async function* () { yield text; })();
+    });
+    const r = await run(f);
+    expect(stepIds(r)).toEqual(['reach', 'model', 'completion', 'context', 'nextEdit']);
+    expect(r.res.steps.map((s) => s.state)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(f.streamFim).toHaveBeenCalledTimes(2);
+    expect(r.res.steps[4].text).toContain('zeta-2.1');
+  });
+
+  test('a chat completion model puts thinking before context, and Next Edit last', async () => {
+    const f = fake({
+      native: false, caps: { native: false, template: true, chat: true, nativeChatModels: false }, info: { models: ['Qwen3.8-Flash-Next'], contextWindows: { 'Qwen3.8-Flash-Next': 32768 } },
+      config: { kind: 'openai', fimModel: 'Qwen3.8-Flash-Next', use: { completions: true, nextEdit: true } },
+      chatFor: (req) => (req.messages.some((m) => m.content.includes('<COMPLETION>')) ? [{ type: 'content', text: '<COMPLETION>a + b;' }] : [{ type: 'content', text: '```\ndef total(width, height):\n    a = width * height\n    print(a)\n    return a * 2\n\n```\n' }]),
+    });
+    const r = await run(f, { settings: selected });
+    expect(stepIds(r)).toEqual(['reach', 'model', 'completion', 'thinking', 'context', 'nextEdit']);
+    expect(r.res.steps[5]).toMatchObject({ state: 'ok', text: 'Next Edit in 0 ms with Qwen3.8-Flash-Next (chat prompt (chatXtab)): suggests an edit' });
+  });
+
+  test('the step runs after a completion-step warning, but not after a reach failure', async () => {
+    const warned = await run(fake({ ...noNative, info: { models: ['a', 'b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: true, nextEdit: true } } }), { settings: selected });
+    expect(warned.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'warn']]);
+    expect(warned.res.steps[2].text).toBe('the server lists 2 models; choose a Next Edit model');
+    const zetaOnCompletions = await run(fake({ ...noNative, chunks: [zetaRewrite], config: { kind: 'llamacpp', fimModel: 'zeta-2.1', use: { completions: true, nextEdit: true } } }), { settings: selected });
+    expect(zetaOnCompletions.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'ok']]);
+    const down = await run(fake({ info: new HttpError(500, '', 'u'), config: { use: { completions: true, nextEdit: true } } }));
+    expect(stepIds(down)).toEqual(['reach']);
+    const local = await run(fake({ config: { use: { completions: false, nextEdit: true } } }), { localOnly: true, isLocal: async () => false });
+    expect(stepIds(local)).toEqual(['reach']);
+  });
+
+  test('no Next Edit use, no Next Edit step', async () => {
+    const r = await run(fake());
+    expect(stepIds(r)).not.toContain('nextEdit');
+  });
+
+  describe('a backend with no `use` (both uses)', () => {
+    // An old settings entry: it goes through the real parser, so `use` is both uses.
+    const entry = (extra: Record<string, unknown> = {}): BackendConfig => parseBackendEntry({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', ...extra }, 0, new Set(), []) as BackendConfig;
+    test('has no Next Edit step unless it is the selected Next Edit backend or names a Next Edit model', async () => {
+      expect(entry().use).toEqual({ completions: true, nextEdit: true });
+      const plain = fake({ config: entry() });
+      expect(stepIds(await run(plain))).toEqual(['reach', 'model', 'completion']);
+      expect(plain.chatRequests).toHaveLength(0);
+      const other = await run(fake({ config: entry() }), { settings: { ...SETTINGS, nextEdit: { ...SETTINGS.nextEdit, backendId: 'elsewhere' } } });
+      expect(stepIds(other)).not.toContain('nextEdit');
+      const named = await run(fake({ ...noNative, config: { ...entry({ nextEditModel: 'zeta-2.1' }) }, chunks: [zetaRewrite] }));
+      expect(stepIds(named)).toContain('nextEdit');
+    });
+
+    test('runs the Next Edit step when it is the selected Next Edit backend', async () => {
+      const r = await run(fake({ ...noNative, config: entry(), chunks: ['x'], caps: { chat: true }, chatEvents: [{ type: 'content', text: 'x' }] }), { settings: selected });
+      expect(stepIds(r)).toContain('nextEdit');
+    });
+
+    test('the selected Next Edit backend with Next Edit turned off tests as completions only', async () => {
+      const off = { ...selected, nextEdit: { ...selected.nextEdit, enabled: false } };
+      expect(stepIds(await run(fake({ config: entry() }), { settings: off }))).toEqual(['reach', 'model', 'completion']);
+    });
+
+    test('a Next Edit-only backend always runs the step', async () => {
+      const r = await run(fake({ ...noNative, config: { ...entry(), use: { completions: false, nextEdit: true } }, chunks: [zetaRewrite], info: { models: ['zeta-2.1'], contextWindows: {} } }));
+      expect(stepIds(r)).toEqual(['reach', 'nextEdit']);
+    });
+  });
+
+  test('a lone listed model is the Next Edit model when none is set', async () => {
+    const f = fake({ ...noNative, info: { models: ['sweep-next-edit-1.5b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: false, nextEdit: true } }, chunks: ['x'] });
+    const r = await run(f);
+    expect(r.res.steps[1].text).toContain('sweep-next-edit-1.5b (Sweep v1 format)');
+    expect(f.requests[0].model).toBe('sweep-next-edit-1.5b');
+  });
+
+  test('noChange is a warning, an unreadable answer a failure naming why, a truncated answer a warning', async () => {
+    const same = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|><|marker_1|>'] }));
+    expect(same.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'Next Edit in 0 ms with zeta-2.1 (Zeta 2.1 format): answered, no edit suggested' });
+    const bad = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_9|>x'] }));
+    expect(bad.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'the answer could not be read (it lacked the expected markers)' });
+    const cut = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|>def'], onStream: (r) => r.onTruncated?.() }));
+    expect(cut.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn' });
+    expect(cut.res.steps[1].text).toMatch(/cut at max tokens/);
+  });
+
+  test('a chat answer cut before its closing fence is a warning too', async () => {
+    const f = fake({
+      ...noNative, caps: { template: true, chat: true }, config: { kind: 'openai', nextEditModel: 'qwen3-coder', use: { completions: false, nextEdit: true } },
+      chatEvents: [{ type: 'content', text: '```\ndef total(width, height):\n    a = width' }, { type: 'finish', reason: 'length' }],
+    });
+    const r = await run(f);
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn' });
+    expect(r.res.steps[1].text).toMatch(/cut at max tokens/);
+  });
+
+  test('a Next Edit-only backend listing one model records it; an explicit Next Edit model or the Completions model is left alone', async () => {
+    const only = await run(fake({ ...noNative, info: { models: ['sweep-next-edit-1.5b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: false, nextEdit: true } }, chunks: ['x'] }));
+    expect(only.res.model).toBe('sweep-next-edit-1.5b');
+    const explicit = await run(fake({ ...noNative, config: ZETA, chunks: ['x'] }));
+    expect(explicit.res.model).toBeUndefined();
+    const both = await run(fake({ ...noNative, info: { models: ['qwen3-coder'], contextWindows: {} }, config: { kind: 'openai', nextEditModel: 'zeta-2.1', use: { completions: true, nextEdit: true } }, chunks: ['x'] }));
+    expect(both.res.model).toBe('qwen3-coder');
+  });
+
+  test('a format whose route is missing is a warning and sends nothing', async () => {
+    const sweep = { kind: 'llamacpp' as const, nextEditModel: 'sweep-v2-7b', use: { completions: false, nextEdit: true } };
+    const f = fake({ ...noNative, caps: { template: false, chat: true }, config: sweep });
+    const r = await run(f);
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'sweep-v2-7b: the Sweep v2 format needs a raw completions route; this server has none' });
+    expect(f.streamFim).not.toHaveBeenCalled();
+    expect(f.streamChat).not.toHaveBeenCalled();
+    const chat = fake({ ...noNative, caps: { template: true, chat: false }, config: { kind: 'llamacpp', nextEditModel: 'qwen3-coder', use: { completions: false, nextEdit: true } } });
+    const c = await run(chat);
+    expect(c.res.steps[1]).toMatchObject({ state: 'warn', text: 'qwen3-coder: the chat prompt (chatXtab) needs a chat completions route; this server has none' });
+    expect(chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  test('a chat Next Edit model that thinks fails the step', async () => {
+    const f = fake({ ...noNative, caps: { template: true, chat: true }, config: { kind: 'openai', nextEditModel: 'qwen3-coder', use: { completions: false, nextEdit: true } }, chatEvents: [{ type: 'reasoning', text: 'Let me think' }] });
+    const r = await run(f);
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail' });
+    expect(r.res.steps[1].text).toMatch(/keeps thinking/);
+    expect(r.res.steps[1].hint).toBeTruthy();
+  });
+
+  test('a request error fails the step with the fixed text, never the server body', async () => {
+    const mk = () => ({ ...nullLog, debug: vi.fn() });
+    const off = mk();
+    const r = await run(fake({ ...noNative, config: ZETA, chunks: new HttpError(500, 'SECRET-BODY', 'u') }), { log: off });
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'HTTP 500' });
+    expect(JSON.stringify(off.debug.mock.calls)).toContain('connection test nextEdit: fail in 0 ms: HTTP 500');
+    expect(JSON.stringify(off.debug.mock.calls)).not.toContain('SECRET');
+    const odd = await run(fake({ ...noNative, config: ZETA, chunks: new StreamError('SECRET memory guard') }), { log: off });
+    expect(odd.res.steps[1]).toMatchObject({ state: 'fail', text: 'the server returned an error' });
+    expect(JSON.stringify(off.debug.mock.calls)).not.toContain('SECRET');
+  });
+
+  test('the answer is logged only with debug.logPrompts, and never in a step text', async () => {
+    const mk = () => ({ ...nullLog, debug: vi.fn() });
+    const off = mk();
+    const a = await run(fake({ ...noNative, config: ZETA, chunks: [zetaRewrite] }), { log: off });
+    expect(JSON.stringify(off.debug.mock.calls)).not.toContain('print(a)');
+    expect(JSON.stringify(a.res.steps)).not.toContain('print(a)');
+    const on = mk();
+    const b = await run(fake({ ...noNative, config: ZETA, chunks: [zetaRewrite] }), { log: on, settings: { ...SETTINGS, debug: { logPrompts: true } } });
+    expect(JSON.stringify(on.debug.mock.calls)).toContain('print(a)');
+    expect(JSON.stringify(b.res.steps)).not.toContain('print(a)');
+  });
+
+  test('the sample is sendable in every format', () => {
+    for (const f of [pickFormat('chatXtab', 'm'), pickFormat('sweep', 'sweep-1.5b'), pickFormat('sweep', 'sweep-v2-7b'), pickFormat('zeta21', 'zeta')]) {
+      const input = nextEditSample(f, SETTINGS);
+      expect(f.problem(input)).toBeUndefined();
+      expect(input.lines.length).toBeLessThan(30);
+      const region = input.lines.slice(input.region.start, input.region.end + 1).join('\n');
+      expect(region).toContain('a = ');
+      expect(region.match(/area/g)).toHaveLength(2);
+    }
   });
 });
 
@@ -378,7 +598,7 @@ describe('explainFailure', () => {
         return { sse: ['{"choices":[{"delta":{"reasoning":"Let me think."}}]}', '{"choices":[{"delta":{"content":"<COMPLETION>a + b;"},"finish_reason":"stop"}]}', '[DONE]'] };
       });
       try {
-        const config: BackendConfig = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.url}/api/v1`, fimMode: 'auto', headers: {}, fimModel: 'google/gemini-2.5-pro' };
+        const config: BackendConfig = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.url}/api/v1`, fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: false }, fimModel: 'google/gemini-2.5-pro' };
         const backend = new OpenRouterBackend(config, async () => 'k');
         const res = await runConnectionTest({ backend, settings: SETTINGS, localOnly: false, isLocal: async () => true, signal: new AbortController().signal, log: nullLog, now: () => 0 }, () => {});
         expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'ok'], ['thinking', 'fail']]);

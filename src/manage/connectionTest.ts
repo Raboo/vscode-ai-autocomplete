@@ -2,13 +2,17 @@ import { HttpError, StreamError } from '../backends/http';
 import { MissingApiKeyError } from '../backends/mistral';
 import type { FimBackend, ServerInfo } from '../backends/types';
 import { THINKING_STRATEGIES, type Settings } from '../config/settings';
-import { resolveFim, templateMismatch } from '../completion/effective';
+import { nextEditModel, resolveFim, resolveNextEdit, templateMismatch } from '../completion/effective';
 import { CompletionAccumulator } from '../completion/filters';
 import { postprocess } from '../completion/postprocess';
 import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, noRouteFix, noRouteText, planRoute, thinkingBlocked, whyNoRoute } from '../completion/route';
 import { collectCompletion, ThinkingError, type Collected, type PlannedRequest } from '../completion/stream';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
+import { formatRoute, nextEditFormatLabel, nextEditOnlyNote, pickFormat } from '../nextEdit/formats';
+import type { FormatAnswer } from '../nextEdit/formats/format';
+import { runNextEdit } from '../nextEdit/request';
+import { nextEditSample } from './nextEditSample';
 import type { TemplateInput } from '../models/templates';
 import { THINKING_LABELS, thinkingFields } from '../models/thinking';
 import type { ThinkingStrategy } from '../types';
@@ -21,6 +25,21 @@ export const PROBE_TIMEOUT_MS = 10000;
 const THINKING_PROBES: readonly ThinkingStrategy[] = THINKING_STRATEGIES.filter((t) => t !== 'none' && t !== 'cannotDisable');
 const LIST_TIMEOUT_MS = 5000;
 const CANNOT_DISABLE_HINT = 'autocomplete needs a model that answers without thinking; choose another model';
+const NEXT_EDIT_THINKING_HINT = 'Next Edit needs a model that answers without thinking; choose another model';
+/** Plain words for the formats' own fixed `invalid` reasons (chatXtab, Sweep, Zeta 2.1); an unknown code gets the fallback. */
+const INVALID_ANSWER: Record<string, string> = {
+  noFence: 'it was not in a code block',
+  truncated: 'it was cut off',
+  special: 'it began with a special token',
+  empty: 'it was empty',
+  tooLong: 'it was much longer than the code shown',
+  markers: 'it lacked the expected markers',
+  range: 'its marker range was outside the code',
+  glued: 'a line ran into the next marker',
+};
+export function invalidAnswerText(why: string): string {
+  return `the answer could not be read (${Object.hasOwn(INVALID_ANSWER, why) ? INVALID_ANSWER[why] : 'it was not in the expected format'})`;
+}
 const MAX_LINES = 16;
 const SHOWN_CHARS = 80;
 
@@ -62,12 +81,12 @@ export function explainFailure(err: unknown): { text: string; hint?: string } {
   return { text: 'request failed' };
 }
 
-/** The server answered the sample completion; a slow or empty answer still is one. Steps stop at the first failure, so reach passed too. */
+/** The server answered the sample completion; a slow or empty answer still is one. The completion steps stop at their first failure or warning (the Next Edit step still runs after one), so a completion step that did not fail means reach passed too. */
 export function completionServed(r: ConnectionTestResult): boolean {
   return r.steps.some((s) => s.id === 'completion' && s.state !== 'fail');
 }
 
-/** Runs the steps in order, calling onStep after each; never throws. */
+/** Runs the steps in order, calling onStep after each; never throws. The completion steps stop at their first failure or warning; the Next Edit step is checked on its own after them. */
 export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: TestStep) => void): Promise<ConnectionTestResult> {
   const now = i.now ?? Date.now;
   const steps: TestStep[] = [];
@@ -125,154 +144,231 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     }
     result.info = info;
 
-    // 2. model
-    stage = 'model';
-    stageStart = now();
-    const model = cfg.fimModel ?? (info.models.length === 1 ? info.models[0] : undefined);
-    if (model === undefined) {
-      emit({ id: 'model', state: 'warn', text: `the server lists ${info.models.length} models; choose one` }, stageStart);
-      return result;
-    }
-    result.model = model;
-    const values = resolveFim(cfg, model, settings).values;
-    // A fresh probe: routes learned as missing during completions are ignored.
-    const caps = backend.routes();
-    const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
-    if (route === 'unsupported') {
-      const why = whyNoRoute(caps, cfg.fimMode);
-      if (why === 'template') {
-        const mistral = cfg.kind === 'mistral';
+    /** Steps 2 to 4: the completion check. Returns early after a warning or failure it emitted. */
+    const completionSteps = async (): Promise<void> => {
+      // 2. model
+      stage = 'model';
+      stageStart = now();
+      const model = cfg.fimModel ?? (info.models.length === 1 ? info.models[0] : undefined);
+      if (model === undefined) {
+        emit({ id: 'model', state: 'warn', text: `the server lists ${info.models.length} models; choose one` }, stageStart);
+        return;
+      }
+      result.model = model;
+      // A Zeta or Sweep model cannot do completions: say so before any completion request.
+      const nextEditOnly = nextEditOnlyNote(model);
+      if (nextEditOnly) {
+        emit({ id: 'model', state: 'warn', text: nextEditOnly.text, hint: nextEditOnly.hint }, stageStart);
+        return;
+      }
+      const values = resolveFim(cfg, model, settings).values;
+      // A fresh probe: routes learned as missing during completions are ignored.
+      const caps = backend.routes();
+      const route = planRoute(cfg.kind, caps, values, cfg.fimMode);
+      if (route === 'unsupported') {
+        const why = whyNoRoute(caps, cfg.fimMode);
+        if (why === 'template') {
+          const mistral = cfg.kind === 'mistral';
+          emit({
+            id: 'model', state: 'warn', text: mistral ? `${model} cannot complete through Mistral's FIM endpoint` : `${model} has no completion template`,
+            hint: noRouteFix(caps.chat, cfg.kind),
+          }, stageStart);
+        }
+        else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
+        return;
+      }
+      // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
+      const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
+      const flavor = inferHostFlavor(cfg);
+      if (route === 'chat') {
+        const cannotDisable = thinkingBlocked(values.thinking, flavor, { rejected: new Set(), failedRoutes: new Set(), thinks: false }) === 'cannotDisable'
+          || (info.thinkingMandatory ?? []).includes(model);
+        if (cannotDisable) {
+          const text = `Model ${model} cannot turn thinking off`;
+          emit({ id: 'model', state: 'fail', text, hint: CANNOT_DISABLE_HINT }, stageStart, text);
+          return;
+        }
+        emit({ id: 'model', state: 'ok', text: `Model ${model} (chat prompt)` }, stageStart);
+      } else {
         emit({
-          id: 'model', state: 'warn', text: mistral ? `${model} cannot complete through Mistral's FIM endpoint` : `${model} has no completion template`,
-          hint: `${noRouteFix(caps.chat, cfg.kind)}${!mistral && /zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}`,
+          id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
+          ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
         }, stageStart);
       }
-      else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
-      return result;
-    }
-    // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
-    const mismatch = route === 'template' ? templateMismatch(cfg, model, settings) : undefined;
-    const flavor = inferHostFlavor(cfg);
-    if (route === 'chat') {
-      const cannotDisable = thinkingBlocked(values.thinking, flavor, { rejected: new Set(), failedRoutes: new Set(), thinks: false }) === 'cannotDisable'
-        || (info.thinkingMandatory ?? []).includes(model);
-      if (cannotDisable) {
-        const text = `Model ${model} cannot turn thinking off`;
-        emit({ id: 'model', state: 'fail', text, hint: CANNOT_DISABLE_HINT }, stageStart, text);
-        return result;
-      }
-      emit({ id: 'model', state: 'ok', text: `Model ${model} (chat prompt)` }, stageStart);
-    } else {
-      emit({
-        id: 'model', state: mismatch ? 'warn' : 'ok', text: route === 'native' ? `Model ${model} (server-side prompt)` : `Model ${model} with the ${values.fimTemplate} template`,
-        ...(mismatch ? { hint: `${model}'s own template is ${mismatch.own}; reset the Template field` } : {}),
-      }, stageStart);
-    }
 
-    const chatRequest = (v: typeof values, c: AbortController, onRejected?: (fields: string[]) => void) => buildChatRequest({
-      fim: v, flavor, model, input: { ...SAMPLE, languageId: 'typescript', multiline: false }, rejected: new Set(), signal: c.signal, ...(onRejected ? { onRejected } : {}),
-    });
+      const chatRequest = (v: typeof values, c: AbortController, onRejected?: (fields: string[]) => void) => buildChatRequest({
+        fim: v, flavor, model, input: { ...SAMPLE, languageId: 'typescript', multiline: false }, rejected: new Set(), signal: c.signal, ...(onRejected ? { onRejected } : {}),
+      });
 
-    /**
-     * Tries the other thinking switches on the sample; returns the hint for the thinking step. Never changes settings.
-     * A switch that sends the same request as the current one or as one already tried is skipped: on Strata, OpenRouter,
-     * DeepSeek and Ollama the flavor decides the request, so a thinking model would get identical requests.
-     */
-    const probe = async (): Promise<string | undefined> => {
-      const key = (s: ThinkingStrategy): string => JSON.stringify(thinkingFields(s, flavor));
-      const seen = new Set([key(values.thinking)]);
-      let tried = 0;
-      for (const strategy of THINKING_PROBES) {
-        if (!seen.has(key(strategy))) seen.add(key(strategy));
-        else continue;
+      /**
+       * Tries the other thinking switches on the sample; returns the hint for the thinking step. Never changes settings.
+       * A switch that sends the same request as the current one or as one already tried is skipped: on Strata, OpenRouter,
+       * DeepSeek and Ollama the flavor decides the request, so a thinking model would get identical requests.
+       */
+      const probe = async (): Promise<string | undefined> => {
+        const key = (s: ThinkingStrategy): string => JSON.stringify(thinkingFields(s, flavor));
+        const seen = new Set([key(values.thinking)]);
+        let tried = 0;
+        for (const strategy of THINKING_PROBES) {
+          if (!seen.has(key(strategy))) seen.add(key(strategy));
+          else continue;
+          if (i.signal.aborted) return undefined;
+          tried++;
+          const pctl = makeCtl();
+          const req = chatRequest({ ...values, thinking: strategy }, pctl);
+          const acc = new CompletionAccumulator({ stop: req.stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
+          try {
+            const c = await collectCompletion(backend, { route: 'chat', req: { ...req, timeoutMs: PROBE_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix }, acc, pctl, { failOnThinking: true });
+            if ((postprocess(c.text, { ...POST, chat: true }) ?? '') !== '') return `choose "${THINKING_LABELS[strategy]}" as the Thinking switch`;
+          } catch (err) {
+            // Still thinking, rejected or timed out: this switch does not help, try the next.
+            i.log.debug(`connection test probe ${strategy}: ${err instanceof ThinkingError ? 'still thinking' : explainFailure(err).text}`);
+          }
+        }
         if (i.signal.aborted) return undefined;
-        tried++;
-        const pctl = makeCtl();
-        const req = chatRequest({ ...values, thinking: strategy }, pctl);
-        const acc = new CompletionAccumulator({ stop: req.stop, multiline: false, maxLines: MAX_LINES, suffix: SAMPLE.suffix });
-        try {
-          const c = await collectCompletion(backend, { route: 'chat', req: { ...req, timeoutMs: PROBE_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix }, acc, pctl, { failOnThinking: true });
-          if ((postprocess(c.text, { ...POST, chat: true }) ?? '') !== '') return `choose "${THINKING_LABELS[strategy]}" as the Thinking switch`;
-        } catch (err) {
-          // Still thinking, rejected or timed out: this switch does not help, try the next.
-          i.log.debug(`connection test probe ${strategy}: ${err instanceof ThinkingError ? 'still thinking' : explainFailure(err).text}`);
+        return tried === 0 ? 'this server turns thinking off one way only; choose another model' : 'no thinking switch turned it off; choose another model';
+      };
+
+      // 3. completion
+      stage = 'completion';
+      stageStart = now();
+      const ctl = makeCtl();
+      const rejected = new Set<string>();
+      let planned: PlannedRequest;
+      let stop = values.stop;
+      let limit = values.timeoutMs; // the timeout the editor's request would use; the test itself waits longer
+      let maxTokens = values.maxTokens;
+      if (route === 'chat') {
+        const req = chatRequest(values, ctl, (fields) => fields.forEach((f) => rejected.add(f)));
+        planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix };
+        stop = req.stop; // the request's own list, as in the provider
+        limit = req.timeoutMs;
+        maxTokens = req.maxTokens; // with the chat overhead
+      } else {
+        planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
+      }
+      let collected: Collected;
+      try {
+        collected = await stream(planned, ctl, stop);
+      } catch (err) {
+        if (!(err instanceof ThinkingError)) throw err;
+        // The model reasons: no completion step. Say so, then look for a switch that works.
+        stage = 'thinking';
+        const ms = now() - stageStart; // until the thinking was seen, not the probe
+        if (rejected.has(EFFORT_NONE_REJECTED)) {
+          // OpenRouter rejected effort "none", and every switch sends that same field there: the model must reason.
+          const text = `Model ${model} cannot turn thinking off`;
+          emit({ id: 'thinking', state: 'fail', text, hint: CANNOT_DISABLE_HINT, ms }, undefined, text);
+          return;
+        }
+        const label = THINKING_LABELS[values.thinking];
+        const text = `${model} keeps thinking with the "${label}" switch`;
+        const probed = await probe();
+        emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}), ms }, undefined, text);
+        return;
+      }
+      const text = postprocess(collected.text, { ...POST, chat: route === 'chat' }) ?? '';
+      const elapsed = now() - stageStart;
+      if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
+      if (text === '' && collected.timedOut) {
+        emit({ id: 'completion', state: 'fail', text: 'timed out' }, stageStart, 'timed out');
+      } else if (text === '') {
+        emit({ id: 'completion', state: 'warn', text: 'the server answered but returned no completion' }, stageStart);
+      } else if (collected.timedOut || elapsed > limit) {
+        const hint = collected.timedOut ? `timed out after ${TEST_TIMEOUT_MS} ms; only the complete lines are shown` : `slower than the ${limit} ms timeout; run the test again if the model was loading`;
+        emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint }, stageStart);
+      } else {
+        emit({ id: 'completion', state: 'ok', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"` }, stageStart);
+      }
+
+      // 3b. thinking (chat route only; a model that thinks failed above)
+      if (route === 'chat') {
+        stage = 'thinking';
+        stageStart = now();
+        const names = [...rejected].map((f) => (f === EFFORT_NONE_REJECTED ? 'reasoning effort "none"' : f));
+        const rej = names.length > 0 ? `the server rejected ${names.join(', ')}; they are left out` : undefined;
+        emit({ id: 'thinking', state: 'ok', text: 'Thinking is off', ...(rej ? { hint: rej } : {}) }, stageStart);
+      }
+
+      // 4. context
+      stage = 'context';
+      stageStart = now();
+      const window = Object.hasOwn(info.contextWindows, model) ? info.contextWindows[model] : undefined;
+      if (window !== undefined) {
+        if (values.contextTokens + maxTokens > window) {
+          emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${maxTokens} is more than the server's ${window}` }, stageStart);
+        } else {
+          emit({ id: 'context', state: 'ok', text: `Server context window: ${window} tokens` }, stageStart);
         }
       }
-      if (i.signal.aborted) return undefined;
-      return tried === 0 ? 'this server turns thinking off one way only; choose another model' : 'no thinking switch turned it off; choose another model';
     };
 
-    // 3. completion
-    stage = 'completion';
-    stageStart = now();
-    const ctl = makeCtl();
-    const rejected = new Set<string>();
-    let planned: PlannedRequest;
-    let stop = values.stop;
-    let limit = values.timeoutMs; // the timeout the editor's request would use; the test itself waits longer
-    let maxTokens = values.maxTokens;
-    if (route === 'chat') {
-      const req = chatRequest(values, ctl, (fields) => fields.forEach((f) => rejected.add(f)));
-      planned = { route: 'chat', req: { ...req, timeoutMs: TEST_TIMEOUT_MS }, linePrefix: POST.linePrefix, lineSuffix: POST.lineSuffix };
-      stop = req.stop; // the request's own list, as in the provider
-      limit = req.timeoutMs;
-      maxTokens = req.maxTokens; // with the chat overhead
-    } else {
-      planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
-    }
-    let collected: Collected;
-    try {
-      collected = await stream(planned, ctl, stop);
-    } catch (err) {
-      if (!(err instanceof ThinkingError)) throw err;
-      // The model reasons: no completion step. Say so, then look for a switch that works.
-      stage = 'thinking';
-      const ms = now() - stageStart; // until the thinking was seen, not the probe
-      if (rejected.has(EFFORT_NONE_REJECTED)) {
-        // OpenRouter rejected effort "none", and every switch sends that same field there: the model must reason.
+    /** Step 5: one sample edit through the format and request code the editor uses. */
+    const nextEditStep = async (listed: ServerInfo): Promise<void> => {
+      const model = nextEditModel(cfg, listed.models.length === 1 ? listed.models[0] : undefined);
+      if (model === undefined) {
+        emit({ id: 'nextEdit', state: 'warn', text: `the server lists ${listed.models.length} models; choose a Next Edit model` }, stageStart);
+        return;
+      }
+      // A Next Edit-only backend has no completion step to detect the model: the page keeps the one the server lists.
+      if (!cfg.use.completions && cfg.nextEditModel === undefined) result.model = model;
+      const format = pickFormat(settings.nextEdit.format, model);
+      const route = formatRoute(format, backend.routes());
+      if (!route.ok) {
+        emit({ id: 'nextEdit', state: 'warn', text: `${model}: the ${nextEditFormatLabel(settings.nextEdit.format, model)} needs a ${route.name} route; this server has none` }, stageStart);
+        return;
+      }
+      const values = { ...resolveNextEdit(cfg, model, settings), timeoutMs: TEST_TIMEOUT_MS };
+      const flavor = inferHostFlavor(cfg);
+      if (format.transport === 'chat'
+        && (thinkingBlocked(values.thinking, flavor, { rejected: new Set(), failedRoutes: new Set(), thinks: false }) === 'cannotDisable' || (listed.thinkingMandatory ?? []).includes(model))) {
         const text = `Model ${model} cannot turn thinking off`;
-        emit({ id: 'thinking', state: 'fail', text, hint: CANNOT_DISABLE_HINT, ms }, undefined, text);
-        return result;
+        emit({ id: 'nextEdit', state: 'fail', text, hint: NEXT_EDIT_THINKING_HINT }, stageStart, text);
+        return;
       }
-      const label = THINKING_LABELS[values.thinking];
-      const text = `${model} keeps thinking with the "${label}" switch`;
-      const probed = await probe();
-      emit({ id: 'thinking', state: 'fail', text, ...(probed ? { hint: probed } : {}), ms }, undefined, text);
-      return result;
-    }
-    const text = postprocess(collected.text, { ...POST, chat: route === 'chat' }) ?? '';
-    const elapsed = now() - stageStart;
-    if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
-    if (text === '' && collected.timedOut) {
-      emit({ id: 'completion', state: 'fail', text: 'timed out' }, stageStart, 'timed out');
-    } else if (text === '') {
-      emit({ id: 'completion', state: 'warn', text: 'the server answered but returned no completion' }, stageStart);
-    } else if (collected.timedOut || elapsed > limit) {
-      const hint = collected.timedOut ? `timed out after ${TEST_TIMEOUT_MS} ms; only the complete lines are shown` : `slower than the ${limit} ms timeout; run the test again if the model was loading`;
-      emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint }, stageStart);
-    } else {
-      emit({ id: 'completion', state: 'ok', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"` }, stageStart);
+      const ctl = makeCtl();
+      let parsed: FormatAnswer | undefined;
+      let truncated = false;
+      let edit: Awaited<ReturnType<typeof runNextEdit>>;
+      try {
+        edit = await runNextEdit({
+          backend, values, flavor, model, format, snapshot: { uri: 'file:///sample.py', version: 1, input: nextEditSample(format, settings) },
+          rejected: new Set(), signal: ctl.signal,
+          onParsed: (a) => { parsed = a; },
+          onTruncated: () => { truncated = true; },
+          ...(settings.debug.logPrompts ? { onAnswer: (a: string) => i.log.debug(`connection test sample next edit answer: ${JSON.stringify(a)}`) } : {}),
+        });
+      } catch (err) {
+        if (!(err instanceof ThinkingError)) throw err;
+        const text = `${model} keeps thinking with the "${THINKING_LABELS[values.thinking]}" switch`;
+        emit({ id: 'nextEdit', state: 'fail', text, hint: NEXT_EDIT_THINKING_HINT }, stageStart, text);
+        return;
+      }
+      const label = `Next Edit in ${now() - stageStart} ms with ${model} (${nextEditFormatLabel(settings.nextEdit.format, model)})`;
+      if (edit) emit({ id: 'nextEdit', state: 'ok', text: `${label}: suggests an edit` }, stageStart);
+      // The chat format has no max-tokens signal: its cut answer lacks the closing fence and parses as `truncated`.
+      else if (truncated || (parsed?.kind === 'invalid' && parsed.why === 'truncated')) emit({ id: 'nextEdit', state: 'warn', text: `${label}: the answer was cut at max tokens and is not used` }, stageStart);
+      // An unreadable answer: the reason is one of the formats' own fixed words, never server text.
+      else if (parsed?.kind === 'invalid') emit({ id: 'nextEdit', state: 'fail', text: invalidAnswerText(parsed.why) }, stageStart, invalidAnswerText(parsed.why));
+      else emit({ id: 'nextEdit', state: 'warn', text: `${label}: answered, no edit suggested`, hint: 'the sample renames a variable; a Next Edit model should rename its other uses' }, stageStart);
+    };
+
+    // A failed completion check does not say the Next Edit one fails: each use is checked on its own.
+    if (cfg.use.completions) {
+      try {
+        await completionSteps();
+      } catch (err) {
+        fail(stage, err, stageStart);
+      }
     }
 
-    // 3b. thinking (chat route only; a model that thinks failed above)
-    if (route === 'chat') {
-      stage = 'thinking';
+    // 5. Next Edit. A backend that also serves completions and was never pointed at Next Edit (no Next Edit model, not the
+    // selected Next Edit backend while Next Edit is on) is not checked: its settings, written before `use` existed, must test as before.
+    const selected = settings.nextEdit.enabled && settings.nextEdit.backendId === cfg.id;
+    if (cfg.use.nextEdit && (!cfg.use.completions || cfg.nextEditModel !== undefined || selected)) {
+      stage = 'nextEdit';
       stageStart = now();
-      const names = [...rejected].map((f) => (f === EFFORT_NONE_REJECTED ? 'reasoning effort "none"' : f));
-      const rej = names.length > 0 ? `the server rejected ${names.join(', ')}; they are left out` : undefined;
-      emit({ id: 'thinking', state: 'ok', text: 'Thinking is off', ...(rej ? { hint: rej } : {}) }, stageStart);
-    }
-
-    // 4. context
-    stage = 'context';
-    stageStart = now();
-    const window = Object.hasOwn(info.contextWindows, model) ? info.contextWindows[model] : undefined;
-    if (window !== undefined) {
-      if (values.contextTokens + maxTokens > window) {
-        emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${maxTokens} is more than the server's ${window}` }, stageStart);
-      } else {
-        emit({ id: 'context', state: 'ok', text: `Server context window: ${window} tokens` }, stageStart);
-      }
+      await nextEditStep(info);
     }
   } catch (err) {
     fail(stage, err, stageStart);

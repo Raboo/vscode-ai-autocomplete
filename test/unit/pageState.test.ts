@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
-import { buildPageState, dotFor, modelTag, type PageInputs } from '../../src/manage/pageState';
+import { buildPageState, dotFor, modelListTag, modelTag, retagModels, type PageInputs } from '../../src/manage/pageState';
 import type { BackendConfig } from '../../src/types';
 import type { BackendForm, TestStep } from '../../src/manage/protocol';
 
@@ -9,23 +9,23 @@ const base = (localOnly = false): Settings => {
   const s = parseSettings(none).settings;
   return { ...s, privacy: { localOnly } };
 };
-const lm = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'randmaru/zeta-2.1-mlx' };
+const lm = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'llama-3' };
 const cpp = { id: 'cpp', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' };
 const inputs = (over: Partial<PageInputs> = {}): PageInputs => ({
   settings: base(), rawBackends: [lm, cpp], keysStored: new Set(), local: new Map([['lm', true], ['cpp', true]]), detected: new Map(), tests: new Map(), ...over,
 });
 const ok: TestStep = { id: 'reach', state: 'ok', text: 'x' };
-const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
+const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {}, ...over });
 
 describe('page state', () => {
   test('cards: in use, key stored, detected model, lock and template warning', () => {
     const s = buildPageState(inputs({ inUseId: 'lm', keysStored: new Set(['cpp']), detected: new Map([['cpp', 'qwen2.5-coder']]) }));
-    expect(s.cards[0]).toMatchObject({ id: 'lm', typeLabel: 'LM Studio', inUse: true, keyStored: false, model: 'randmaru/zeta-2.1-mlx', modelDetected: false,
+    expect(s.cards[0]).toMatchObject({ id: 'lm', typeLabel: 'LM Studio', inUse: true, keyStored: false, model: 'llama-3', modelDetected: false,
       warning: 'No completion template for this model', dot: 'yellow' });
     expect(s.cards[1]).toMatchObject({ id: 'cpp', inUse: false, keyStored: true, model: 'qwen2.5-coder', modelDetected: true, dot: 'grey' });
     expect(s.cards[1]!.warning).toBeUndefined();
     // the same template-less model on llama.cpp routes native: no warning
-    const n = buildPageState(inputs({ rawBackends: [{ ...cpp, fimModel: 'randmaru/zeta-2.1-mlx' }] }));
+    const n = buildPageState(inputs({ rawBackends: [{ ...cpp, fimModel: 'llama-3' }] }));
     expect(n.cards[0]!.warning).toBeUndefined();
     // locked, and an id missing from `local` counts as not local
     const l = buildPageState(inputs({ settings: base(true), local: new Map([['lm', true]]) }));
@@ -35,6 +35,11 @@ describe('page state', () => {
     expect(s.serverTypes[0]).toEqual({ id: 'llamacpp', label: 'llama.cpp' });
   });
 
+  test('completions show off when the AI Autocomplete switch is off, as when completions alone are off', () => {
+    expect(buildPageState(inputs({ settings: { ...base(), enabled: false } })).completionsOn).toBe(false);
+    expect(buildPageState(inputs({ settings: { ...base(), fim: { ...base().fim, enabled: false } } })).completionsOn).toBe(false);
+  });
+
   test('the card warning names the prompt mode when the mode, not the model, is the problem', () => {
     const native = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'qwen2.5-coder-7b', fimMode: 'native' }] }));
     expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });
@@ -42,8 +47,23 @@ describe('page state', () => {
     expect(mistral.cards[0]!.warning).toBe('prompt mode "template" does not work with this server');
   });
 
+  test('a card whose completion model is a Next Edit-only model has a warning naming it', () => {
+    const zeta = { ...lm, fimModel: 'zeta-2.1' };
+    const s = buildPageState(inputs({ rawBackends: [zeta, { ...zeta, id: 'ne', use: ['nextEdit'] }] }));
+    expect(s.cards[0]!.warning).toBe('zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions; untick Completions, or choose a completion model');
+    expect(s.cards[0]!.dot).toBe('yellow');
+    // not used for completions: the Next Edit-only warning does not apply
+    expect(s.cards[1]!.warning ?? '').not.toContain('Next Edit model');
+  });
+
+  test('a Sweep model used for completions gets the qwen template and no warning', () => {
+    const s = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'sweep-next-edit-v2-7b-oq4e' }] }));
+    expect(s.cards[0]!.warning).toBeUndefined();
+    expect(modelTag({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } }, 'sweep-next-edit-v2-7b-oq4e', base())).toBe('ready');
+  });
+
   test('modelTag: ready, chat prompt, cannot turn thinking off, or no route', () => {
-    const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, ...o });
+    const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...o });
     expect(modelTag(cfg(), 'qwen2.5-coder-7b', base())).toBe('ready');
     expect(modelTag(cfg(), 'zeta-2.1', base())).toBe('no completion template');
     expect(modelTag(cfg({ fim: { template: 'seed-coder' } }), 'zeta-2.1', base())).toBe('ready');
@@ -54,8 +74,36 @@ describe('page state', () => {
     expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
   });
 
+  test('modelListTag: completion tags with Completions ticked, the Next Edit format without', () => {
+    const cfg = (use: BackendConfig['use']): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use });
+    const both = { completions: true, nextEdit: true };
+    expect(modelListTag(cfg(both), 'zeta-2.1', base())).toBe('no completion template');
+    expect(modelListTag(cfg(both), 'qwen2.5-coder-7b', base())).toBe('ready');
+    expect(modelListTag(cfg(both), 'gpt-oss-20b', base(), true)).toBe('chat prompt, cannot turn thinking off');
+    const ne = { completions: false, nextEdit: true };
+    expect(modelListTag(cfg(ne), 'zeta-2.1', base())).toBe('Zeta 2.1 format');
+    expect(modelListTag(cfg(ne), 'sweep-next-edit-v2-7b', base())).toBe('Sweep v2 format');
+    expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', base())).toBe('chat prompt (chatXtab)');
+    const forced = { ...base(), nextEdit: { ...base().nextEdit, format: 'zeta21' as const } };
+    expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', forced)).toBe('Zeta 2.1 format');
+  });
+
+  test('retagModels: unticking Completions retags from the ids; ticking it needs the server again', () => {
+    const cfg = (use: BackendConfig['use']): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use });
+    const models = [{ id: 'zeta-2.1', tag: 'no completion template' }, { id: 'qwen2.5-coder-7b', tag: 'ready' }];
+    expect(retagModels(models, cfg({ completions: false, nextEdit: true }), base())).toEqual([{ id: 'zeta-2.1', tag: 'Zeta 2.1 format' }, { id: 'qwen2.5-coder-7b', tag: 'chat prompt (chatXtab)' }]);
+    expect(retagModels(models, cfg({ completions: true, nextEdit: true }), base())).toBeUndefined();
+    expect(models[0]!.tag).toBe('no completion template');
+  });
+
+  test('a draft with a malformed use counts as ticked', () => {
+    const bad = { ...form(), use: { completions: 'no', nextEdit: false } } as unknown as BackendForm;
+    const s = buildPageState(inputs({ edit: { cardId: 'lm', form: bad, testing: false } }));
+    expect(s.edit!.form.use).toEqual({ completions: true, nextEdit: false });
+  });
+
   test('a Mistral chat-family model on kind mistral: the tag and the card say to choose a Codestral model', () => {
-    const cs = { id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {} } as const;
+    const cs = { id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } } as const;
     expect(modelTag(cs, 'devstral-small-2507', base())).toBe('choose a Codestral model');
     expect(modelTag(cs, 'codestral-latest', base())).toBe('ready');
     const card = buildPageState(inputs({ rawBackends: [{ ...cs, fimModel: 'devstral-small-2507' }] })).cards[0]!;
@@ -113,5 +161,74 @@ describe('page state', () => {
     const s = buildPageState(inputs({ rawBackends: [cpp, { id: 'bad', kind: 'nope' }, 7, lm, { ...cpp }] }));
     expect(s.cards.map((c) => c.id)).toEqual(['cpp', 'lm']);
     expect(buildPageState(inputs({ rawBackends: undefined })).cards).toEqual([]);
+  });
+});
+
+describe('uses on the page', () => {
+  const neOnly = { ...lm, id: 'ne', use: ['nextEdit'] };
+  test('cards carry uses and the Next Edit in-use flag', () => {
+    const s = buildPageState(inputs({ rawBackends: [lm, { ...neOnly, nextEditModel: 'zeta-2.1' }], nextEditInUseId: 'ne', inUseId: 'lm', local: new Map([['lm', true], ['ne', true]]) }));
+    expect(s.cards[0]).toMatchObject({ uses: { completions: true, nextEdit: true }, nextEditInUse: false, inUse: true, model: 'llama-3' });
+    expect(s.cards[1]).toMatchObject({ uses: { completions: false, nextEdit: true }, nextEditInUse: true, inUse: false, nextEditModel: 'zeta-2.1' });
+    expect(s.cards[1]!.model).toBeUndefined();
+    expect(s.cards[1]!.warning).toBeUndefined();
+  });
+  test('a feature turned off has no card in use, so its Use for button shows again', () => {
+    const on = { rawBackends: [lm, neOnly], inUseId: 'lm', nextEditInUseId: 'ne' };
+    const off = buildPageState(inputs({ ...on, settings: { ...base(), fim: { ...base().fim, enabled: false }, nextEdit: { ...base().nextEdit, enabled: false } } }));
+    expect(off.cards.map((c) => [c.inUse, c.nextEditInUse])).toEqual([[false, false], [false, false]]);
+    expect(buildPageState(inputs(on)).cards.map((c) => [c.inUse, c.nextEditInUse])).toEqual([[true, false], [false, true]]);
+  });
+  test('a Next Edit-only card has no completion-route warning at all', () => {
+    for (const model of ['zeta-2.1', 'sweep-next-edit-v2-7b', 'llama-3']) {
+      const s = buildPageState(inputs({ rawBackends: [{ ...neOnly, fimModel: model, nextEditModel: model }] }));
+      expect(s.cards[0]!.warning).toBeUndefined();
+    }
+    const detected = buildPageState(inputs({ rawBackends: [{ id: 'ne', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', use: ['nextEdit'] }], detected: new Map([['ne', 'zeta-2.1']]) }));
+    expect(detected.cards[0]).toMatchObject({ nextEditModel: 'zeta-2.1', modelDetected: false });
+    expect(detected.cards[0]!.warning).toBeUndefined();
+    expect(detected.cards[0]!.model).toBeUndefined();
+  });
+  test('the Next Edit model of a card is the configured one, else the completion model, else the detected one', () => {
+    const both = buildPageState(inputs({ rawBackends: [{ ...lm, nextEditModel: 'mercury' }, { ...lm, id: 'lm2' }, cpp, { ...cpp, id: 'c2', use: ['completions'] }], detected: new Map([['cpp', 'qwen3.8']]) }));
+    expect(both.cards.map((c) => c.nextEditModel)).toEqual(['mercury', 'llama-3', 'qwen3.8', undefined]);
+  });
+  test('an entry without use builds the same card as before; uses is both', () => {
+    const s = buildPageState(inputs({ inUseId: 'lm' }));
+    expect(s.cards[0]).toEqual({ id: 'lm', typeLabel: 'LM Studio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'llama-3', nextEditModel: 'llama-3', modelDetected: false, inUse: true, keyStored: false,
+      warning: 'No completion template for this model', dot: 'yellow', uses: { completions: true, nextEdit: true }, nextEditInUse: false });
+  });
+  test('the edit view carries the form use and copies it as booleans only', () => {
+    const e = buildPageState(inputs({ edit: { cardId: null, form: form({ use: { completions: false, nextEdit: true, extra: 1 } as never }), testing: false } })).edit!;
+    expect(e.form.use).toEqual({ completions: false, nextEdit: true });
+    const bad = buildPageState(inputs({ edit: { cardId: null, form: { ...form(), use: { completions: 'no', nextEdit: 0 } as never }, testing: false } })).edit!;
+    expect(bad.form.use).toEqual({ completions: true, nextEdit: true });
+    const missing = buildPageState(inputs({ edit: { cardId: null, form: { ...form(), use: undefined } as never, testing: false } })).edit!;
+    expect(missing.form.use).toEqual({ completions: true, nextEdit: true });
+    const none = buildPageState(inputs({ edit: { cardId: null, form: form({ use: { completions: false, nextEdit: false } }), testing: false } })).edit!;
+    expect(none.errors.map((x) => x.field)).toContain('use');
+  });
+  test('the edit view names the Next Edit format', () => {
+    const fmt = (f: Partial<BackendForm>, setting?: 'sweep', detected?: string): string | undefined => {
+      const s = setting ? { ...base(), nextEdit: { ...base().nextEdit, format: setting } } : base();
+      return buildPageState(inputs({ settings: s, ...(detected ? { detected: new Map([['lm', detected]]) } : {}), edit: { cardId: 'lm', form: form({ originalId: 'lm', ...f }), testing: false } })).edit!.nextEditFormat;
+    };
+    expect(fmt({ nextEditModel: 'zeta-2.1' })).toBe('Zeta 2.1 format');
+    expect(fmt({ nextEditModel: 'sweep-next-edit-1.5b' })).toBe('Sweep v1 format');
+    expect(fmt({ nextEditModel: 'sweep-next-edit-v2-7b' })).toBe('Sweep v2 format');
+    expect(fmt({ model: 'qwen3.8' })).toBe('chat prompt (chatXtab)');
+    expect(fmt({ model: 'qwen3.8' }, 'sweep')).toBe('Sweep v1 format');
+    // both ticked, empty Next Edit model: the completion model decides
+    expect(fmt({ model: 'zeta-2.1' })).toBe('Zeta 2.1 format');
+    // Next Edit alone, empty Next Edit model: the detected model; the completion model is not used
+    expect(fmt({ model: 'zeta-2.1', use: { completions: false, nextEdit: true } }, undefined, 'sweep-next-edit-1.5b')).toBe('Sweep v1 format');
+    // Next Edit not used: no format
+    expect(fmt({ nextEditModel: 'zeta-2.1', use: { completions: true, nextEdit: false } })).toBeUndefined();
+  });
+  test('the edit view of a Next Edit-only form has no completion warnings', () => {
+    const e = buildPageState(inputs({ edit: { cardId: null, form: form({ nextEditModel: 'zeta-2.1', use: { completions: false, nextEdit: true } }), testing: false } })).edit!;
+    expect(e.warnings).toEqual([]);
+    const c = buildPageState(inputs({ edit: { cardId: null, form: form({ model: 'zeta-2.1' }), testing: false } })).edit!;
+    expect(c.warnings.join()).toContain('Next Edit model');
   });
 });

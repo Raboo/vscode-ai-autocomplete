@@ -12,10 +12,10 @@ const field = (f: FormField, over: Partial<FieldView> = {}): FieldView => ({
   ...(OPTIONS[f] ? { options: OPTIONS[f] } : {}), ...over,
 });
 const card = (over: Partial<CardView> = {}): CardView => ({
-  id: 'local', typeLabel: 'llama.cpp', baseUrl: 'http://127.0.0.1:8012', modelDetected: false, inUse: false, keyStored: false, dot: 'grey', ...over,
+  id: 'local', typeLabel: 'llama.cpp', baseUrl: 'http://127.0.0.1:8012', modelDetected: false, uses: { completions: true, nextEdit: true }, inUse: false, nextEditInUse: false, keyStored: false, dot: 'grey', ...over,
 });
 const edit = (over: Partial<EditView> = {}): EditView => ({
-  cardId: 'lm', form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} },
+  cardId: 'lm', form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} },
   keyMode: 'optional', keyStored: false, fields: FIELDS.map((f) => field(f)), errors: [], warnings: [], testing: false, ...over,
 });
 const state = (over: Partial<PageState> = {}): PageState => ({
@@ -42,7 +42,7 @@ describe('backends page render', () => {
     const step: TestStep = { id: 'reach', state: 'fail', text: evil, hint: evil, ms: 3 };
     const html = renderPage(state({
       cards: [card({ model: evil, test: [step], warning: evil }), card({ id: 'lm', typeLabel: evil, baseUrl: evil })],
-      edit: edit({ form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: evil, model: evil, nextEditModel: evil, changed: { temperature: evil } },
+      edit: edit({ form: { originalId: 'lm', type: 'lmstudio', id: 'lm', baseUrl: evil, model: evil, nextEditModel: evil, use: { completions: true, nextEdit: true }, changed: { temperature: evil } },
         models: [{ id: evil, tag: 'ready' }, { id: `${evil}2`, tag: evil }], modelsError: evil, test: [step], warnings: [evil],
         errors: [{ field: 'id', message: evil }],
         fields: FIELDS.map((f) => field(f, f === 'temperature' ? { value: evil, isDefault: false, hint: evil, error: evil } : f === 'template' ? { options: [evil] } : {})) }),
@@ -118,6 +118,102 @@ describe('backends page render', () => {
     expect(count(html, '>Remove<')).toBe(2);
   });
 
+  test('the connection section has Use for checkboxes', () => {
+    const html = renderPage(state({ edit: edit() }), ui());
+    expect(html).toContain('Use for');
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*id="f-use-completions"[^>]*\schecked/);
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*id="f-use-nextEdit"[^>]*\schecked/);
+    expect(html).toMatch(/<label[^>]*for="f-use-completions"[^>]*>Completions</);
+    expect(html).toMatch(/<label[^>]*for="f-use-nextEdit"[^>]*>Next Edit</);
+    const one = renderPage(state({ edit: edit({ form: { ...edit().form, use: { completions: false, nextEdit: true } } }) }), ui());
+    expect(one).not.toMatch(/id="f-use-completions"[^>]*\schecked/);
+    expect(one).toMatch(/id="f-use-nextEdit"[^>]*\schecked/);
+    // the use error shows under the checkboxes, escaped, and the checkboxes point at it
+    const bad = renderPage(state({ edit: edit({ form: { ...edit().form, use: { completions: false, nextEdit: false } }, errors: [{ field: 'use', message: 'choose <b>one</b>' }] }) }), ui());
+    const use = fieldHtml(bad, 'use');
+    expect(use).toContain('choose &lt;b&gt;one&lt;/b&gt;');
+    expect(use).not.toContain('<b>');
+    expect(use).toMatch(/id="f-use-completions"[^>]*aria-invalid="true"/);
+    expect(renderPage(state({ edit: edit() }), ui())).not.toContain('class="error"');
+  });
+
+  test('each ticked use shows its model field', () => {
+    const withUse = (use: { completions: boolean; nextEdit: boolean }, extra: Partial<EditView> = {}): string =>
+      renderPage(state({ edit: edit({ form: { ...edit().form, use }, ...extra }) }), ui());
+    const c = withUse({ completions: true, nextEdit: false });
+    expect(count(c, 'id="f-model"')).toBe(1);
+    expect(count(c, 'id="f-nextEditModel"')).toBe(0);
+    expect(c).not.toContain('f-nextEditModel');
+    const n = withUse({ completions: false, nextEdit: true });
+    expect(count(n, 'id="f-nextEditModel"')).toBe(1);
+    expect(count(n, 'id="f-model"')).toBe(0);
+    expect(n).toMatch(/<input[^>]*id="f-nextEditModel"[^>]*placeholder="auto-detect"/);
+    expect(n).toContain('id="f-model-list"');
+    const b = withUse({ completions: true, nextEdit: true });
+    expect(count(b, 'id="f-model"')).toBe(1);
+    expect(b).toMatch(/<input[^>]*id="f-nextEditModel"[^>]*placeholder="same as the completion model"/);
+  });
+
+  test('the Next Edit model field names its format', () => {
+    const html = renderPage(state({ edit: edit({ nextEditFormat: 'Zeta 2.1 <format>' }) }), ui());
+    const f = fieldHtml(html, 'nextEditModel');
+    expect(f).toContain('Zeta 2.1 &lt;format&gt;');
+    expect(f).not.toContain('<format>');
+    expect(f).toMatch(/aria-describedby="f-nextEditModel-note0"/);
+    expect(renderPage(state({ edit: edit() }), ui())).not.toContain('format');
+  });
+
+  test('cards show uses, badges and use buttons per use', () => {
+    const both = card({ id: 'both', model: 'coder', nextEditModel: 'zeta-2.1', inUse: true, nextEditInUse: true });
+    const html = renderPage(state({ cards: [both] }), ui());
+    expect(html).toContain('<span class="badge">in use</span>');
+    expect(html).toContain('<span class="badge">Next Edit</span>');
+    expect(html).not.toContain('>Use for completions<');
+    expect(html).not.toContain('>Use for Next Edit<');
+    expect(html).toContain('coder');
+    expect(html).toContain('Next Edit model: zeta-2.1');
+    // neither is in use: both buttons, no badges
+    const idle = renderPage(state({ cards: [card({ id: 'idle', model: 'm', nextEditModel: 'm' })] }), ui());
+    expect(idle).toMatch(/<button[^>]*id="a-use-idle"[^>]*data-action="use"[^>]*data-id="idle"[^>]*>Use for completions</);
+    expect(idle).toMatch(/<button[^>]*id="a-useNextEdit-idle"[^>]*data-action="useNextEdit"[^>]*data-id="idle"[^>]*>Use for Next Edit</);
+    expect(idle).not.toContain('class="badge"');
+    // the same model for both uses is not repeated
+    expect(idle).not.toContain('Next Edit model:');
+    // a Next Edit-only card: no completions button, no completion model line, no completions badge
+    const ne = renderPage(state({ cards: [card({ id: 'ne', uses: { completions: false, nextEdit: true }, nextEditModel: 'zeta-2.1' })] }), ui());
+    expect(ne).not.toContain('a-use-ne');
+    expect(ne).toContain('a-useNextEdit-ne');
+    expect(ne).toContain('zeta-2.1');
+    expect(ne).not.toContain('model: auto-detect');
+    // a completions-only card has no Next Edit button
+    const co = renderPage(state({ cards: [card({ id: 'co', uses: { completions: true, nextEdit: false }, model: 'm' })] }), ui());
+    expect(co).toContain('a-use-co');
+    expect(co).not.toContain('a-useNextEdit-co');
+    // a Next Edit-only card in use shows the Next Edit badge but never "in use"
+    const neIn = renderPage(state({ cards: [card({ id: 'ne', uses: { completions: false, nextEdit: true }, nextEditModel: 'z', nextEditInUse: true })] }), ui());
+    expect(neIn).toContain('<span class="badge">Next Edit</span>');
+    expect(neIn).not.toContain('in use');
+  });
+
+  test('cards name their uses', () => {
+    const meta = (uses: { completions: boolean; nextEdit: boolean }): string => renderPage(state({ cards: [card({ uses })] }), ui());
+    expect(meta({ completions: true, nextEdit: true })).toContain('Completions · Next Edit');
+    expect(meta({ completions: true, nextEdit: false })).toContain('Completions only');
+    expect(meta({ completions: true, nextEdit: false })).not.toContain('Next Edit only');
+    expect(meta({ completions: false, nextEdit: true })).toContain('Next Edit only');
+    expect(meta({ completions: false, nextEdit: true })).not.toContain('Completions only');
+  });
+
+  test('the edit form shows the use buttons for the saved card', () => {
+    const html = renderPage(state({ cards: [card({ id: 'lm' })], edit: edit() }), ui());
+    expect(html).toMatch(/id="a-use-lm"[^>]*>Use for completions</);
+    expect(html).toMatch(/id="a-useNextEdit-lm"[^>]*>Use for Next Edit</);
+    const used = renderPage(state({ cards: [card({ id: 'lm', inUse: true, nextEditInUse: true })], edit: edit() }), ui());
+    expect(used).not.toContain('a-use-lm');
+    expect(used).not.toContain('a-useNextEdit-lm');
+    expect(used).toContain('<span class="badge">Next Edit</span>');
+  });
+
   test('header shows completions on/off, local only, the General settings link and Add backend', () => {
     const on = renderPage(state(), ui());
     expect(on).toContain('Completions on');
@@ -183,14 +279,14 @@ describe('backends page render', () => {
 
   test('markup has no inline styles or event handlers (the page CSP forbids them)', () => {
     const html = renderPage(state({ cards: [card({ inUse: true, keyStored: true, warning: 'w', dot: 'lock', test: [{ id: 'reach', state: 'ok', text: 'ok' }] })],
-      edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', changed: {} }, warnings: ['w'] }) }), ui());
+      edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} }, warnings: ['w'] }) }), ui());
     expect(html).not.toMatch(/\sstyle=/i);
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).not.toContain('<script');
   });
 
   test('a new backend renders its form on a new card', () => {
-    const html = renderPage(state({ edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', changed: {} } }) }), ui());
+    const html = renderPage(state({ edit: edit({ cardId: null, form: { type: 'lmstudio', id: 'lmstudio', baseUrl: '', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} } }) }), ui());
     expect(count(html, 'id="f-id"')).toBe(1);
     expect(html).toContain('value="lmstudio"');
     // both saved cards stay collapsed, and a new card offers no Remove

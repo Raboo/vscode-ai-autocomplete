@@ -4,6 +4,7 @@ import { resolveFim, templateMismatch, type ValueSource } from '../completion/ef
 import { chatStops, planRoute } from '../completion/route';
 import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
+import { nextEditOnlyNote } from '../nextEdit/formats';
 import { THINKING_LABELS } from '../models/thinking';
 import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
 import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
@@ -46,7 +47,7 @@ export function knownChanged(changed: Record<string, unknown>): BackendForm['cha
 
 export function newForm(type: ServerTypeId, taken: readonly string[]): BackendForm {
   const t = typeInfo(type);
-  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', changed: {} };
+  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', use: { completions: true, nextEdit: type !== 'mistral' }, changed: {} };
 }
 
 /**
@@ -62,6 +63,20 @@ export function retypeForm(prev: BackendForm, next: BackendForm, taken: readonly
   if (isNew && out.id === suggestId(prev.type, taken)) out.id = suggestId(next.type, taken);
   if (out.model.trim() === '' || out.model === (from.defaultModel ?? '')) out.model = to.defaultModel ?? '';
   return out;
+}
+
+/** The uses of an untrusted form: only real booleans are taken; anything missing or malformed counts as ticked, as a missing `use` does in the settings. */
+export function useFromUnknown(v: unknown): BackendForm['use'] {
+  const o = isObj(v) ? v : {};
+  return { completions: typeof o.completions === 'boolean' ? o.completions : true, nextEdit: typeof o.nextEdit === 'boolean' ? o.nextEdit : true };
+}
+
+/** The ticked uses of a stored `use` list: a missing, empty or unusable list is both, as in the settings. */
+function usesOf(raw: unknown): BackendForm['use'] {
+  const list = Array.isArray(raw) ? raw : [];
+  const completions = list.includes('completions');
+  const nextEdit = list.includes('nextEdit');
+  return completions || nextEdit ? { completions, nextEdit } : { completions: true, nextEdit: true };
 }
 
 export function entryToForm(raw: Record<string, unknown>): BackendForm {
@@ -84,7 +99,7 @@ export function entryToForm(raw: Record<string, unknown>): BackendForm {
   }
   return { ...(id ? { originalId: id } : {}), type: serverTypeOf({ kind, ...(flavor ? { hostFlavor: flavor } : {}), baseUrl }), id, baseUrl,
     model: typeof raw.fimModel === 'string' ? raw.fimModel : '',
-    nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', changed };
+    nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', use: usesOf(raw.use), changed };
 }
 
 function parseHeaders(text: string): { headers: Record<string, string>; bad: boolean } {
@@ -112,6 +127,7 @@ export function validateForm(f: BackendForm, taken: readonly string[]): FieldErr
   const err = (field: FieldError['field'], message: string): void => void errors.push({ field, message });
   if (!ID_RE.test(f.id)) err('id', 'use lowercase letters, digits and dashes');
   else if (f.id !== f.originalId && taken.includes(f.id)) err('id', 'another backend already uses this name');
+  if (!f.use.completions && !f.use.nextEdit) err('use', 'choose at least one use');
   const url = f.baseUrl.trim();
   if (url === '') {
     if (f.type !== 'other') err('baseUrl', 'the URL is required');
@@ -163,10 +179,14 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
     else delete out.hostFlavor;
   }
   out.baseUrl = f.baseUrl.trim();
-  if (f.model.trim() !== '') out.fimModel = f.model.trim();
+  // The model of an unticked use is dropped; both uses is the default and is stored as no `use` at all.
+  if (f.use.completions && f.model.trim() !== '') out.fimModel = f.model.trim();
   else delete out.fimModel;
-  if (f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
+  if (f.use.nextEdit && f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
   else delete out.nextEditModel;
+  if (f.use.completions && !f.use.nextEdit) out.use = ['completions'];
+  else if (f.use.nextEdit && !f.use.completions) out.use = ['nextEdit'];
+  else delete out.use;
 
   const fim: Record<string, unknown> = isObj(original?.fim) ? { ...original.fim } : {};
   for (const k of FIM_KEYS) delete fim[k];
@@ -213,7 +233,7 @@ const ADAPTIVE = 'adaptive, starts at 75 ms (local) or 250 ms (hosted)';
 function baseConfig(f: BackendForm): BackendConfig {
   const base: BackendForm = { ...f, id: ID_RE.test(f.id) ? f.id : 'backend', baseUrl: f.baseUrl.trim() || typeInfo(f.type).defaultUrl || 'http://127.0.0.1',
     changed: { ...(typed(f, 'fimMode') && FIM_MODES.includes(typed(f, 'fimMode')!) ? { fimMode: typed(f, 'fimMode')! } : {}) } };
-  return formToConfig(base) ?? { id: 'backend', kind: typeInfo(f.type).kind, baseUrl: 'http://127.0.0.1', fimMode: 'auto', headers: {} };
+  return formToConfig(base) ?? { id: 'backend', kind: typeInfo(f.type).kind, baseUrl: 'http://127.0.0.1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } };
 }
 
 export function fieldViews(f: BackendForm, model: string | undefined, s: Settings, errors: FieldError[]): FieldView[] {
@@ -278,7 +298,12 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
 export function formWarnings(f: BackendForm, model: string | undefined, s: Settings): string[] {
   const cfg = formToConfig(f);
   if (!cfg) return [];
+  // These warnings are about completions only.
+  if (!cfg.use.completions) return [];
   const out: string[] = [];
+  const nextEditOnly = nextEditOnlyNote(model);
+  // Nothing else about completions matters for a model that cannot do them.
+  if (nextEditOnly) return [`${nextEditOnly.text}; ${nextEditOnly.hint}`];
   const values = resolveFim(cfg, model, s).values;
   const route = planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes(), values, cfg.fimMode);
   const stops = route === 'chat' ? chatStops(values) : values.stop;

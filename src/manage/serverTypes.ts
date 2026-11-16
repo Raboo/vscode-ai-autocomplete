@@ -22,9 +22,9 @@ export const SERVER_TYPES: readonly ServerType[] = [
 ];
 
 export function serverTypeOf(cfg: { kind: BackendKind; hostFlavor?: HostFlavor; baseUrl: string }): ServerTypeId {
-  const flavor = inferHostFlavor({ ...cfg, id: '', fimMode: 'auto', headers: {} });
+  const flavor = inferHostFlavor({ ...cfg, id: '', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } });
   for (const t of SERVER_TYPES) {
-    if (t.kind === cfg.kind && inferHostFlavor({ id: '', kind: t.kind, ...(t.hostFlavor ? { hostFlavor: t.hostFlavor } : {}), baseUrl: '', fimMode: 'auto', headers: {} }) === flavor) return t.id;
+    if (t.kind === cfg.kind && inferHostFlavor({ id: '', kind: t.kind, ...(t.hostFlavor ? { hostFlavor: t.hostFlavor } : {}), baseUrl: '', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } }) === flavor) return t.id;
   }
   return 'other';
 }

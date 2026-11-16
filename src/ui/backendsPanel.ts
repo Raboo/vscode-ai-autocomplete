@@ -6,12 +6,12 @@ import type { Secrets } from '../config/secrets';
 import type { Settings } from '../config/settings';
 import type { Log } from '../log';
 import { completionServed, explainFailure, runConnectionTest, type ConnectionTestResult } from '../manage/connectionTest';
-import { entryToForm, formToConfig, formToEntry, knownChanged, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm, type FieldError } from '../manage/form';
-import { buildPageState, modelTag, type EditDraft } from '../manage/pageState';
+import { entryToForm, formToConfig, formToEntry, knownChanged, newForm, planRename, removeBackend, retypeForm, upsertBackend, useFromUnknown, validateForm, type FieldError } from '../manage/form';
+import { buildPageState, modelListTag, retagModels, type EditDraft } from '../manage/pageState';
 import type { BackendForm, HostMessage, PageMessage, PageState, ServerTypeId, TestStep } from '../manage/protocol';
 import { SERVER_TYPES } from '../manage/serverTypes';
 import type { BackendConfig } from '../types';
-import { useBackend } from './commands';
+import { useBackend, useNextEditBackend } from './commands';
 
 export interface BackendsPanelDeps {
   context: vscode.ExtensionContext;
@@ -46,7 +46,8 @@ function asForm(v: unknown): BackendForm | undefined {
   if (!isObj(v) || typeof v.type !== 'string' || !TYPES.has(v.type) || typeof v.id !== 'string' || typeof v.baseUrl !== 'string'
     || typeof v.model !== 'string' || !isObj(v.changed)) return undefined;
   return { ...(typeof v.originalId === 'string' ? { originalId: v.originalId } : {}), type: v.type as ServerTypeId, id: v.id, baseUrl: v.baseUrl, model: v.model,
-    nextEditModel: typeof v.nextEditModel === 'string' ? v.nextEditModel : '', changed: knownChanged(v.changed) };
+    nextEditModel: typeof v.nextEditModel === 'string' ? v.nextEditModel : '',
+    use: useFromUnknown(v.use), changed: knownChanged(v.changed) };
 }
 
 function pageHtml(w: vscode.Webview, extensionUri: vscode.Uri): string {
@@ -170,7 +171,10 @@ export class BackendsPanel implements vscode.Disposable {
       case 'remove':
         return this.remove(m.id);
       case 'use':
-        if (this.d.getSettings().backends.some((b) => b.id === m.id)) await useBackend(m.id);
+        if (this.d.getSettings().backends.some((b) => b.id === m.id && b.use.completions)) await useBackend(m.id);
+        return;
+      case 'useNextEdit':
+        if (this.d.getSettings().backends.some((b) => b.id === m.id && b.use.nextEdit)) await useNextEditBackend(m.id);
         return;
       case 'test':
         return this.testCard(m.id);
@@ -221,6 +225,13 @@ export class BackendsPanel implements vscode.Disposable {
       this.running.get('models')?.abort();
       delete d.models;
       delete d.modelsError;
+    }
+    if (d.models && next.use.completions !== d.form.use.completions) {
+      // The tags follow the Completions box: recompute them from the loaded ids, or drop the list when that is not possible.
+      const cfg = formToConfig(next);
+      const tagged = cfg ? retagModels(d.models, cfg, this.d.getSettings()) : undefined;
+      if (tagged) d.models = tagged;
+      else delete d.models;
     }
     d.form = next;
     this.hostErrors = [];
@@ -330,7 +341,7 @@ export class BackendsPanel implements vscode.Disposable {
       if (!r || !c) return;
       c.testing = false;
       c.test = r.steps;
-      if (id !== undefined) this.finish(id, r, form.model.trim() === '');
+      if (id !== undefined) this.finish(id, r, !form.use.completions || form.model.trim() === '');
       void this.post();
     });
   }
@@ -392,7 +403,7 @@ export class BackendsPanel implements vscode.Disposable {
         try {
           const info = await backend.listModels(ctl.signal, RELOAD_TIMEOUT_MS);
           const mandatory = new Set(info.thinkingMandatory ?? []);
-          models = info.models.map((id) => ({ id, tag: modelTag(cfg, id, s, mandatory.has(id)) }));
+          models = info.models.map((id) => ({ id, tag: modelListTag(cfg, id, s, mandatory.has(id)) }));
         } catch (err) {
           const f = explainFailure(err);
           error = f.hint ? `${f.text}: ${f.hint}` : f.text;
@@ -444,7 +455,7 @@ export class BackendsPanel implements vscode.Disposable {
       }));
       if (this.disposed) return;
       const state = buildPageState({
-        settings, rawBackends: raw, inUseId: settings.fim.backendId, keysStored, local, detected, tests: this.tests, ...(this.draft ? { edit: this.draft } : {}),
+        settings, rawBackends: raw, inUseId: settings.fim.backendId, nextEditInUseId: settings.nextEdit.backendId, keysStored, local, detected, tests: this.tests, ...(this.draft ? { edit: this.draft } : {}),
       });
       if (state.edit) for (const e of this.hostErrors) if (!state.edit.errors.some((x) => x.field === e.field)) state.edit.errors.push({ field: e.field, message: e.message });
       this.last = state;

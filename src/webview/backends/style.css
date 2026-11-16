@@ -255,6 +255,18 @@ input[type="checkbox"] {
   accent-color: var(--vscode-button-background);
 }
 
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 ::placeholder {
   color: var(--vscode-input-placeholderForeground);
 }

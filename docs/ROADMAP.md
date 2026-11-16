@@ -8,8 +8,9 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 1. FIM core (v0.1) | llama.cpp `/infill`, openaiCompat, Mistral/Codestral; coder-family presets; full FIM pipeline; status bar; SecretStorage keys; `localOnly`; backends page ([design](superpowers/specs/2026-11-14-backend-manager-design.md)) | [Phase 0–1 plan](superpowers/plans/2026-11-13-ai-autocomplete-phase0-1.md) | released in [v0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.1.0) |
 | 2. Chat path and thinking control (v0.2) | Hole-filler, `thinking.ts` and capability learning, OpenRouter backend, model-family presets, Strata host flavor | [Phase 2 plan](superpowers/plans/2026-11-15-phase2-chat-thinking.md), [revisions](superpowers/plans/2026-11-15-phase2-revisions.md) | released in [v0.2.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.2.0) |
 | 3a. Next Edit core, chatXtab, native display (v0.3) | Edit history, region, trigger; chatXtab format; ghost text for insertions; native inline edits with the argv.json opt-in | [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md) | released in [v0.3.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.3.0) |
-| 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md) | implemented on `feat/next-edit-formats` (not merged or released) |
-| 4. Local model helper (v0.4) | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | not written yet | not started |
+| 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md) | released in [v0.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.4.0) |
+| 3c. Backend roles | Use for checkboxes per backend (Completions / Next Edit), per-use model fields and pickers, a Next Edit check in Test, Next Edit-only models kept out of ghost text | [Phase 3c plan](superpowers/plans/2026-11-16-backend-roles.md), [design](superpowers/specs/2026-11-16-backend-roles-design.md) | implemented on `feat/backend-roles` (not merged or released) |
+| 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | not written yet | not started |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -74,3 +75,15 @@ Phase 3b (Publish step 4 of the [Phase 3b plan](superpowers/plans/2026-11-16-pha
 - The status-bar menu shows **Enable native Next Edit UI...** until the opt-in is active, and **Settings...** opens the Settings page filtered to this extension.
 - A Zeta and a Sweep edit near the end of a file that ends with a newline keeps the final newline.
 - Next Edit still fires with FIM on against the same llama.cpp/LM Studio server.
+
+Phase 3c (check before merging the Phase 3c PR, on its CI `.vsix`; [plan](superpowers/plans/2026-11-16-backend-roles.md)):
+
+- A Zeta-only LM Studio backend (Use for: Next Edit only): Test shows the Next Edit step and no completion step.
+- The menu's **Completions** picker (**Select Completion Backend**) does not list that backend.
+- A both-uses Strata backend selected with **Select Next Edit Backend**: Test shows both the completion steps and the Next Edit step; unselected and without a Next Edit model, only the completion steps.
+- An existing backend without `use` looks and works as before (both boxes ticked).
+- Unticking Completions on the selected completion backend turns completions off, with a problem in the log.
+- The status bar menu reads **Turn off AI Autocomplete**, **Snooze...**, **Completions: <backend>**, **Next Edit: <backend>**; no **Toggle completions on/off**.
+- **Completions → Off** stops ghost text and the entry reads **Completions: off**; with Next Edit on, the status bar stays normal and its tooltip says "Completions off". Picking the backend again brings ghost text back.
+- **Turn off AI Autocomplete** stops ghost text and Next Edit and shows the off icon; **Turn on AI Autocomplete** brings both back with the same backends.
+- A Sweep v2 backend on LM Studio with both uses ticked: no warning, Test passes the completion steps and the Next Edit step, and ghost text appears (expect the MLX leading-space loss after a word).

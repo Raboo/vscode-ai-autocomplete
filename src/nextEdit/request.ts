@@ -41,6 +41,8 @@ interface RunOptions {
   onAnswer?(visible: string): void;
   /** A completion format's answer was cut at max_tokens and is dropped. */
   onTruncated?(): void;
+  /** The parsed answer, before it becomes a result; not called for a truncated answer. */
+  onParsed?(answer: FormatAnswer): void;
 }
 
 /**
@@ -51,7 +53,9 @@ interface RunOptions {
  */
 export async function runNextEdit(o: RunOptions): Promise<NextEditResult | undefined> {
   const answer = o.format.transport === 'chat' ? await chatAnswer(o, o.format) : await completionAnswer(o, o.format);
-  return answer && resultOf(o.snapshot, answer);
+  if (!answer) return undefined;
+  o.onParsed?.(answer);
+  return resultOf(o.snapshot, answer);
 }
 
 /** Links an inner controller to the caller's signal; `done()` unlinks it. */

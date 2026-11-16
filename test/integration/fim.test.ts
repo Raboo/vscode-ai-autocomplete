@@ -15,7 +15,7 @@ interface Api {
 const SOURCE = 'function add(a: number, b: number) {\n  return ';
 const BACKEND_ID = 'test';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.disableInLanguages', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.disableInLanguages', 'privacy.localOnly'];
 
 const useStrata = (baseUrl: string, model: string): Promise<void> =>
   configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${baseUrl}/v1`, fimModel: model }], 'fim.backend': BACKEND_ID });
@@ -100,6 +100,24 @@ suite('FIM inline completion', () => {
     assert.ok(status.includes('cannot reach backend'), `status: ${status}`);
     await commit();
     assert.equal(editor.document.getText(), SOURCE);
+  });
+
+  test('Turn off AI Autocomplete sends nothing and shows off; turning it on again completes', async () => {
+    await useLlamaCpp(mock.baseUrl);
+    await vscode.commands.executeCommand('aiAutocomplete.toggleEnabled');
+    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('enabled'), false);
+    assert.ok(await waitFor(() => api.status.current() === 'disabled', 2000), `status: ${api.status.current()}`);
+    const editor = await openSource();
+
+    await trigger(editor);
+    await sleep(1000);
+    assert.equal(mock.requests.length, 0, `mock saw ${JSON.stringify(mock.requests)}`);
+
+    await vscode.commands.executeCommand('aiAutocomplete.toggleEnabled');
+    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('enabled'), true);
+    assert.ok(await waitFor(() => api.status.current() !== 'disabled', 2000), `status: ${api.status.current()}`);
+    await trigger(editor);
+    assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
   });
 
   test('excluded file gets no request', async () => {

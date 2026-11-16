@@ -21,7 +21,7 @@ On Linux and Windows, download a build from the [llama.cpp releases](https://git
 
 ### 2. Point the extension at it
 
-Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Add Backend** button of the "no backends configured" notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, pick its model from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends a built-in sample, never your code.
+Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Add Backend** button of the "no backends configured" notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, say what it is used for, pick its models from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends built-in samples, never your code.
 
 Or edit the settings by hand. Open your user settings (**Preferences: Open User Settings (JSON)**) and add:
 
@@ -68,7 +68,33 @@ The extension recognises LM Studio and Ollama only by their default ports (1234 
 { "id": "vllm", "kind": "openai", "baseUrl": "http://127.0.0.1:8000/v1", "hostFlavor": "vllm", "fimModel": "Qwen/Qwen2.5-Coder-7B" }
 ```
 
-You can list several backends and switch between them with **AI Autocomplete: Select Backend**.
+You can list several backends and switch between them with **AI Autocomplete: Select Completion Backend**.
+
+### Turning it off
+
+Click **AI** in the status bar for the menu:
+
+- **Turn off AI Autocomplete** stops completions and Next Edit together (the `aiAutocomplete.enabled` setting); **Turn on AI Autocomplete** brings back exactly what you had, because both backend choices stay. The status bar shows the off icon meanwhile. **AI Autocomplete: Turn On/Off** in the Command Palette does the same.
+- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions off".
+- **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
+
+### What a backend is used for
+
+Each backend has **Use for** checkboxes on the Backends page: **Completions**, **Next Edit** or both. A backend with only Next Edit ticked is never used for ghost-text completions, so you can add a Zeta server and keep it out of the completion picker. A Sweep model can do both: it is a Qwen2.5-Coder fine-tune and fills in the middle with the qwen template, so one Sweep backend with both boxes ticked serves completions and Next Edit.
+
+- **Model** shows only with Completions ticked, and **Next Edit model** only with Next Edit ticked. With both ticked, an empty Next Edit model means the same model as for completions. With only Next Edit ticked, an empty Next Edit model means the model the server lists (or the one you pick from its list). The Next Edit model's hint says which format the model will use: "Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format" or "chat prompt (chatXtab)".
+- At least one use must stay ticked. Unticking a use removes that use's model when you save.
+- Each backend's card says what it is used for ("Completions · Next Edit", "Completions only" or "Next Edit only") and has **Use for completions** and **Use for Next Edit** buttons, with an "in use" badge on the backend that is selected.
+- **Select Completion Backend** (the menu's **Completions** entry) lists only backends used for completions. **Select Next Edit Backend** lists only backends used for Next Edit (and Off). **Set API Key** lists all backends.
+- **Test connection** runs one check per ticked use: the completion steps with Completions ticked, and then a Next Edit step with Next Edit ticked. A backend with both uses gets the Next Edit step only when it has a Next Edit model or is the backend selected for Next Edit, so a completions-only setup that predates `use` tests as before; a Next Edit-only backend always gets it. The Next Edit step sends a built-in sample edit (a renamed variable) through the same format and request code the editor uses, and passes when the model suggests an edit. It shows a warning when the model answered but suggested no edit, or when the answer was cut at its token limit, and a failure when the answer could not be read or the model keeps thinking.
+
+In the settings file the field is `use`, a list of `"completions"` and `"nextEdit"`:
+
+```jsonc
+{ "id": "zeta", "kind": "openai", "baseUrl": "http://127.0.0.1:1234/v1", "nextEditModel": "zeta-2.1", "use": ["nextEdit"] }
+```
+
+A backend with no `use` is used for both, as before, so existing settings need no change. An unknown value in the list is reported as a problem and ignored; an empty list, a list with only unknown values or a value that is not a list is reported as a problem and counts as both. If `aiAutocomplete.fim.backend` is unset, the first backend used for completions is selected. If it names a backend that is not used for completions, completions have no backend until you change it, and the log says so. `aiAutocomplete.nextEdit.backend` likewise needs a backend used for Next Edit. On a Next Edit-only backend the completion model is never used for Next Edit.
 
 ### Per-backend settings
 
@@ -121,13 +147,15 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 
 **LM Studio:** when the status bar says the model keeps thinking, turn thinking off in LM Studio; the extension cannot switch it per request there. For a model from LM Studio's catalog, switch off **Enable Thinking** in its settings. For a model downloaded from Hugging Face, add `{%- set enable_thinking = false %}` as the first line of its prompt template (My Models → the model's settings → Prompt Template).
 
+**LM Studio's MLX engine** drops the leading space of the first generated token on raw completions (seen 2026-11-16 with Sweep v2 7B and Qwen3.5-4B). Next Edit with Sweep compensates for it. Ghost text on that engine can lose a space after a word or at the start of an indented line; if you see that, try a GGUF model, which runs on LM Studio's llama.cpp engine (not checked for the same bug).
+
 **Other autocomplete extensions** (for example Predicte, Kilo Code or Continue) can show their own ghost text or take the `Tab` key, so `Tab` may indent or insert their suggestion instead. Turn their autocomplete off while you use this one.
 
 ## Next Edit
 
 Next Edit suggests the edit you are likely to make next. After you change code, for example rename a parameter, the extension asks a model to rewrite a small region around the cursor (by default 5 lines above, 10 below) and shows the result. It is off until you choose a backend, so completion-only users send no extra requests.
 
-**Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); otherwise the backend's completion model is used. When the server lists several models, set `nextEditModel`, so the extension does not have to guess which one to use. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. `aiAutocomplete.nextEdit.enabled` switches it off again. **AI Autocomplete: Snooze Completions** pauses Next Edit too; **AI Autocomplete: Toggle Completions** turns off completions only.
+**Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend; only backends with **Next Edit** ticked under **Use for** are listed. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); with both uses ticked and no Next Edit model, the backend's completion model is used. On a backend with only Next Edit ticked there is no completion model: the Next Edit model, or the model the server lists, is used. Press **Test connection** on the backend to check that its Next Edit model answers in its format. When the server lists several models, set `nextEditModel`, so the extension does not have to guess which one to use. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. **Off** in the same picker (the menu's **Next Edit** entry) turns it off again. **Snooze...** and **Turn off AI Autocomplete** pause Next Edit too; **Off** under **Completions** turns off completions only.
 
 **Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `sweep` gets Sweep, any other model gets `chatXtab`.
 
@@ -175,7 +203,9 @@ With the opt-in (and `display` on `auto` or `native`), an edit away from the cur
 
 A value outside its limits is ignored, and a warning names it. The region settings apply to `chatXtab` and `zeta21`, not to Sweep.
 
-**Status bar menu:** the menu has two Next Edit entries. **Enable native Next Edit UI...** appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
+**Status bar menu:** besides **Next Edit: <backend>**, the menu has **Enable native Next Edit UI...**, which appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
+
+**A Zeta model as the completion model:** Zeta does Next Edit only. Choosing it as a backend's **Model** (Completions ticked) shows a warning on the page and in **Test connection**, "zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions", with the hint "untick Completions, or choose a completion model". Ghost text also cuts an answer at the first Next Edit marker token (`<|marker_N|>`, `<|user_cursor|>`, `<|file_sep|>`, `<|endoftext|>`, `<|cursor|>`), so those tokens never reach the editor, and an answer that starts with one shows nothing. Untick **Completions** for that backend and tick only **Next Edit**, or choose a coder model as its completion model. Sweep models are not affected: they complete with the qwen template (on LM Studio's MLX engine, mind the dropped leading space above).
 
 **Troubleshooting:** the output channel shows timings, status codes and sizes only at the Debug log level. Run **Developer: Set Log Level...**, pick AI Autocomplete, then Debug. Prompt and answer text appears only with `aiAutocomplete.debug.logPrompts`, which belongs in your User settings (workspace values are ignored). When nothing shows, the Debug log says why a request was not asked (a reserved string, a region that is too long, a fence line) or what the model answered.
 

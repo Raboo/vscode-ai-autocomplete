@@ -91,6 +91,18 @@
                 "type": "string",
                 "description": "Model name for next-edit suggestions."
               },
+              "use": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "completions",
+                    "nextEdit"
+                  ]
+                },
+                "uniqueItems": true,
+                "description": "What the backend is used for. Missing means both."
+              },
               "fimMode": {
                 "type": "string",
                 "enum": [
@@ -227,11 +239,17 @@
             }
           }
         },
+        "aiAutocomplete.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Turn AI Autocomplete on or off: off stops completions and Next Edit together and keeps both backend choices. The status bar menu's **Turn off AI Autocomplete** sets it."
+        },
         "aiAutocomplete.fim.enabled": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
-          "markdownDescription": "Enable inline fill-in-the-middle completions."
+          "markdownDescription": "Enable inline fill-in-the-middle completions. **Off** in the status bar menu's **Completions** entry sets it to false and keeps `#aiAutocomplete.fim.backend#`."
         },
         "aiAutocomplete.nextEdit.enabled": {
           "type": "boolean",
@@ -322,7 +340,7 @@
         "aiAutocomplete.fim.backend": {
           "type": "string",
           "scope": "resource",
-          "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend. May be set per workspace."
+          "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend used for completions. May be set per workspace."
         },
         "aiAutocomplete.fim.debounceMs": {
           "type": [
@@ -426,18 +444,18 @@
         "category": "AI Autocomplete"
       },
       {
-        "command": "aiAutocomplete.toggle",
-        "title": "Toggle Completions",
+        "command": "aiAutocomplete.toggleEnabled",
+        "title": "Turn On/Off",
         "category": "AI Autocomplete"
       },
       {
         "command": "aiAutocomplete.snooze",
-        "title": "Snooze Completions",
+        "title": "Snooze",
         "category": "AI Autocomplete"
       },
       {
         "command": "aiAutocomplete.selectBackend",
-        "title": "Select Backend",
+        "title": "Select Completion Backend",
         "category": "AI Autocomplete"
       },
       {

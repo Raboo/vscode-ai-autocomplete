@@ -14,7 +14,7 @@ import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
 import { decorationPlan, displayFor } from '../decorations';
 import { toItemText, type LineEdit } from '../diff';
-import { pickFormat } from '../formats';
+import { formatRoute, pickFormat } from '../formats';
 import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, type RecentSnippets } from '../history';
 import { nextEditBudgets } from '../region';
@@ -223,8 +223,8 @@ export class NextEditController implements vscode.Disposable {
 
   /** Next Edit is on: only then are snapshots, history and idle timers kept (reset() re-snapshots when it is turned on). */
   private tracking(): boolean {
-    const { nextEdit } = this.d.getSettings();
-    return nextEdit.enabled && nextEdit.backendId !== undefined;
+    const { enabled, nextEdit } = this.d.getSettings();
+    return enabled && nextEdit.enabled && nextEdit.backendId !== undefined;
   }
 
   /** Workspace files and unsaved files that completions may use, as for extra context. */
@@ -280,7 +280,7 @@ export class NextEditController implements vscode.Disposable {
     this.lastChange.set(uri, { version: doc.version, at: now });
     // A language or file FIM is disabled in is not eligible here, so only these settings leave FIM inactive for the document.
     const s = this.d.getSettings();
-    if (!s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
+    if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
   }
 
   private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
@@ -371,7 +371,7 @@ export class NextEditController implements vscode.Disposable {
     if (this.pending?.uri === uri && this.pending.version === version) return;
     const asked = this.asked.get(uri);
     if (asked?.version === version && asked.line === editor.selection.active.line) return;
-    if (!s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
+    if (!s.enabled || !s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
     const backend = this.d.getBackend(s.nextEdit.backendId);
     if (!backend) return;
     const id = backend.config.id;
@@ -506,11 +506,10 @@ export class NextEditController implements vscode.Disposable {
 
   /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */
   private routeFor(backend: FimBackend, format: NextEditFormat): boolean {
-    const routes = backend.routes();
-    if (format.transport === 'chat' ? routes.chat : routes.template) return true;
+    const { ok, name } = formatRoute(format, backend.routes());
+    if (ok) return true;
     const id = backend.config.id;
-    const route = format.transport === 'chat' ? 'chat completions' : 'raw completions';
-    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${route} route; the ${format.id} format needs one`));
+    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${name} route; the ${format.id} format needs one`));
     return false;
   }
 
@@ -575,7 +574,7 @@ export class NextEditController implements vscode.Disposable {
   /** The configured Next Edit model, else the detected one (remembered per backend instance once found). */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     const cfg = backend.config;
-    if (cfg.nextEditModel !== undefined || cfg.fimModel !== undefined) return nextEditModel(cfg, undefined);
+    if (cfg.nextEditModel !== undefined || (cfg.use.completions && cfg.fimModel !== undefined)) return nextEditModel(cfg, undefined);
     let detected = this.models.get(backend);
     if (detected === undefined) {
       detected = await this.d.detectedModel(backend, signal);

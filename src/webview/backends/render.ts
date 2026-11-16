@@ -59,15 +59,30 @@ function header(s: PageState): string {
     + '</header>';
 }
 
+/** The in-use badges of a card: "in use" for completions, "Next Edit" for Next Edit. */
+function badges(c: CardView): string {
+  return `${c.inUse ? '<span class="badge">in use</span>' : ''}${c.nextEditInUse ? '<span class="badge">Next Edit</span>' : ''}`;
+}
+
+/** The Use for buttons of a saved backend: one per use it has and is not already selected for. */
+function useButtons(c: CardView): string {
+  return (c.uses.completions && !c.inUse ? button('use', 'Use for completions', { id: `a-use-${c.id}`, dataId: c.id }) : '')
+    + (c.uses.nextEdit && !c.nextEditInUse ? button('useNextEdit', 'Use for Next Edit', { id: `a-useNextEdit-${c.id}`, dataId: c.id }) : '');
+}
+
 function collapsedCard(c: CardView): string {
   const model = c.model === undefined ? 'model: auto-detect' : c.modelDetected ? `${c.model} (detected)` : c.model;
-  const meta = [c.typeLabel, c.baseUrl, model, ...(c.keyStored ? ['API key set'] : [])].map(e).join(' · ');
+  // The Next Edit model is named when it differs from the completion model (always, for a Next Edit-only backend).
+  const nextEdit = c.uses.nextEdit && (!c.uses.completions || (c.nextEditModel !== undefined && c.nextEditModel !== c.model))
+    ? [`Next Edit model: ${c.nextEditModel ?? 'auto-detect'}`] : [];
+  const uses = c.uses.completions && c.uses.nextEdit ? 'Completions · Next Edit' : c.uses.completions ? 'Completions only' : 'Next Edit only';
+  const meta = [c.typeLabel, c.baseUrl, uses, ...(c.uses.completions ? [model] : []), ...nextEdit, ...(c.keyStored ? ['API key set'] : [])].map(e).join(' · ');
   const actions = button('test', 'Test', { id: `a-test-${c.id}`, dataId: c.id })
     + button('edit', 'Edit', { id: `a-edit-${c.id}`, dataId: c.id })
-    + (c.inUse ? '' : button('use', 'Use for completions', { id: `a-use-${c.id}`, dataId: c.id }))
+    + useButtons(c)
     + button('remove', 'Remove', { id: `a-remove-${c.id}`, dataId: c.id });
   return `<section class="card" id="card-${e(c.id)}"><div class="card-head">${dot(c.dot)}<h2 class="card-title">${e(c.id)}</h2>`
-    + `${c.inUse ? '<span class="badge">in use</span>' : ''}<span class="muted meta">${meta}</span>`
+    + `${badges(c)}<span class="muted meta">${meta}</span>`
     + `<div class="actions push">${actions}</div></div>`
     + `${c.warning ? `<p class="card-warning ${c.dot === 'lock' ? 'locked' : 'warn'}">${c.dot === 'lock' ? '🔒' : '⚠'} ${e(c.warning)}</p>` : ''}`
     + `${c.test && c.test.length > 0 ? steps(c.test, 'Uses a built-in sample snippet, never your code.') : ''}</section>`;
@@ -126,10 +141,21 @@ function connection(s: PageState, ed: EditView, ui: LocalUi): string {
   const urlNotes = notes('f-url', [{ kind: 'error', text: urlErr }]);
 
   const models = ed.models ?? [];
+  const usesCompletions = f.use.completions;
   const modelHint = models.length > 0 ? `Leave empty to auto-detect. The server lists ${models.length} model${models.length === 1 ? '' : 's'}.`
     : 'Leave empty to auto-detect. Reload the list to see what the server offers.';
   const modelNotes = notes('f-model', [{ kind: 'hint', text: modelHint }, { kind: 'error', text: ed.modelsError }]);
+  // With Completions unticked the Next Edit field carries the list's hint, error and reload button.
+  const neNotes = notes('f-nextEditModel', [{ kind: 'hint', text: ed.nextEditFormat }, ...(usesCompletions ? [] : [{ kind: 'hint' as const, text: modelHint }, { kind: 'error' as const, text: ed.modelsError }])]);
   const datalist = `<datalist id="f-model-list">${models.map((m) => `<option value="${e(m.id)}" label="${e(m.tag)}"></option>`).join('')}</datalist>`;
+  const reload = button('reloadModels', '↻ reload list', { id: 'a-reloadModels', cls: 'link' });
+  const nePlaceholder = !usesCompletions ? 'auto-detect' : f.model === '' ? 'same as the completion model' : `same as the completion model (${e(f.model)})`;
+
+  const useErr = err('use');
+  const useNotes = notes('f-use', [{ kind: 'error', text: useErr }]);
+  const useAttrs = `${useNotes.describedBy}${useErr ? ' aria-invalid="true"' : ''}`;
+  const check = (use: 'completions' | 'nextEdit', label: string): string =>
+    `<span class="check"><input type="checkbox" id="f-use-${use}"${f.use[use] ? ' checked' : ''}${useAttrs}><label for="f-use-${use}">${label}</label></span>`;
 
   const keyId = f.originalId ?? ed.cardId ?? undefined;
   let key: string;
@@ -148,11 +174,17 @@ function connection(s: PageState, ed: EditView, ui: LocalUi): string {
     + `<div class="field" data-field="type"><div class="label-row"><label for="f-type">Server type</label></div>${type}</div>`
     + `<div class="field" data-field="id"><div class="label-row"><label for="f-id">Name</label></div>${textInput('f-id', f.id, `${invalid(idErr)}${idNotes.describedBy}`)}${idNotes.html}</div>`
     + `<div class="field" data-field="url"><div class="label-row"><label for="f-url">URL</label></div>${textInput('f-url', f.baseUrl, ` inputmode="url"${invalid(urlErr)}${urlNotes.describedBy}`)}${urlNotes.html}</div>`
-    + `<div class="field wide" data-field="model"><div class="label-row"><label for="f-model">Model</label>`
-    + `${button('reloadModels', '↻ reload list', { id: 'a-reloadModels', cls: 'link' })}</div>`
-    + `${textInput('f-model', f.model, ` list="f-model-list" placeholder="auto-detect"${invalid(ed.modelsError)}${modelNotes.describedBy}`)}${datalist}${modelNotes.html}</div>`
-    + `<div class="field wide" data-field="nextEditModel"><div class="label-row"><label for="f-nextEditModel">Next Edit model</label></div>`
-    + `${textInput('f-nextEditModel', f.nextEditModel, ` list="f-model-list" placeholder="${f.model === '' ? 'same as the completion model' : `same as the completion model (${e(f.model)})`}"`)}</div>`
+    + `<div class="field wide" data-field="use"><div class="label-row"><span class="label" id="f-use-label">Use for</span></div>`
+    + `<div class="checks" role="group" aria-labelledby="f-use-label">${check('completions', 'Completions')}${check('nextEdit', 'Next Edit')}</div>${useNotes.html}</div>`
+    + (usesCompletions
+      ? `<div class="field wide" data-field="model"><div class="label-row"><label for="f-model">Model</label>${reload}</div>`
+        + `${textInput('f-model', f.model, ` list="f-model-list" placeholder="auto-detect"${invalid(ed.modelsError)}${modelNotes.describedBy}`)}${modelNotes.html}</div>`
+      : '')
+    + (f.use.nextEdit
+      ? `<div class="field wide" data-field="nextEditModel"><div class="label-row"><label for="f-nextEditModel">Next Edit model</label>${usesCompletions ? '' : reload}</div>`
+        + `${textInput('f-nextEditModel', f.nextEditModel, ` list="f-model-list" placeholder="${nePlaceholder}"${usesCompletions ? '' : invalid(ed.modelsError)}${neNotes.describedBy}`)}${neNotes.html}</div>`
+      : '')
+    + datalist
     + `<div class="field" data-field="key"><div class="label-row"><label for="f-key">API key</label>${removeKey}</div>${key}${keyNotes}</div>`
     + '</div>';
 }
@@ -170,14 +202,14 @@ function editCard(s: PageState, ed: EditView, ui: LocalUi): string {
   const actions = button('testForm', ed.testing ? 'Testing…' : 'Test connection', { id: 'a-testForm', cls: 'btn primary', disabled: ed.testing })
     + button('save', 'Save', { id: 'a-save', disabled: ed.testing })
     + button('cancel', 'Cancel', { id: 'a-cancel' })
-    + (ed.cardId !== null && saved && !saved.inUse ? button('use', 'Use for completions', { id: `a-use-${ed.cardId}`, dataId: ed.cardId }) : '')
+    + (ed.cardId !== null && saved ? useButtons(saved) : '')
     + (ed.cardId !== null ? button('remove', 'Remove backend', { id: `a-remove-${ed.cardId}`, dataId: ed.cardId, cls: 'link danger push' }) : '');
   const result = ed.test && ed.test.length > 0
     ? steps(ed.test, 'Tested with the form\'s unsaved values. Uses a built-in sample snippet, never your code.') : '';
   const title = ed.cardId ?? (ed.form.id || 'new backend');
   return `<section class="card editing" id="${ed.cardId !== null ? `card-${e(ed.cardId)}` : 'card-new'}" aria-label="${e(`Edit ${title}`)}">`
     + `<div class="card-head">${dot(saved?.dot ?? 'grey')}<h2 class="card-title">${e(title)}</h2>`
-    + `${saved?.inUse ? '<span class="badge">in use</span>' : ''}<span class="muted">${ed.cardId === null ? 'new backend, not saved yet' : 'editing'}</span></div>`
+    + `${saved ? badges(saved) : ''}<span class="muted">${ed.cardId === null ? 'new backend, not saved yet' : 'editing'}</span></div>`
     + connection(s, ed, ui) + sections + advanced + warnings
     + `<div class="actions form-actions">${actions}</div>${result}</section>`;
 }

@@ -16,6 +16,7 @@ const cfg = (baseUrl: string, o: Partial<BackendConfig> = {}): BackendConfig => 
   kind: 'openai',
   baseUrl,
   fimMode: 'auto',
+  use: { completions: true, nextEdit: true },
   headers: {},
   ...o,
 });

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { formatIdFor, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
+import { formatIdFor, nextEditFormatLabel, nextEditOnlyModel, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
 import { tooLong, type NextEditInput } from '../../../src/nextEdit/formats/format';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
+
+describe('nextEditOnlyModel', () => {
+  it('names Zeta models only; Sweep models can do completions too', () => {
+    expect(nextEditOnlyModel('randmaru/zeta-2.1-mlx')).toBe('Zeta 2.1');
+    expect(nextEditOnlyModel('sweep-next-edit-v2-7b')).toBeUndefined();
+    expect(nextEditOnlyModel('sweep-next-edit-1.5b')).toBeUndefined();
+    expect(nextEditOnlyModel('qwen2.5-coder-3b')).toBeUndefined();
+    expect(nextEditOnlyModel(undefined)).toBeUndefined();
+  });
+});
 
 describe('pickFormat', () => {
   it('auto picks chatXtab for other or unknown models', () => {
@@ -66,5 +76,18 @@ describe('tooLong', () => {
     expect(tooLong(input(['x'.repeat(max)]))).toBe(false);
     expect(tooLong(input(['x'.repeat(max + 1)]))).toBe(true);
     expect(tooLong(input(['x'.repeat(max / 2), 'x'.repeat(max / 2)]))).toBe(true);
+  });
+});
+
+describe('nextEditFormatLabel', () => {
+  it('names the format a setting and model id pick', () => {
+    expect(nextEditFormatLabel('auto', 'zeta-2.1')).toBe('Zeta 2.1 format');
+    expect(nextEditFormatLabel('auto', 'sweep-next-edit-1.5b')).toBe('Sweep v1 format');
+    expect(nextEditFormatLabel('auto', 'sweep-next-edit-v2-7b')).toBe('Sweep v2 format');
+    expect(nextEditFormatLabel('auto', 'qwen3.8')).toBe('chat prompt (chatXtab)');
+    expect(nextEditFormatLabel('auto', undefined)).toBe('chat prompt (chatXtab)');
+    expect(nextEditFormatLabel('sweep', 'qwen3.8')).toBe('Sweep v1 format');
+    expect(nextEditFormatLabel('zeta21', 'qwen3.8')).toBe('Zeta 2.1 format');
+    expect(nextEditFormatLabel('chatXtab', 'zeta-2.1')).toBe('chat prompt (chatXtab)');
   });
 });

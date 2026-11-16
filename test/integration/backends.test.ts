@@ -15,7 +15,7 @@ interface Api {
 }
 
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'nextEdit.backend', 'nextEdit.enabled', 'privacy.localOnly'];
 /** Every API key a test may store. */
 const KEYS = ['old', 'renamed'];
 /** Time for the extension's onDidChangeConfiguration handler to rebuild its backends. */
@@ -98,6 +98,20 @@ suite('Backends page', () => {
     assert.ok(await waitFor(() => first.lastState()?.edit?.cardId === null, 5000), 'add did not open a new draft');
     assert.equal(api.backendsPanel(), first);
     assert.equal(backendTabs().length, 1);
+  });
+
+  test('Use for completions and Use for Next Edit select the backend and turn a feature that was off back on', async () => {
+    await configure({ backends: [{ id: 'both', kind: 'llamacpp', baseUrl: mock.baseUrl }], 'fim.enabled': false, 'nextEdit.enabled': false });
+    const panel = await open();
+    const cfg = () => vscode.workspace.getConfiguration('aiAutocomplete');
+
+    await panel.handle({ type: 'use', id: 'both' });
+    assert.equal(cfg().get('fim.backend'), 'both');
+    assert.equal(cfg().get('fim.enabled'), true);
+
+    await panel.handle({ type: 'useNextEdit', id: 'both' });
+    assert.equal(cfg().get('nextEdit.backend'), 'both');
+    assert.equal(cfg().get('nextEdit.enabled'), true);
   });
 
   test('save writes the entry to user settings and keeps other entries', async () => {

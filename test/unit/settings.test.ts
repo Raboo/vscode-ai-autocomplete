@@ -20,6 +20,13 @@ describe('parseSettings', () => {
     }));
     expect(Object.keys(settings.modelOverrides)).toEqual(['a']);
     expect(settings.debug.logPrompts).toBe(false);
+    expect(settings.enabled).toBe(true);
+  });
+  test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
+    const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));
+    expect(r.settings.enabled).toBe(false);
+    expect(r.settings.fim.enabled).toBe(true);
+    expect(r.settings.fim.backendId).toBe('a');
   });
   test('fim.backend may be chosen per workspace among configured ids', () => {
     const { settings } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'a', workspaceValue: 'b' } }));
@@ -263,5 +270,45 @@ describe('nextEdit settings', () => {
       expect((r.settings.nextEdit as unknown as Record<string, unknown>)[field], key).toBe(dflt);
       expect(r.problems.some((p) => p.startsWith(`aiAutocomplete.nextEdit.${key}: expected`) && p.endsWith(', ignored')), key).toBe(true);
     }
+  });
+});
+
+describe('backend use', () => {
+  test('a backend without use serves both', () => {
+    const b = parseBackendEntry(B('a'), 0, new Set(), []);
+    expect(b?.use).toEqual({ completions: true, nextEdit: true });
+  });
+  test('use lists the uses', () => {
+    const b = parseBackendEntry({ ...B('z'), use: ['nextEdit'] }, 0, new Set(), []);
+    expect(b?.use).toEqual({ completions: false, nextEdit: true });
+  });
+  test('bad use values are problems; an empty or non-array use counts as both', () => {
+    for (const use of [[], 'nextEdit', 5]) {
+      const problems: string[] = [];
+      expect(parseBackendEntry({ ...B('a'), use }, 0, new Set(), problems)?.use).toEqual({ completions: true, nextEdit: true });
+      expect(problems.join()).toMatch(/aiAutocomplete\.backends\[0\] \("a"\): use/);
+    }
+    const problems: string[] = [];
+    expect(parseBackendEntry({ ...B('a'), use: ['nextEdit', 'chat'] }, 0, new Set(), problems)?.use).toEqual({ completions: false, nextEdit: true });
+    expect(problems.join()).toMatch(/"chat"/);
+  });
+  test('fim.backend unset falls back to the first backend with completions', () => {
+    const { settings } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] } }));
+    expect(settings.fim.backendId).toBe('c');
+  });
+  test('fim.backend naming a Next Edit-only backend gives completions no backend', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'fim.backend': { globalValue: 'z' } }));
+    expect(settings.fim.backendId).toBeUndefined();
+    expect(problems.join()).toMatch(/fim\.backend: backend "z" is not used for completions/);
+  });
+  test('an unknown fim.backend falls back to the first completions backend', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'fim.backend': { globalValue: 'nope' } }));
+    expect(settings.fim.backendId).toBe('c');
+    expect(problems.join()).toMatch(/no backend with id "nope", using "c"/);
+  });
+  test('nextEdit.backend naming a completions-only backend leaves Next Edit off', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('c'), use: ['completions'] }] }, 'nextEdit.backend': { globalValue: 'c' } }));
+    expect(settings.nextEdit.backendId).toBeUndefined();
+    expect(problems.join()).toMatch(/nextEdit\.backend: backend "c" is not used for Next Edit/);
   });
 });

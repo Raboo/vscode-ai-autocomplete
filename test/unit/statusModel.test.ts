@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { displayState, menuEntries } from '../../src/ui/statusModel';
+import { activity, displayState, menuEntries, menuInputs, noCompletionBackend, type MenuInputs } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -26,37 +26,92 @@ describe('displayState', () => {
 });
 
 describe('menuEntries', () => {
-  const ids = (state: Parameters<typeof menuEntries>[0], count = 1, native = false) => menuEntries(state, count, undefined, native).map((e) => e.id);
+  const M = (patch: Partial<MenuInputs> = {}): MenuInputs => ({ backendCount: 1, enabled: true, nativeNextEdit: false, ...patch });
+  const ids = (state: Parameters<typeof menuEntries>[0], count = 1, native = false) => menuEntries(state, M({ backendCount: count, nativeNextEdit: native })).map((e) => e.id);
+  const SETUP = ['toggleEnabled', 'snooze', 'selectBackend', 'selectNextEditBackend'];
   test('lists Retry now first while the status is error', () => {
-    expect(menuEntries('error', 1, undefined, false)[0]).toEqual({ label: 'Retry now', id: 'retry' });
+    expect(menuEntries('error', M())[0]).toEqual({ label: 'Retry now', id: 'retry' });
     expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);
   });
   test('lists Resume now first while snoozed', () => {
-    expect(menuEntries('snoozed', 1, undefined, false)[0]).toEqual({ label: 'Resume now', id: 'resume' });
+    expect(menuEntries('snoozed', M())[0]).toEqual({ label: 'Resume now', id: 'resume' });
     expect(ids('snoozed').slice(1)).toEqual(ids('idle'));
     expect(ids('idle')).not.toContain('resume');
     expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
-    expect(ids('idle')).toEqual(['toggle', 'snooze', 'selectBackend', 'selectNextEditBackend', 'enableNativeNextEdit', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle')).toEqual([...SETUP, 'enableNativeNextEdit', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(ids('loading')).toEqual(ids('idle'));
   });
+  test('no separate completions toggle: the Completions entry turns them off', () => {
+    expect(ids('idle')).not.toContain('toggle');
+  });
   test('the native UI entry is absent once the native UI is on; Settings stays', () => {
-    expect(ids('idle', 1, true)).toEqual(['toggle', 'snooze', 'selectBackend', 'selectNextEditBackend', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
-    expect(menuEntries('idle', 1, undefined, false).find((e) => e.id === 'enableNativeNextEdit')).toEqual({ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' });
-    expect(menuEntries('idle', 1, undefined, false).find((e) => e.id === 'openSettings')).toEqual({ label: 'Settings...', id: 'openSettings' });
+    expect(ids('idle', 1, true)).toEqual([...SETUP, 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(menuEntries('idle', M()).find((e) => e.id === 'enableNativeNextEdit')).toEqual({ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' });
+    expect(menuEntries('idle', M()).find((e) => e.id === 'openSettings')).toEqual({ label: 'Settings...', id: 'openSettings' });
   });
   test('the menu shows the Next Edit backend or off', () => {
-    const label = (id: string | undefined) => menuEntries('idle', 1, id, false).find((e) => e.id === 'selectNextEditBackend')?.label;
+    const label = (id: string | undefined) => menuEntries('idle', M({ nextEditBackend: id })).find((e) => e.id === 'selectNextEditBackend')?.label;
     expect(label('mercury')).toBe('Next Edit: mercury');
     expect(label(undefined)).toBe('Next Edit: off');
   });
+  test('the menu shows the completion backend or off', () => {
+    const label = (id: string | undefined) => menuEntries('idle', M({ completionBackend: id })).find((e) => e.id === 'selectBackend')?.label;
+    expect(label('coder')).toBe('Completions: coder');
+    expect(label(undefined)).toBe('Completions: off');
+  });
+  test('the switch says what it will do', () => {
+    expect(menuEntries('idle', M())[0]).toEqual({ label: 'Turn off AI Autocomplete', id: 'toggleEnabled' });
+    expect(menuEntries('disabled', M({ enabled: false }))[0]).toEqual({ label: 'Turn on AI Autocomplete', id: 'toggleEnabled' });
+  });
   test('Manage backends comes first when no backend exists', () => {
-    expect(menuEntries('idle', 0, undefined, false)[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
-    expect(ids('idle', 0)).toEqual(['manageBackends', 'toggle', 'snooze', 'selectBackend', 'selectNextEditBackend', 'enableNativeNextEdit', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(menuEntries('idle', M({ backendCount: 0 }))[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
+    expect(ids('idle', 0)).toEqual(['manageBackends', ...SETUP, 'enableNativeNextEdit', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(ids('error', 0).slice(0, 2)).toEqual(['manageBackends', 'retry']);
     expect(ids('snoozed', 0).slice(0, 2)).toEqual(['manageBackends', 'resume']);
     for (const state of ['idle', 'error', 'snoozed'] as const) expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+  });
+});
+
+describe('menuInputs', () => {
+  const S = (patch: { enabled?: boolean; fim?: { enabled: boolean; backendId?: string }; nextEdit?: { enabled: boolean; backendId?: string } } = {}) => ({
+    enabled: true, backends: [{}, {}], fim: { enabled: true, backendId: 'coder' }, nextEdit: { enabled: true, backendId: 'strata' }, ...patch,
+  });
+  test('names both backends', () => {
+    expect(menuInputs(S(), false)).toEqual({ backendCount: 2, enabled: true, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: false });
+  });
+  test('the entries keep naming their backends while the switch is off', () => {
+    expect(menuInputs(S({ enabled: false }), true)).toMatchObject({ enabled: false, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: true });
+  });
+  test('a feature turned off shows off; its backend is kept in the settings, not in the label', () => {
+    const m = menuInputs(S({ fim: { enabled: false, backendId: 'coder' }, nextEdit: { enabled: false, backendId: 'strata' } }), false);
+    expect(m.completionBackend).toBeUndefined();
+    expect(m.nextEditBackend).toBeUndefined();
+  });
+  test('completions on without a backend read none; Next Edit without one is off', () => {
+    const m = menuInputs(S({ fim: { enabled: true }, nextEdit: { enabled: true } }), false);
+    expect(m.completionBackend).toBe('none');
+    expect(m.nextEditBackend).toBeUndefined();
+    expect(menuEntries('idle', m).find((e) => e.id === 'selectBackend')?.label).toBe('Completions: none');
+  });
+});
+
+describe('activity', () => {
+  const S = (enabled: boolean, fim: boolean, nextEdit: boolean, backendId: string | null = 'ne') => ({ enabled, fim: { enabled: fim }, nextEdit: { enabled: nextEdit, ...(backendId !== null ? { backendId } : {}) } });
+  test('on with completions on; no note', () => {
+    expect(activity(S(true, true, false))).toEqual({ on: true });
+    expect(activity(S(true, true, true))).toEqual({ on: true });
+  });
+  test('completions off with Next Edit running stays on and says so', () => {
+    expect(activity(S(true, false, true))).toEqual({ on: true, note: 'Completions off' });
+  });
+  test('off when neither runs: completions off and Next Edit off, disabled or without a backend', () => {
+    expect(activity(S(true, false, false))).toEqual({ on: false });
+    expect(activity(S(true, false, true, null))).toEqual({ on: false });
+  });
+  test('the switch turns both off', () => {
+    expect(activity(S(false, true, true))).toEqual({ on: false });
   });
 });
 
@@ -78,5 +133,17 @@ describe('memoizeIsLocal', () => {
     m.clear();
     await m('http://local');
     expect(calls).toBe(4);
+  });
+});
+
+describe('noCompletionBackend', () => {
+  test('no backend at all is an error, as before', () => {
+    expect(noCompletionBackend(0)).toEqual({ state: 'error', detail: 'No backend configured' });
+  });
+  test('backends that none serves completions leave the status idle, so the menu has no Retry first', () => {
+    const { state, detail } = noCompletionBackend(2);
+    expect(state).toBe('idle');
+    expect(detail).toBe('No backend is used for completions');
+    expect(menuEntries(state, { backendCount: 2, enabled: true, nextEditBackend: 'zeta', nativeNextEdit: false })[0].id).toBe('toggleEnabled');
   });
 });

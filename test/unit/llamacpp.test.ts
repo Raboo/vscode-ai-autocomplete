@@ -16,6 +16,7 @@ const cfg = (baseUrl: string, headers: Record<string, string> = {}): BackendConf
   kind: 'llamacpp',
   baseUrl,
   fimMode: 'auto',
+  use: { completions: true, nextEdit: true },
   headers,
 });
 

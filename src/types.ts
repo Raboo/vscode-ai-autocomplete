@@ -27,6 +27,8 @@ export interface BackendConfig {
   fimMode: FimMode;
   headers: Record<string, string>;
   fim?: BackendFimSettings;
+  /** What the backend is used for; missing in the setting means both. */
+  use: { completions: boolean; nextEdit: boolean };
 }
 
 export interface Sampling {

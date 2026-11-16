@@ -62,3 +62,12 @@ describe('postprocess reasoning', () => {
     expect(postprocess('<think>a</think>b', ctx({ chat: true }))).toBe('<think>a</think>b');
   });
 });
+
+describe('Next Edit special tokens', () => {
+  test('an answer is cut at the first Next Edit special token', () => {
+    expect(postprocess('<|marker_1|><|marker_1|>', ctx())).toBeUndefined();
+    expect(postprocess('a + b;<|endoftext|>junk', ctx())).toBe('a + b;');
+    expect(postprocess('x<|file_sep|>other.ts', ctx())).toBe('x');
+    expect(postprocess('x<|file_sep|>other.ts', ctx({ chat: true }))).toBe('x');
+  });
+});

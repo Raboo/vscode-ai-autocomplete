@@ -11,7 +11,7 @@ import type { BackendConfig, BackendFimSettings, FimTemplateId, HostFlavor } fro
 const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 /** Resolved values for a backend whose template is forced (undefined = generic model without a FIM template). */
 const V = (t?: FimTemplateId, fim: BackendFimSettings = {}): FimValues =>
-  resolveFim({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:1', fimMode: 'auto', headers: {}, fim: { ...(t ? { template: t } : {}), ...fim } }, 'unknown-model', SETTINGS).values;
+  resolveFim({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, fim: { ...(t ? { template: t } : {}), ...fim } }, 'unknown-model', SETTINGS).values;
 const P = V;
 
 const LLAMA: RouteCaps = { native: true, template: true, chat: true, nativeChatModels: false };
@@ -53,7 +53,7 @@ describe('planRoute', () => {
     expect(planRoute('mistral', MISTRAL, PC(), 'auto')).toBe('native');
   });
   test('mistral auto: a Mistral chat family has no route (Mistral\'s FIM endpoint serves Codestral only)', () => {
-    const devstral = resolveFim({ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {} }, 'devstral-small-2507', SETTINGS).values;
+    const devstral = resolveFim({ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } }, 'devstral-small-2507', SETTINGS).values;
     expect(devstral.chat).toBe(true);
     expect(planRoute('mistral', MISTRAL, devstral, 'auto')).toBe('unsupported');
   });
@@ -200,7 +200,7 @@ describe('buildChatRequest', () => {
   const signal = new AbortController().signal;
   const input = { prefix: 'a', suffix: 'b', extra: [], languageId: 'typescript', multiline: false } as unknown as HoleFillerInput;
   const plan = (id: string, over: Partial<ChatRequestPlan> = {}, flavor: HostFlavor = 'strata', backend: Partial<BackendConfig> = {}): ChatRequestPlan => ({
-    fim: resolveFim({ id: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:1', fimMode: 'auto', headers: {}, ...backend }, id, SETTINGS).values,
+    fim: resolveFim({ id: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...backend }, id, SETTINGS).values,
     flavor, model: id, input, rejected: new Set(), signal, ...over,
   });
   test('buildChatRequest pins only on strata', () => {

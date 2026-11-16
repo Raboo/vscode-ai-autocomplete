@@ -9,7 +9,7 @@ const settings = (patch: { overrides?: Record<string, ModelOverrideBody>; extraC
   const s = parseSettings(none).settings;
   return { ...s, modelOverrides: patch.overrides ?? {}, fim: { ...s.fim, ...(patch.extraContext !== undefined ? { extraContext: patch.extraContext } : {}) } };
 };
-const backend = (fim?: BackendFimSettings): BackendConfig => ({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {}, ...(fim ? { fim } : {}) });
+const backend = (fim?: BackendFimSettings): BackendConfig => ({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...(fim ? { fim } : {}) });
 const QWEN = 'qwen2.5-coder-1.5b';
 
 describe('resolveFim', () => {
@@ -134,6 +134,11 @@ describe('Next Edit values', () => {
     expect(nextEditModel(strata(), 'd')).toBe('d');
     expect(nextEditModel(strata(), undefined)).toBeUndefined();
   });
+  test('a Next Edit-only backend never uses its completion model for Next Edit', () => {
+    const cfg = { ...strata(), fimModel: 'coder', use: { completions: false, nextEdit: true } };
+    expect(nextEditModel(cfg, 'detected')).toBe('detected');
+    expect(nextEditModel({ ...cfg, use: { completions: true, nextEdit: true } }, 'detected')).toBe('coder');
+  });
   test('resolveNextEdit uses the NES chat sampling and the Next Edit deadline', () => {
     const v = resolveNextEdit(strata(), 'qwen3.8-flash-next-iq3_s', settings());
     expect(v.sampling).toEqual({ temperature: 0.2, topP: 0.8, topK: 20 });
@@ -143,6 +148,12 @@ describe('Next Edit values', () => {
     const fim = { thinking: 'reasoningEffortNone' } as const;
     expect(resolveNextEdit(strata({ fim }), 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
     expect(resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
+  });
+  test('on a Next Edit-only backend the page fields describe the Next Edit model, so the whole fim block applies', () => {
+    const fim = { thinking: 'reasoningEffortNone' } as const;
+    const only = strata({ fim, nextEditModel: 'qwen3-8b', use: { completions: false, nextEdit: true } });
+    expect(resolveNextEdit(only, 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
+    expect(resolveNextEdit({ ...only, use: { completions: true, nextEdit: true } }, 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
   });
   test('a separate Next Edit model keeps the backend extraBody and its extra-context restriction, nothing else', () => {
     const fim = { extraContext: false, extraBody: { cache_prompt: true }, temperature: 0.9, maxTokens: 7 };

@@ -121,9 +121,9 @@ export function templateMismatch(backend: BackendConfig, model: string | undefin
   return own !== undefined && own !== template ? { template, own } : undefined;
 }
 
-/** The model Next Edit requests use: the backend's `nextEditModel`, else its `fimModel`, else the detected one. */
+/** The model Next Edit requests use: the backend's `nextEditModel`, else its `fimModel` (only when it serves completions), else the detected one. */
 export function nextEditModel(backend: BackendConfig, detected: string | undefined): string | undefined {
-  return backend.nextEditModel ?? backend.fimModel ?? detected;
+  return backend.nextEditModel ?? (backend.use.completions ? backend.fimModel : undefined) ?? detected;
 }
 
 /**
@@ -131,7 +131,8 @@ export function nextEditModel(backend: BackendConfig, detected: string | undefin
  * keeps only what belongs to the backend: its `extraBody` and its `extraContext` restriction. Sampling and the deadline are Next Edit's own.
  */
 export function resolveNextEdit(backend: BackendConfig, model: string | undefined, s: Settings): FimValues {
-  const own = backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
+  // On a Next Edit-only backend the page's fields describe its Next Edit model, so nothing is split off.
+  const own = backend.use.completions && backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
   const b = backend.fim;
   const kept = { ...(b?.extraBody ? { extraBody: b.extraBody } : {}), ...(b?.extraContext !== undefined ? { extraContext: b.extraContext } : {}) };
   const target: BackendConfig = own ? { ...backend, fim: Object.keys(kept).length > 0 ? kept : undefined } : backend;

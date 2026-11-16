@@ -136,7 +136,9 @@ function commit(el: Control): void {
   uncommitted.delete(el.id);
   const next = copyForm(form);
   const text = el instanceof HTMLInputElement && el.type === 'checkbox' ? String(el.checked) : el.value;
-  if (el.id === 'f-type') next.type = text as ServerTypeId;
+  if (el.id === 'f-use-completions') next.use = { ...next.use, completions: text === 'true' };
+  else if (el.id === 'f-use-nextEdit') next.use = { ...next.use, nextEdit: text === 'true' };
+  else if (el.id === 'f-type') next.type = text as ServerTypeId;
   else if (el.id === 'f-id') next.id = text;
   else if (el.id === 'f-url') next.baseUrl = text;
   else if (el.id === 'f-model') next.model = text;
@@ -176,6 +178,7 @@ function onClick(ev: MouseEvent): void {
     case 'edit':
     case 'remove':
     case 'use':
+    case 'useNextEdit':
     case 'test':
     case 'removeKey':
       if (id) post({ type: action, id });

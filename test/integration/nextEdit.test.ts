@@ -324,8 +324,8 @@ suite('Next Edit', () => {
 
   test('a snooze clears a pending edit', async () => {
     await withPendingRename(async (editor) => {
-      await pickFirst('aiAutocomplete.snooze'); // "15 minutes"
       try {
+        await pickFirst('aiAutocomplete.snooze'); // "15 minutes"
         assert.equal(api.nextEditPending(), undefined);
         await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
         assert.equal(editor.document.getText(), CIRCLE.join('\n'));

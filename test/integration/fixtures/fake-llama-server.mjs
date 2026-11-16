@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // A stand-in llama-server for the local model integration test: it answers /health, /props, /v1/models and /infill
-// (with `a + b;`) on 127.0.0.1 at the --port it is given. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1.
+// (with `a + b;`) on 127.0.0.1 at the --port it is given. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1;
+// with FAKE_LLAMA_SERVER_EXIT_ONCE=<path> it does so only while that file exists, deleting it (the next start works).
+import { existsSync, unlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import process from 'node:process';
 import { URL } from 'node:url';
@@ -10,7 +12,10 @@ const arg = (name) => {
   return at >= 0 ? process.argv[at + 1] : undefined;
 };
 
-if (process.env.FAKE_LLAMA_SERVER_EXIT === '1') {
+const exitOnce = process.env.FAKE_LLAMA_SERVER_EXIT_ONCE;
+const failNow = process.env.FAKE_LLAMA_SERVER_EXIT === '1' || (exitOnce !== undefined && existsSync(exitOnce));
+if (exitOnce !== undefined && existsSync(exitOnce)) unlinkSync(exitOnce);
+if (failNow) {
   process.stderr.write('fake llama-server: failed to load the model\n');
   process.exit(1);
 }

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
@@ -11,7 +11,7 @@ import { startMockServer, type MockServer } from './mockServer';
 
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
-  local: { setRecipes(r: Recipe[] | undefined): void };
+  local?: { setRecipes(r: Recipe[] | undefined): void };
 }
 
 const ROOT = join(__dirname, '..', '..', '..');
@@ -22,6 +22,7 @@ const FILE_PATH = '/files/test-model.gguf';
 const BYTES = Buffer.from(Array.from({ length: 64 * 1024 }, (_, i) => (i * 31 + 7) % 256));
 const BACKEND_ID = 'local-test';
 const EXIT_ENV = 'FAKE_LLAMA_SERVER_EXIT';
+const EXIT_ONCE_ENV = 'FAKE_LLAMA_SERVER_EXIT_ONCE';
 /** Every setting a test may write; teardown resets them. */
 const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
 
@@ -34,12 +35,17 @@ const portOf = (e: Record<string, unknown> | undefined): number => Number(new UR
 const setUp = (replace = false): Thenable<SetupOutcome> =>
   vscode.commands.executeCommand<SetupOutcome>('aiAutocomplete.setUpLocalModel', { recipe: 'test', runtime: 'llamaServer', ...(replace ? { replace } : {}) });
 const health = async (port: number): Promise<number> => (await fetch(`http://127.0.0.1:${port}/health`)).status;
+const healthy = async (port: number): Promise<boolean> => (await health(port).catch(() => 0)) === 200;
 
 suite('Local model helper', () => {
   let mock: MockServer;
   let api: Api;
   let probe: vscode.Disposable;
   let binDir: string;
+  const local = (): NonNullable<Api['local']> => {
+    assert.ok(api.local, 'the test API has no local hooks (not in test mode?)');
+    return api.local;
+  };
 
   const downloads = () => mock.requests.filter((r) => r.path === FILE_PATH);
 
@@ -53,7 +59,7 @@ suite('Local model helper', () => {
     copyFileSync(FIXTURE, binary);
     chmodSync(binary, 0o755);
     rmSync(join(MODELS, 'test'), { recursive: true, force: true });
-    api.local.setRecipes([
+    local().setRecipes([
       {
         id: 'test',
         label: 'Test Model',
@@ -75,8 +81,9 @@ suite('Local model helper', () => {
 
   suiteTeardown(async () => {
     delete process.env[EXIT_ENV];
+    delete process.env[EXIT_ONCE_ENV];
     await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
-    api.local.setRecipes(undefined);
+    local().setRecipes(undefined);
     await unconfigure(TOUCHED);
     probe.dispose();
     await mock.close();
@@ -121,6 +128,25 @@ suite('Local model helper', () => {
     assert.equal(downloads().length, 0, `requests: ${JSON.stringify(mock.requests.map((r) => r.path))}`);
     assert.equal(userBackends().filter((b) => b.id === BACKEND_ID).length, 1);
     assert.equal(await health(portOf(entry())), 200);
+  });
+
+  test('a failed re-run keeps the backend and its selection, and starts the previous server again', async () => {
+    const backends = JSON.stringify(userBackends());
+    const flag = join(binDir, 'exit-once');
+    writeFileSync(flag, '');
+    process.env[EXIT_ONCE_ENV] = flag;
+    try {
+      const out = await setUp(true);
+      assert.ok(out && !out.ok, `setup did not fail: ${JSON.stringify(out)}`);
+      assert.equal(JSON.stringify(userBackends()), backends);
+      assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('fim.backend'), BACKEND_ID);
+      // The restart runs the fixture again, which works now that the flag file is gone.
+      let up = false;
+      for (const deadline = Date.now() + 10_000; !up && Date.now() < deadline; await sleep(100)) up = await healthy(portOf(entry()));
+      assert.ok(up, `the previous server did not come back (backend ${JSON.stringify(entry())})`);
+    } finally {
+      delete process.env[EXIT_ONCE_ENV];
+    }
   });
 
   test('Stop Local Models stops the server', async () => {

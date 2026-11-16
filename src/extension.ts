@@ -38,7 +38,8 @@ export function activate(context: vscode.ExtensionContext): {
   backendsPanel: () => BackendsPanel | undefined;
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
-  local: { setRecipes(r: Recipe[] | undefined): void };
+  /** Test runs only: swaps the recipes setup offers and the servers may start. */
+  local?: { setRecipes(r: Recipe[] | undefined): void };
 } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
@@ -256,11 +257,15 @@ export function activate(context: vscode.ExtensionContext): {
     backendsPanel: () => BackendsPanel.current(),
     nativeNextEdit: native,
     nextEditPending: () => nextEdit.pendingEdit(),
-    local: {
-      setRecipes: (r) => {
-        testRecipes = r;
-      },
-    },
+    ...(context.extensionMode === vscode.ExtensionMode.Test
+      ? {
+          local: {
+            setRecipes: (r: Recipe[] | undefined) => {
+              testRecipes = r;
+            },
+          },
+        }
+      : {}),
   };
 }
 

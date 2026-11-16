@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { RECIPES, downloadUrl, fitsMemory, type Recipe } from '../../../src/local/recipes';
+import { RECIPES, downloadUrl, fitsMemory, modelPathSegments, type Recipe } from '../../../src/local/recipes';
 import { resolvePreset } from '../../../src/models/presets';
 import { pickFormat, sweepVariant } from '../../../src/nextEdit/formats/index';
 
@@ -69,5 +69,19 @@ describe('fitsMemory', () => {
     const r = { ...byId('mellum-4b'), bytes: 400 };
     expect(fitsMemory(r, 1000)).toBe(true);
     expect(fitsMemory({ ...r, bytes: 401 }, 1000)).toBe(false);
+  });
+});
+
+describe('modelPathSegments', () => {
+  const r = (repo: string, file: string): Recipe => ({ ...RECIPES[0], repo, file });
+  test('owner, name and file for every shipped recipe', () => {
+    for (const x of RECIPES) expect(modelPathSegments(x)).toEqual([...x.repo.split('/'), x.file]);
+    expect(modelPathSegments(r('test/test-model', 'test-model.gguf'))).toEqual(['test', 'test-model', 'test-model.gguf']);
+  });
+  test('rejects a path that could leave the models folder', () => {
+    for (const [repo, file] of [
+      ['../x', 'a.gguf'], ['x/..', 'a.gguf'], ['./x', 'a.gguf'], ['x', 'a.gguf'], ['x/y/z', 'a.gguf'], ['/x', 'a.gguf'], ['x/', 'a.gguf'],
+      ['x\\..', 'a.gguf'], ['x/y', '..'], ['x/y', '.'], ['x/y', ''], ['x/y', 'sub/a.gguf'], ['x/y', '..\\a.gguf'], ['C:/y', 'a.gguf'],
+    ]) expect(modelPathSegments(r(repo, file)), `${repo} ${file}`).toBeUndefined();
   });
 });

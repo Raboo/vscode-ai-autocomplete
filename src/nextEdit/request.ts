@@ -163,7 +163,10 @@ function resultOf(snapshot: NextEditSnapshot, answer: FormatAnswer): NextEditRes
   const old = input.lines.slice(input.region.start, input.region.end + 1);
   // An empty rewrite would propose deleting the whole region.
   if (answer.lines.length === 0 && old.some((l) => l.trim() !== '')) return undefined;
-  const edit = regionEdit(old, answer.lines, input.region.start);
+  const lines = [...answer.lines];
+  // A region that ends at the file's final newline keeps it, also when the answer drops the blank last line.
+  if (input.region.end === input.lines.length - 1 && old.at(-1) === '' && lines.at(-1) !== '') lines.push('');
+  const edit = regionEdit(old, lines, input.region.start);
   if (!edit || isTrivialEdit(edit, input.lines)) return undefined;
   return {
     uri: snapshot.uri,

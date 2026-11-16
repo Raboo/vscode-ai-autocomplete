@@ -265,6 +265,34 @@ describe('zeta21 parse', () => {
   });
 });
 
+describe('zeta21 parse, region at the end of a file that ends with a newline', () => {
+  // The same file with its final newline: the last line is ''.
+  const lines = [...FILE, ''];
+  const i = input({ lines, region: { start: 4, end: 10 } });
+  const parse = (answer: string, at: NextEditInput = i) => zeta21Format.parse(answer, at);
+  const renamed = ['def circumference(radius):', '    return 2 * 3.14159 * radius', '', '', 'def diameter(radius):', '    return 2 * radius'];
+
+  it('the prompt shows the region text ending in a newline before the closing marker', () => {
+    expect(promptOf(i).prompt).toContain('    return 2 * r\n<|marker_2|>');
+  });
+
+  it('a faithful echo is no change, with or without the newline before the closing marker', () => {
+    expect(parse(`<|marker_1|>${lines.slice(4).join('\n')}<|marker_2|>`)).toEqual({ kind: 'noChange' });
+    expect(parse(`<|marker_1|>${lines.slice(4, 10).join('\n')}<|marker_2|>`)).toEqual({ kind: 'noChange' });
+  });
+
+  it('a rewrite keeps the final newline', () => {
+    expect(parse(`<|marker_1|>${renamed.join('\n')}\n<|marker_2|>`)).toEqual({ kind: 'rewrite', lines: [...renamed, ''] });
+    expect(parse(`<|marker_1|>${renamed.join('\n')}<|marker_2|>`)).toEqual({ kind: 'rewrite', lines: [...renamed, ''] });
+  });
+
+  it('deleting the last block keeps the final newline', () => {
+    const long = [...Array.from({ length: 19 }, (_, n) => `l${n}`), ''];
+    const at = input({ lines: long, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
+    expect(parse('<|marker_2|><|marker_3|>', at)).toEqual({ kind: 'rewrite', lines: [...long.slice(0, 16), ''] });
+  });
+});
+
 describe('zeta21 reserved strings', () => {
   const lines = (at: number, text: string): string[] => FILE.map((l, n) => (n === at ? text : l));
 

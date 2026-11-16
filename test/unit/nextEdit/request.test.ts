@@ -236,6 +236,26 @@ describe('runNextEdit with a completion format', () => {
     await expect(run([], { format, chunks: ['x'] }).result).resolves.toBeUndefined();
   });
 
+  test('an answer that drops the blank last line of a region at the end of the file keeps the final newline', async () => {
+    const lines = [...CIRCLE, ''];
+    const snap = snapshot(lines, 12);
+    expect(snap.input.region.end).toBe(lines.length - 1);
+    const region = (src: string[]) => src.slice(snap.input.region.start, snap.input.region.end + 1);
+    const answer = region([...renamed, '']).slice(0, -1);
+    const res = await run([], { format: stubFormat(() => ({ kind: 'rewrite', lines: answer })), snap, chunks: ['x'] }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+    const echo = region(lines).slice(0, -1);
+    await expect(run([], { format: stubFormat(() => ({ kind: 'rewrite', lines: echo })), snap, chunks: ['x'] }).result).resolves.toBeUndefined();
+  });
+
+  test('the same answer on the chat route keeps the final newline too', async () => {
+    const lines = [...CIRCLE, ''];
+    const snap = snapshot(lines, 12);
+    const answer = renamed.slice(snap.input.region.start, snap.input.region.end + 1);
+    const res = await run([content(fence(answer))], { snap }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+  });
+
   test('a Sweep v2 generation that stops at once gives no result, not a deletion below the cursor', async () => {
     const lines = Array.from({ length: 30 }, (_, n) => `line ${n}`);
     const format = sweepFormat('v2');

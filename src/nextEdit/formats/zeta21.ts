@@ -100,12 +100,18 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
     if (Number(tags[n + 1][1]) !== offsets.length && segment !== '' && !segment.endsWith('\n')) return { kind: 'invalid', why: 'glued' };
     inner += segment;
   }
-  // The closing marker is glued to the text's end, but a model may put it on its own line.
-  if (e === offsets.length && inner.endsWith('\n')) inner = inner.slice(0, -1);
-
   let head = old.slice(0, offsets[s - 1]);
-  // Deleting the tail leaves the newline that ended the line before it.
-  if (e === offsets.length && inner === '' && head.endsWith('\n')) head = head.slice(0, -1);
+  if (e === offsets.length) {
+    if (old.endsWith('\n')) {
+      // The region's last line is blank (often the file's final newline): a span up to the closing marker keeps ending in a newline.
+      if (inner !== '' && !inner.endsWith('\n')) inner += '\n';
+    } else {
+      // The closing marker is glued to the text's end, but a model may put it on its own line.
+      if (inner.endsWith('\n')) inner = inner.slice(0, -1);
+      // Deleting the tail leaves the newline that ended the line before it.
+      if (inner === '' && head.endsWith('\n')) head = head.slice(0, -1);
+    }
+  }
   const next = head + inner + old.slice(offsets[e - 1]);
   return next === old ? { kind: 'noChange' } : { kind: 'rewrite', lines: next.split('\n') };
 }

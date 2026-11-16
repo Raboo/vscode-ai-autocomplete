@@ -72,3 +72,5 @@ Phase 3b (Publish step 4 of the [Phase 3b plan](superpowers/plans/2026-11-16-pha
 - `nextEdit.display: decorations` with the opt-in active shows decorations, not the native view.
 - A file in this repo that contains `<|file_sep|>` gets no Next Edit request with a Sweep model (the Debug log says why).
 - The status-bar menu shows **Enable native Next Edit UI...** until the opt-in is active, and **Settings...** opens the Settings page filtered to this extension.
+- A Zeta and a Sweep edit near the end of a file that ends with a newline keeps the final newline.
+- Next Edit still fires with FIM on against the same llama.cpp/LM Studio server.

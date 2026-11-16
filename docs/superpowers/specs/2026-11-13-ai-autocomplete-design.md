@@ -236,7 +236,7 @@ There is no universal switch, so this is a table, not scattered `if`s.
 | FIM, chat hole-filler | temperature 0.1–0.2, max_tokens 160, stop `</COMPLETION>`; no reasoning allowance |
 | NES, dedicated models (Zeta/Sweep/Instinct) | greedy (temperature 0), max_tokens ≈ editable-region size × 1.5 + margin, format-specific end markers |
 | NES, chat models (Qwen3.8 etc.) | thinking off; temperature 0.2, top_p 0.8, top_k 20, **presence_penalty 0** (the model card's 0.7 / 1.5 values are chat settings that penalise repeated brackets and indentation); max_tokens ≈ region size × 1.5 |
-| NES, Sweep (1.5B / v2 7B) | temperature 0; max 512 (1.5B) / 1024 (7B); stop `<\|file_sep\|>`, `</s>` (1.5B) or `<\|endoftext\|>`, `<\|file_sep\|>` (v2) |
+| NES, Sweep (1.5B / v2 7B) | temperature 0; max 512 (1.5B) / 1024 (7B); stop `<\|file_sep\|>`, `<\|endoftext\|>`, `</s>` (1.5B) or `<\|endoftext\|>`, `<\|file_sep\|>` (v2) |
 | NES, Zeta 2.1 | temperature 0 (Phase 3b ruling 7: a live probe at 0 answered well, and greedy keeps one request per version deterministic); `max_tokens = min(1024, max(256, ceil(regionChars / 3 × 1.5) + 64))`; stop `<[end▁of▁sentence]>` only. Never stop on `<\|marker_2\|>`, which cuts off multi-block edits. |
 
 Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backend preset therefore omits `top_p`. Twinny notes that some hosted completion endpoints reject more than 4 stop sequences, so the stop list is capped per backend.

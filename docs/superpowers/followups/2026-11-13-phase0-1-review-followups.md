@@ -247,6 +247,11 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 - Zeta: a tail block replaced by one blank line is treated like a deletion; deleting the whole region leaves one empty line; the same marker twice with text between counts as no change, so an insertion answered that way is ignored; no test for a cursor on a block boundary.
 - History: after a file is closed and reopened with different text, `previous()` still describes the text before closing; hunk arrays are returned by reference.
 - Settings: no manifest test ties `NEXT_EDIT_LIMITS` to the numbers in `package.json`; the region defaults are duplicated with `REGION_ABOVE` and `REGION_BELOW`; at maximum settings a region is 62 lines.
-- Controller and tests: no tests for the check after the history flush, or for the `historySize` and region-size wiring; the mock server's events are leaner than real servers'; old llama.cpp builds report `stopped_limit` instead of `stop_type: "limit"`; no test for a caller abort on the completion path.
-- Decorations: the hint text goes stale after a manual cursor move (Tab still re-plans correctly); no tests for undo-clears, editor-switch-clears or `pendingEdit().version`; the Tab and Esc `when` clauses do not exclude `inlineEditIsVisible`, `parameterHintsVisible` or `editorHasMultipleSelections`; the Esc test waits out the 5 s rejection cooldown, which slows the suite; the snooze test's first quick pick is outside its `try`.
+- Controller and tests: no tests for the check after the history flush, or for the `historySize` and region-size wiring; the mock server's events are leaner than real servers'; no test for a caller abort on the completion path.
+- Decorations: the hint text goes stale after a manual cursor move (Tab still re-plans correctly); no tests for undo-clears, editor-switch-clears or `pendingEdit().version`; the Tab and Esc `when` clauses do not exclude `parameterHintsVisible` (Esc does not exclude `inlineEditIsVisible` either); the Esc test waits out the 5 s rejection cooldown, which slows the suite.
 - Menu: after a successful opt-in, **Enable native Next Edit UI...** stays until VS Code restarts.
+
+### From the final review (Phase 3b)
+
+- A symmetric sanity guard for raw formats: drop answers that delete many non-blank lines while adding none, or are much shorter than the window.
+- Sweep v1: an answer that stops early is read as deleting the window's tail.

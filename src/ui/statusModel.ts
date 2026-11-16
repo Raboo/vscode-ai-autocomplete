@@ -9,6 +9,14 @@ export function displayState(enabled: boolean, snoozedUntil: number, now: number
   return last;
 }
 
+/**
+ * What completions show when no backend serves them. With no backend at all that is an error; with backends that are all
+ * Next Edit-only (or `fim.backend` naming one) completions are simply not configured, so the status stays idle and says so.
+ */
+export function noCompletionBackend(backendCount: number): { state: 'idle' | 'error'; detail: string } {
+  return backendCount === 0 ? { state: 'error', detail: 'No backend configured' } : { state: 'idle', detail: 'No backend is used for completions' };
+}
+
 /** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */
 export interface MenuEntry { label: string; id: string }
 

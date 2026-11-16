@@ -20,6 +20,7 @@ import { gate } from './gate';
 import { collectCompletion, ThinkingError, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
+import { noCompletionBackend } from '../ui/statusModel';
 import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, explainUnsupported, planInsertion, planRoute, thinkingBlocked, whyNoRoute, type FimRoute } from './route';
 import type { Debouncer, InFlight } from './scheduler';
 
@@ -170,7 +171,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
 
     const backend = s.fim.backendId === undefined ? undefined : this.d.getBackend(s.fim.backendId);
     if (!backend) {
-      this.d.status.set('error', 'No backend configured');
+      // Backends that are all Next Edit-only are a valid setup: completions are not configured, which is not an error.
+      const none = noCompletionBackend(s.backends.length);
+      this.d.status.set(none.state, none.detail);
+      if (none.state === 'idle') this.once('no-completion-backend', () => this.d.log.info('no backend is used for completions; Next Edit is unaffected'));
       return [];
     }
     const id = backend.config.id;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { displayState, menuEntries } from '../../src/ui/statusModel';
+import { displayState, menuEntries, noCompletionBackend } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -78,5 +78,17 @@ describe('memoizeIsLocal', () => {
     m.clear();
     await m('http://local');
     expect(calls).toBe(4);
+  });
+});
+
+describe('noCompletionBackend', () => {
+  test('no backend at all is an error, as before', () => {
+    expect(noCompletionBackend(0)).toEqual({ state: 'error', detail: 'No backend configured' });
+  });
+  test('backends that none serves completions leave the status idle, so the menu has no Retry first', () => {
+    const { state, detail } = noCompletionBackend(2);
+    expect(state).toBe('idle');
+    expect(detail).toBe('No backend is used for completions');
+    expect(menuEntries(state, 2, 'zeta', false)[0].id).toBe('toggle');
   });
 });

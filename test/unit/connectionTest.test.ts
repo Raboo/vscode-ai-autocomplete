@@ -340,6 +340,25 @@ describe('the Next Edit step', () => {
     expect(cut.res.steps[1].text).toMatch(/cut at max tokens/);
   });
 
+  test('a chat answer cut before its closing fence is a warning too', async () => {
+    const f = fake({
+      ...noNative, caps: { template: true, chat: true }, config: { kind: 'openai', nextEditModel: 'qwen3-coder', use: { completions: false, nextEdit: true } },
+      chatEvents: [{ type: 'content', text: '```\ndef total(width, height):\n    a = width' }, { type: 'finish', reason: 'length' }],
+    });
+    const r = await run(f);
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn' });
+    expect(r.res.steps[1].text).toMatch(/cut at max tokens/);
+  });
+
+  test('a Next Edit-only backend listing one model records it; an explicit Next Edit model or the Completions model is left alone', async () => {
+    const only = await run(fake({ ...noNative, info: { models: ['sweep-next-edit-1.5b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: false, nextEdit: true } }, chunks: ['x'] }));
+    expect(only.res.model).toBe('sweep-next-edit-1.5b');
+    const explicit = await run(fake({ ...noNative, config: ZETA, chunks: ['x'] }));
+    expect(explicit.res.model).toBeUndefined();
+    const both = await run(fake({ ...noNative, info: { models: ['qwen3-coder'], contextWindows: {} }, config: { kind: 'openai', nextEditModel: 'zeta-2.1', use: { completions: true, nextEdit: true } }, chunks: ['x'] }));
+    expect(both.res.model).toBe('qwen3-coder');
+  });
+
   test('a format whose route is missing is a warning and sends nothing', async () => {
     const sweep = { kind: 'llamacpp' as const, nextEditModel: 'sweep-v2-7b', use: { completions: false, nextEdit: true } };
     const f = fake({ ...noNative, caps: { template: false, chat: true }, config: sweep });

@@ -296,6 +296,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         emit({ id: 'nextEdit', state: 'warn', text: `the server lists ${listed.models.length} models; choose a Next Edit model` }, stageStart);
         return;
       }
+      // A Next Edit-only backend has no completion step to detect the model: the page keeps the one the server lists.
+      if (!cfg.use.completions && cfg.nextEditModel === undefined) result.model = model;
       const format = pickFormat(settings.nextEdit.format, model);
       const route = formatRoute(format, backend.routes());
       if (!route.ok) {
@@ -330,7 +332,8 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       }
       const label = `Next Edit in ${now() - stageStart} ms with ${model} (${nextEditFormatLabel(settings.nextEdit.format, model)})`;
       if (edit) emit({ id: 'nextEdit', state: 'ok', text: `${label}: suggests an edit` }, stageStart);
-      else if (truncated) emit({ id: 'nextEdit', state: 'warn', text: `${label}: the answer was cut at max tokens and is not used` }, stageStart);
+      // The chat format has no max-tokens signal: its cut answer lacks the closing fence and parses as `truncated`.
+      else if (truncated || (parsed?.kind === 'invalid' && parsed.why === 'truncated')) emit({ id: 'nextEdit', state: 'warn', text: `${label}: the answer was cut at max tokens and is not used` }, stageStart);
       // An unreadable answer: the reason is one of the formats' own fixed words, never server text.
       else if (parsed?.kind === 'invalid') emit({ id: 'nextEdit', state: 'fail', text: `the answer could not be read (${parsed.why})` }, stageStart, `the answer could not be read (${parsed.why})`);
       else emit({ id: 'nextEdit', state: 'warn', text: `${label}: answered, no edit suggested`, hint: 'the sample renames a variable; a Next Edit model should rename its other uses' }, stageStart);

@@ -442,6 +442,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.openSettings",
+        "title": "Open Settings",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.setApiKey",
         "title": "Set API Key",
         "category": "AI Autocomplete"

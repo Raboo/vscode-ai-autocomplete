@@ -178,6 +178,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     channel,
     log,
     manageBackends,
+    nativeNextEdit: () => native,
     nextEditAccepted: () => nextEdit.accepted(),
     nextEditTab: () => nextEdit.nextEditTab(),
     nextEditDismiss: () => nextEdit.nextEditDismiss(),

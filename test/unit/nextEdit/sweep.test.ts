@@ -431,6 +431,35 @@ describe('sweep parse', () => {
     expect(v2.parse('a\nb<|cursor|>X\nc\n\n', small)).toEqual({ kind: 'rewrite', lines: ['a', 'bX', 'c', ''] });
   });
 
+  // LM Studio's MLX engine drops the leading space of the first generated token, so the first generated line arrives one space short.
+  const indented = input({
+    lines: ['def main():', '    a = 1', '    print(area)', ''],
+    region: { start: 0, end: 3 },
+    cursor: { line: 1, character: 5 },
+    previous: undefined,
+    history: [],
+    snippets: [],
+  });
+
+  it('v2: a first generated line one space short of the cursor line gets the space back', () => {
+    const prefill = completion(v2, indented).prefill;
+    expect(prefill).toBe('def main():\n');
+    expect(v2.parse(`${prefill}   a = 1\n    print(a)\n`, indented)).toEqual({ kind: 'rewrite', lines: ['def main():', '    a = 1', '    print(a)', ''] });
+    expect(v2.parse(`${prefill}   a = 1\n    print(area)\n`, indented)).toEqual({ kind: 'noChange' });
+  });
+
+  it('v1: a first line one space short of the window\'s first line gets the space back', () => {
+    const win = input({ lines: ['    a = 1', '    print(area)', ''], region: { start: 0, end: 2 }, cursor: { line: 0, character: 5 }, previous: undefined, history: [], snippets: [] });
+    expect(v1.parse('   a = 1\n    print(a)\n', win)).toEqual({ kind: 'rewrite', lines: ['    a = 1', '    print(a)', ''] });
+  });
+
+  it('other indentation changes on the first generated line are kept', () => {
+    const prefill = completion(v2, indented).prefill;
+    expect(v2.parse(`${prefill}  a = 1\n    print(a)\n`, indented)).toEqual({ kind: 'rewrite', lines: ['def main():', '  a = 1', '    print(a)', ''] });
+    expect(v2.parse(`${prefill}    a = 1\n   print(a)\n`, indented)).toEqual({ kind: 'rewrite', lines: ['def main():', '    a = 1', '   print(a)', ''] });
+    expect(v1.parse('a\nB\nc\n\n', small)).toEqual({ kind: 'rewrite', lines: ['a', 'B', 'c', ''] });
+  });
+
   it('an empty answer for an all-blank window is not invalid', () => {
     const blank = input({ lines: ['', ''], region: { start: 0, end: 1 }, cursor: { line: 0, character: 0 }, previous: undefined, history: [], snippets: [] });
     expect(v1.parse('', blank)).toEqual({ kind: 'noChange' });

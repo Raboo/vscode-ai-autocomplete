@@ -19,6 +19,8 @@ const reservedFor = (variant: Variant): string[] => (variant === 'v2' ? [FILE_SE
 
 const isBlank = (line: string): boolean => line.trim() === '';
 
+const leadingSpaces = (line: string): number => line.length - line.replace(/^ +/, '').length;
+
 /** The lines of a window from a file's lines, empty for an empty span. */
 const take = (lines: string[], span: LineSpan): string[] => (span.end < span.start ? [] : lines.slice(span.start, span.end + 1));
 
@@ -118,6 +120,10 @@ function parse(variant: Variant, answer: string, i: NextEditInput): FormatAnswer
   text = text.split(CURSOR).join('');
 
   const lines = text.split('\n');
+  // LM Studio's MLX engine drops the leading space of the first generated token: give back the one space the first generated line misses.
+  const first = prefilledLines(variant, i, window);
+  if (answer.startsWith(prefill) && first < lines.length && first < window.length && !isBlank(lines[first])
+    && leadingSpaces(lines[first]) + 1 === leadingSpaces(window[first])) lines[first] = ` ${lines[first]}`;
   // The trailing newline cut above and the model's stop may have dropped the window's last blank lines: restore them.
   let blanksInWindow = 0;
   while (blanksInWindow < window.length && isBlank(window[window.length - 1 - blanksInWindow])) blanksInWindow++;

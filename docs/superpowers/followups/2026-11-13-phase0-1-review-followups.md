@@ -255,3 +255,7 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 
 - A symmetric sanity guard for raw formats: drop answers that delete many non-blank lines while adding none, or are much shorter than the window.
 - Sweep v1: an answer that stops early is read as deleting the window's tail.
+
+### From the smoke test (Phase 3b)
+
+- LM Studio's MLX engine drops the leading space of the first generated token on `/v1/completions`, streaming or not (seen 2026-11-16 with Sweep v2 7B and Qwen3.5-4B: `def f(x):\n    return` gives `"x**2"`, `def f(x):\n` gives `"   return x**2"`). Sweep now restores the missing space on its first generated line. Completions on the template route are likely affected too (`total = total +` gave `"1"`): ghost text after a word or at the start of an indented line can lose a space. Check whether LM Studio's llama.cpp engine has the same bug, report it to LM Studio, and decide whether to detect the quirk per backend.

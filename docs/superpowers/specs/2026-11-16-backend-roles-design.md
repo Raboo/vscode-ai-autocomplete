@@ -51,3 +51,14 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
 
 - Exact wording of hints and warnings, within the rules above.
 - Where the Next Edit sample fixture lives, as long as it is our own text.
+
+## Addendum: status bar menu (2026-11-16, asked by the user after the build)
+
+The user asked for the completion entry to match "Next Edit: <backend>", for completions to be turned off from it, and for one switch that stops both.
+
+- **Completions: <backend>** replaces "Select backend..." and "Toggle completions on/off" in the menu. It lists the Completions backends plus **Off**, the current one marked. Off sets `fim.enabled` false and keeps `fim.backend`; picking a backend sets it and turns completions back on. The command keeps its id (`aiAutocomplete.selectBackend`, now titled "Select Completion Backend"); "Toggle Completions" stays in the Command Palette for existing key bindings.
+- **Next Edit: <backend>** shows off when `nextEdit.enabled` is false, and picking a backend turns `nextEdit.enabled` back on (the same rule as completions, also for the page's "Use for" buttons).
+- **Turn off / Turn on AI Autocomplete** (first entry; command `aiAutocomplete.toggleEnabled`, "Turn On/Off") flips a new setting, `aiAutocomplete.enabled` (default true, resource scope). Off stops completions and Next Edit and keeps both backend choices. Snooze stays for a timed pause.
+- While the switch is off, the Completions and Next Edit entries still name their backends: what **Turn on** brings back. With completions on but no backend serving them, the entry reads **Completions: none**. The palette's "Snooze Completions" is now "Snooze", since it pauses both.
+- A switch is written where its value comes from: the workspace when it sets one, otherwise user settings.
+- **Status bar:** off only when nothing runs (the switch off, or completions off and no Next Edit). Completions off with Next Edit on stays normal, with "Completions off" in the tooltip. The Backends page's header says completions are off when either switch is off.

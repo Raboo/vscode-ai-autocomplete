@@ -17,18 +17,30 @@ export function noCompletionBackend(backendCount: number): { state: 'idle' | 'er
   return backendCount === 0 ? { state: 'error', detail: 'No backend configured' } : { state: 'idle', detail: 'No backend is used for completions' };
 }
 
+/** What runs: the status bar shows off only when neither completions nor Next Edit does, and says so when completions alone are off. */
+export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextEdit: { enabled: boolean; backendId?: string } }): { on: boolean; note?: string } {
+  const nextEdit = s.nextEdit.enabled && s.nextEdit.backendId !== undefined;
+  if (!s.enabled || (!s.fim.enabled && !nextEdit)) return { on: false };
+  return s.fim.enabled ? { on: true } : { on: true, note: 'Completions off' };
+}
+
 /** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */
 export interface MenuEntry { label: string; id: string }
+
+/** What the menu shows besides the status; a backend is undefined when that feature is off. */
+export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean }
 
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
+const SWITCH: MenuEntry = { label: 'Turn off AI Autocomplete', id: 'toggleEnabled' };
+const COMPLETIONS: MenuEntry = { label: 'Completions: off', id: 'selectBackend' };
 const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
 const ENABLE_NATIVE: MenuEntry = { label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' };
 const MENU: MenuEntry[] = [
-  { label: 'Toggle completions on/off', id: 'toggle' },
+  SWITCH,
   { label: 'Snooze...', id: 'snooze' },
-  { label: 'Select backend...', id: 'selectBackend' },
+  COMPLETIONS,
   NEXT_EDIT,
   ENABLE_NATIVE,
   MANAGE,
@@ -41,11 +53,18 @@ const MENU: MenuEntry[] = [
 
 /**
  * The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed.
- * "Next Edit: <backend>" (or off) follows the backend selection, then "Enable native Next Edit UI..." unless the native UI is already on. With no backend configured, "Manage backends..." comes before both.
+ * "Turn off/on AI Autocomplete" switches completions and Next Edit together; "Completions: <backend>" and "Next Edit: <backend>" (or off) pick each one's backend,
+ * then "Enable native Next Edit UI..." unless the native UI is already on. With no backend configured, "Manage backends..." comes first of all.
  */
-export function menuEntries(shown: StatusState, backendCount: number, nextEditBackend: string | undefined, nativeNextEdit: boolean): MenuEntry[] {
-  const menu = MENU.filter((e) => !(nativeNextEdit && e === ENABLE_NATIVE)).map((e) => (e === NEXT_EDIT ? { ...e, label: `Next Edit: ${nextEditBackend ?? 'off'}` } : e));
+export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
+  const label = (e: MenuEntry): MenuEntry => {
+    if (e === SWITCH) return m.enabled ? e : { ...e, label: 'Turn on AI Autocomplete' };
+    if (e === COMPLETIONS) return { ...e, label: `Completions: ${m.completionBackend ?? 'off'}` };
+    if (e === NEXT_EDIT) return { ...e, label: `Next Edit: ${m.nextEditBackend ?? 'off'}` };
+    return e;
+  };
+  const menu = MENU.filter((e) => !(m.nativeNextEdit && e === ENABLE_NATIVE)).map(label);
   let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
-  if (backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
+  if (m.backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
   return list;
 }

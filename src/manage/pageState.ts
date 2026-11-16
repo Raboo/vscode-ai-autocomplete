@@ -135,7 +135,7 @@ export function buildPageState(i: PageInputs): PageState {
   }
 
   return {
-    completionsOn: settings.fim.enabled, localOnly: settings.privacy.localOnly, cards, ...(edit ? { edit } : {}),
+    completionsOn: settings.enabled && settings.fim.enabled, localOnly: settings.privacy.localOnly, cards, ...(edit ? { edit } : {}),
     serverTypes: SERVER_TYPES.map(({ id, label }) => ({ id, label })),
   };
 }

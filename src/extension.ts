@@ -18,6 +18,7 @@ import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
+import { activity } from './ui/statusModel';
 
 const LOCAL_DEBOUNCE_MS = 75;
 const REMOTE_DEBOUNCE_MS = 250;
@@ -71,7 +72,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     return r.problems;
   };
 
-  const status = new StatusBar({ enabled: () => settings.fim.enabled, snoozedUntil, localOnly: () => settings.privacy.localOnly });
+  const status = new StatusBar({ enabled: () => activity(settings).on, note: () => activity(settings).note, snoozedUntil, localOnly: () => settings.privacy.localOnly });
   sub(status);
 
   const cache = new SuggestionCache();

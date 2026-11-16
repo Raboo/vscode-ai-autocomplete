@@ -16,6 +16,8 @@ export function usesFor(cfg: BackendConfig, use: BackendUse): boolean {
 }
 
 export interface Settings {
+  /** The switch for completions and Next Edit together; off keeps both selections. */
+  enabled: boolean;
   backends: BackendConfig[];
   fim: {
     enabled: boolean; backendId?: string; debounceMs: number | null; multiline: Multiline; maxTokens: number;
@@ -328,6 +330,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
   const debounce = resource<unknown>('fim.debounceMs', null);
 
   const settings: Settings = {
+    enabled: resource('enabled', true),
     backends,
     fim: {
       enabled: resource('fim.enabled', true),

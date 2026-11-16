@@ -25,7 +25,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display'];
+const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -365,6 +365,16 @@ suite('Next Edit', () => {
       assert.ok(user.includes(`current_file_path: ${pathOf(other.document)}\n`), user);
       assert.ok(!user.includes(pathOf(env.document)) && !user.includes('API_KEY'), user);
     }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
+  });
+
+  test('the AI Autocomplete switch off sends no Next Edit request', async () => {
+    // With FIM off the controller asks after the edit pause on its own, so only the switch can stop the request.
+    await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+      const editor = await open(['x = 1']);
+      await typeKeys(editor, '0');
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(nextEdits(m).length, 0, `mock saw ${seen(m)}`);
+    }, { enabled: false, 'fim.enabled': false });
   });
 
   test('a region with a Markdown code block sends no Next Edit request', async () => {

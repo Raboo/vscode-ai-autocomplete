@@ -365,11 +365,12 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 | `aiAutocomplete.backends` | **machine** scope: `[{id, kind, baseUrl, hostFlavor?, fimModel?, nextEditModel?, fimMode?, headers?, use?}]`. `use` is a list of `"completions"` and `"nextEdit"` saying what the backend serves (Phase 3c; missing means both; see the [backend roles design](2026-11-16-backend-roles-design.md)). Keys go in SecretStorage through the "Set API key" command. A workspace can never add or edit endpoints. Machine scope keeps `localhost` endpoints from syncing into remote/SSH windows, where `localhost` is a different machine. |
 | `aiAutocomplete.fim.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
 | `aiAutocomplete.privacy.localOnly` | Workspace-settable (it can only restrict). Refuses non-loopback, non-private backends, and shows a lock icon in the status bar. |
+| `aiAutocomplete.enabled` | Workspace-settable. Off stops completions and Next Edit together and keeps both backend choices; the status bar menu's **Turn off/on AI Autocomplete** sets it ([backend roles design](2026-11-16-backend-roles-design.md)). |
 | `aiAutocomplete.fim.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
 | `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b, all resource scope: `format` (`auto`, `chatXtab`, `sweep`, `zeta21`; `instinct` is not built), `display` (`auto`, `native`, `decorations`), `regionLinesAbove` (integer 0 to 20, default 5), `regionLinesBelow` (0 to 40, default 10), `historySize` (0 to 10, default 5) and `contextBudget` (1000 to 16000 tokens, default 3500). A value out of range is ignored with a warning. |
 | `aiAutocomplete.modelOverrides` | machine scope: regex → `{fimTemplate, stop, sampling, extraBody, thinking}` |
 
-- **Status bar**: idle, loading, error, snoozed, local-lock, and a "thinking" warning. Clicking it opens a quick pick to toggle, snooze, switch backend, show the log, or set up a local model.
+- **Status bar**: idle, loading, error, snoozed, local-lock, and a "thinking" warning. Clicking it opens a quick pick to turn everything off or on, snooze, pick the completion and Next Edit backends (or Off), show the log, or set up a local model.
 - **Telemetry**: none.
 
 ### Local model helper (`local/`)

@@ -347,3 +347,16 @@ Expected: FAIL.
   - unticking Completions on the selected completion backend turns completions off, with a problem in the log.
 - [x] **Step 2: Run** `npm run build && npx vitest run && npm run lint` (README is linted only by markdownlint if configured; check `git diff --stat` shows docs only).
 - [x] **Step 3: Commit**: `git commit -m "docs: backend roles"`
+
+### Task 7: Status bar menu: Completions entry and the on/off switch
+
+Added after the final review at the user's request; design: the addendum at the end of the design doc.
+
+**Files:**
+- Modify: `src/config/settings.ts` (`Settings.enabled`), `package.json` (`aiAutocomplete.enabled`, command `aiAutocomplete.toggleEnabled` "Turn On/Off", "Select Completion Backend"), `src/ui/statusModel.ts` (`activity`, `MenuInputs`, `menuEntries(shown, m)`), `src/ui/commands.ts` (`setSwitch`, `pickBackendOrOff`, `toggleEnabled`; `useBackend`/`useNextEditBackend` turn their feature back on), `src/ui/statusBar.ts` (tooltip note), `src/extension.ts`, `src/completion/provider.ts`, `src/nextEdit/vscode/controller.ts` (gates honour `enabled`), `src/manage/pageState.ts` (`completionsOn`), README, ROADMAP 3c checklist, main spec settings table
+- Test: `test/unit/statusModel.test.ts`, `test/unit/settings.test.ts`, `test/unit/pageState.test.ts`, `test/unit/manifest.test.ts`, `test/integration/fim.test.ts`, `test/integration/nextEdit.test.ts`
+
+- [x] **Step 1: Tests**: menu order `toggleEnabled, snooze, selectBackend, selectNextEditBackend, …` with no `toggle`; labels "Completions: <id>"/"Completions: off", "Turn off/on AI Autocomplete"; `activity` (off only when nothing runs, "Completions off" note); `enabled` read from a workspace; the page shows completions off under the switch; integration: the switch off sends no completion and no Next Edit request, and turning it on completes again.
+- [x] **Step 2: Implement** as listed above.
+- [x] **Step 3: Run all checks**: `npm run build && npm test && npm run typecheck && npm run lint`, `npm run test:integration`.
+- [x] **Step 4: Commit**: `git commit -m "feat: status bar menu turns completions and everything off"`

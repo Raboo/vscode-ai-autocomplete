@@ -20,6 +20,13 @@ describe('parseSettings', () => {
     }));
     expect(Object.keys(settings.modelOverrides)).toEqual(['a']);
     expect(settings.debug.logPrompts).toBe(false);
+    expect(settings.enabled).toBe(true);
+  });
+  test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
+    const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));
+    expect(r.settings.enabled).toBe(false);
+    expect(r.settings.fim.enabled).toBe(true);
+    expect(r.settings.fim.backendId).toBe('a');
   });
   test('fim.backend may be chosen per workspace among configured ids', () => {
     const { settings } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'a', workspaceValue: 'b' } }));

@@ -223,8 +223,8 @@ export class NextEditController implements vscode.Disposable {
 
   /** Next Edit is on: only then are snapshots, history and idle timers kept (reset() re-snapshots when it is turned on). */
   private tracking(): boolean {
-    const { nextEdit } = this.d.getSettings();
-    return nextEdit.enabled && nextEdit.backendId !== undefined;
+    const { enabled, nextEdit } = this.d.getSettings();
+    return enabled && nextEdit.enabled && nextEdit.backendId !== undefined;
   }
 
   /** Workspace files and unsaved files that completions may use, as for extra context. */
@@ -280,7 +280,7 @@ export class NextEditController implements vscode.Disposable {
     this.lastChange.set(uri, { version: doc.version, at: now });
     // A language or file FIM is disabled in is not eligible here, so only these settings leave FIM inactive for the document.
     const s = this.d.getSettings();
-    if (!s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
+    if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
   }
 
   private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
@@ -371,7 +371,7 @@ export class NextEditController implements vscode.Disposable {
     if (this.pending?.uri === uri && this.pending.version === version) return;
     const asked = this.asked.get(uri);
     if (asked?.version === version && asked.line === editor.selection.active.line) return;
-    if (!s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
+    if (!s.enabled || !s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
     const backend = this.d.getBackend(s.nextEdit.backendId);
     if (!backend) return;
     const id = backend.config.id;

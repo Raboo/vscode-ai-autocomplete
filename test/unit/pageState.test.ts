@@ -35,6 +35,11 @@ describe('page state', () => {
     expect(s.serverTypes[0]).toEqual({ id: 'llamacpp', label: 'llama.cpp' });
   });
 
+  test('completions show off when the AI Autocomplete switch is off, as when completions alone are off', () => {
+    expect(buildPageState(inputs({ settings: { ...base(), enabled: false } })).completionsOn).toBe(false);
+    expect(buildPageState(inputs({ settings: { ...base(), fim: { ...base().fim, enabled: false } } })).completionsOn).toBe(false);
+  });
+
   test('the card warning names the prompt mode when the mode, not the model, is the problem', () => {
     const native = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'qwen2.5-coder-7b', fimMode: 'native' }] }));
     expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });

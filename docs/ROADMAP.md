@@ -83,3 +83,6 @@ Phase 3c (check before merging the Phase 3c PR, on its CI `.vsix`; [plan](superp
 - A both-uses Strata backend selected with **Select Next Edit Backend**: Test shows both the completion steps and the Next Edit step; unselected and without a Next Edit model, only the completion steps.
 - An existing backend without `use` looks and works as before (both boxes ticked).
 - Unticking Completions on the selected completion backend turns completions off, with a problem in the log.
+- The status bar menu reads **Turn off AI Autocomplete**, **Snooze...**, **Completions: <backend>**, **Next Edit: <backend>**; no **Toggle completions on/off**.
+- **Completions → Off** stops ghost text and the entry reads **Completions: off**; with Next Edit on, the status bar stays normal and its tooltip says "Completions off". Picking the backend again brings ghost text back.
+- **Turn off AI Autocomplete** stops ghost text and Next Edit and shows the off icon; **Turn on AI Autocomplete** brings both back with the same backends.

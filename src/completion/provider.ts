@@ -150,7 +150,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const editor = vscode.window.activeTextEditor;
     const invoked = ctx.triggerKind === vscode.InlineCompletionTriggerKind.Invoke;
     const g = gate({
-      enabled: s.fim.enabled,
+      enabled: s.enabled && s.fim.enabled,
       snoozedUntil: this.d.snoozedUntil(),
       now: Date.now(),
       scheme: doc.uri.scheme,

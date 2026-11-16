@@ -19,7 +19,7 @@ function input(over: Partial<NextEditInput> = {}): NextEditInput {
     lines: fileLines,
     cursor: { line: 12, character: 4 },
     region: { start: 8, end: 14 },
-    history: [{ path: 'src/a.ts', text: '--- src/a.ts\n+++ src/a.ts\n-x\n+y' }],
+    history: [{ path: 'src/a.ts', text: '--- src/a.ts\n+++ src/a.ts\n-x\n+y', hunks: [] }],
     snippets: [{ path: 'src/b.ts', text: 'export const b = 1;' }],
     ...over
   };
@@ -63,7 +63,7 @@ describe('chatXtabMessages', () => {
   });
 
   it('history keeps the newest entries within budget, oldest first', () => {
-    const entry = (n: number, size: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(size - 2) });
+    const entry = (n: number, size: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(size - 2), hunks: [] });
     const big = userOf(input({ history: [entry(1, 2000), entry(2, 2000), entry(3, 2000)] }));
     expect(big).toContain('E3');
     expect(big).not.toContain('E2');

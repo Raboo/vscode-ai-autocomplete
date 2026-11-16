@@ -44,7 +44,7 @@
   - `export function usesFor(cfg: BackendConfig, use: BackendUse): boolean` in `src/config/settings.ts`.
   - `nextEditModel(backend, detected)`: unchanged signature; ignores `fimModel` when `backend.use.completions` is false.
 
-- [ ] **Step 1: Write the failing tests** (in `settings.test.ts`, `effective.test.ts`, `manifest.test.ts`)
+- [x] **Step 1: Write the failing tests** (in `settings.test.ts`, `effective.test.ts`, `manifest.test.ts`)
 
 ```ts
 test('a backend without use serves both', () => {
@@ -94,12 +94,12 @@ test('backends entries declare use', () => {
 
 Every existing test that builds a `BackendConfig` literal gets `use: { completions: true, nextEdit: true }` (or a shared helper), so the suites typecheck.
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/settings.test.ts test/unit/effective.test.ts test/unit/manifest.test.ts`
 Expected: FAIL (no `use` on the parsed backend, no schema entry).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - `parseBackendEntry` parses `use` as above; problem texts start `${at} ("${id}"): use …`.
   - `fim.backend`: the fallback is the first backend with `use.completions`. A requested id that exists but lacks completions → `backendId` undefined plus the problem `aiAutocomplete.fim.backend: backend "<id>" is not used for completions; completions have no backend`. An unknown id keeps today's text, now falling back to the first completions backend.
   - `nextEdit.backend`: an existing id without `use.nextEdit` → off plus `aiAutocomplete.nextEdit.backend: backend "<id>" is not used for Next Edit; Next Edit is off`.
@@ -107,12 +107,12 @@ Expected: FAIL (no `use` on the parsed backend, no schema entry).
   - `controller.ts` `model()`: the early return uses `cfg.nextEditModel !== undefined || (cfg.use.completions && cfg.fimModel !== undefined)`.
   - `commands.ts`: `pickBackend` gets a `use?: BackendUse` filter; **Select backend** passes `'completions'`, **Select Next Edit Backend** lists only `usesFor(b, 'nextEdit')` backends; **Set API key** lists all. With none matching, the message says no backend is set up for completions (or Next Edit) and to open **AI Autocomplete: Manage Backends**.
 
-- [ ] **Step 4: Run all checks**
+- [x] **Step 4: Run all checks**
 
 Run: `npm run build && npx vitest run && npm run typecheck && npm run lint`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/types.ts src/config/settings.ts src/completion/effective.ts src/nextEdit/vscode/controller.ts src/ui/commands.ts package.json test/unit/settings.test.ts test/unit/effective.test.ts test/unit/manifest.test.ts <other test files touched>
@@ -131,7 +131,7 @@ git commit -m "feat: backends declare what they are used for"
   - `export function nextEditOnlyModel(model: string | undefined): 'Zeta 2.1' | 'Sweep' | undefined` in `src/nextEdit/formats/index.ts`, using the same id rules as `formatIdFor('auto', model)`.
   - `export const NEXT_EDIT_TOKENS = /<\|marker_\d+\|>|<\|user_cursor\|>|<\|file_sep\|>|<\|endoftext\|>|<\|cursor\|>/` in `src/completion/postprocess.ts`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // formats.test.ts
@@ -155,19 +155,19 @@ test('a Next Edit-only model for completions is a warning', () => {
 // connectionTest.test.ts: with fimModel 'zeta-2.1', the model step is a warning naming Zeta 2.1 and no completion request is sent.
 ```
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/postprocess.test.ts test/unit/nextEdit/formats.test.ts test/unit/form.test.ts test/unit/pageState.test.ts test/unit/connectionTest.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - `postprocess` cuts `raw` before its first `NEXT_EDIT_TOKENS` match, before any other step.
   - The warning text, the same in the form, on the card and in the test's model step: `<model> is a <name> Next Edit model; it cannot do completions`, with the hint `untick Completions, or choose a completion model`. In the connection test this replaces the `seed-coder fits Zeta 2.x` hint and stops the test before the completion request.
   - These warnings apply only when the backend is used for completions (`use.completions`).
 
-- [ ] **Step 4: Run all checks** (as in Task 1, Step 4)
+- [x] **Step 4: Run all checks** (as in Task 1, Step 4)
 
-- [ ] **Step 5: Commit**: `git commit -m "feat: keep Next Edit-only models out of completions"` (explicit paths)
+- [x] **Step 5: Commit**: `git commit -m "feat: keep Next Edit-only models out of completions"` (explicit paths)
 
 ### Task 3: Page logic for uses (pure)
 
@@ -185,7 +185,7 @@ Expected: FAIL.
   - `PageInputs.nextEditInUseId?: string`.
   - `PageMessage` gains `{ type: 'useNextEdit'; id: string }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 test('newForm and entryToForm tick both uses; entryToForm reads use', () => {
@@ -218,16 +218,16 @@ test('an entry without use builds the same card as before', () => {
 });
 ```
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/form.test.ts test/unit/pageState.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** the interfaces above. `buildPageState` copies `form.use` field by field (booleans only). `modelTag` and the route warning apply to the completion model only, and only when `use.completions`.
+- [x] **Step 3: Implement** the interfaces above. `buildPageState` copies `form.use` field by field (booleans only). `modelTag` and the route warning apply to the completion model only, and only when `use.completions`.
 
-- [ ] **Step 4: Run all checks** (as in Task 1, Step 4)
+- [x] **Step 4: Run all checks** (as in Task 1, Step 4)
 
-- [ ] **Step 5: Commit**: `git commit -m "feat: page logic for what a backend is used for"`
+- [x] **Step 5: Commit**: `git commit -m "feat: page logic for what a backend is used for"`
 
 ### Task 4: The Backends page shows uses
 
@@ -239,7 +239,7 @@ Expected: FAIL.
 - Consumes: Task 3's `BackendForm.use`, `CardView.uses`, `CardView.nextEditInUse`, `CardView.nextEditModel`, `EditView.nextEditFormat`, `PageMessage` `useNextEdit`, `PageInputs.nextEditInUseId`.
 - Produces: checkbox ids `f-use-completions` and `f-use-nextEdit`; button id `a-useNextEdit-<id>`.
 
-- [ ] **Step 1: Write the failing tests** (in `render.test.ts`)
+- [x] **Step 1: Write the failing tests** (in `render.test.ts`)
 
 ```ts
 test('the connection section has Use for checkboxes', () => {
@@ -260,12 +260,12 @@ test('cards show uses, badges and use buttons per use', () => {
 });
 ```
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/render.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - `render.ts` renders the checkboxes and per-use fields as tested.
   - `main.ts` reads both checkboxes into `form.use` and re-renders on change, as the other controls do.
   - `backendsPanel.ts`:
@@ -273,9 +273,9 @@ Expected: FAIL.
     - passes `nextEditInUseId: settings.nextEdit.backendId` to `buildPageState`;
     - validates the `use` message field as booleans only.
 
-- [ ] **Step 4: Run all checks** (as in Task 1, Step 4)
+- [x] **Step 4: Run all checks** (as in Task 1, Step 4)
 
-- [ ] **Step 5: Commit**: `git commit -m "feat: Use for checkboxes on the Backends page"`
+- [x] **Step 5: Commit**: `git commit -m "feat: Use for checkboxes on the Backends page"`
 
 ### Task 5: Test runs a Next Edit check
 
@@ -290,7 +290,7 @@ Expected: FAIL.
   - `RunOptions.onParsed?(answer: FormatAnswer): void`, called with the parsed answer before `resultOf`; not called for a truncated answer.
   - `export function nextEditSample(format: NextEditFormat, settings: Settings): NextEditInput` in `src/manage/nextEditSample.ts`. It returns our own small Python file in which `area` was just renamed to `a` on one line, with two more uses of `area` below it, the cursor after the rename, and matching `history` and `previous`. It never contains a reserved string of any format (a test checks `format.problem(input)` is undefined for all three formats).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 test('a Next Edit-only backend runs reach and the Next Edit step only', async () => {
@@ -312,12 +312,12 @@ test('the sample is sendable in every format', () => {
 // request.test.ts: onParsed receives the parsed answer for a completion format, and is not called when truncated.
 ```
 
-- [ ] **Step 2: Run them and see them fail**
+- [x] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run test/unit/connectionTest.test.ts test/unit/nextEdit/request.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - In `runConnectionTest`, the completion steps (model through context) run only with `use.completions`.
   - With `use.nextEdit`, a `nextEdit` step follows, timed from its own start:
     - The model is `nextEditModel(cfg, single listed model)`. With no model, the step warns `the server lists N models; choose a Next Edit model`.
@@ -330,20 +330,20 @@ Expected: FAIL.
   - `completionServed` is unchanged.
   - Every step's fixed log text stays free of answer text.
 
-- [ ] **Step 4: Run all checks** (as in Task 1, Step 4)
+- [x] **Step 4: Run all checks** (as in Task 1, Step 4)
 
-- [ ] **Step 5: Commit**: `git commit -m "feat: Test checks Next Edit with a sample edit"`
+- [x] **Step 5: Commit**: `git commit -m "feat: Test checks Next Edit with a sample edit"`
 
 ### Task 6: Docs and roadmap
 
 **Files:**
 - Modify: `README.md` (Backends page: Use for, the Next Edit test; troubleshooting: a Zeta/Sweep model as the completion model), `AGENTS.md` (layout line for `manage/nextEditSample.ts`, one line on `use`), `docs/ROADMAP.md` (3b released in v0.4.0; new row "3c. Backend roles" linking this plan and the design, status "implemented on `feat/backend-roles` (not merged or released)"; a 3c smoke checklist under "Deferred manual checks"), `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md` (settings table: the `use` field, linking the roles design)
 
-- [ ] **Step 1: Update the docs.** The 3c smoke checklist:
+- [x] **Step 1: Update the docs.** The 3c smoke checklist:
   - a Zeta-only LM Studio backend: Test shows the Next Edit step and no completion step;
   - the completion picker does not list it;
   - a both-uses Strata backend: Test shows both;
   - an existing backend without `use` looks and works as before;
   - unticking Completions on the selected completion backend turns completions off, with a problem in the log.
-- [ ] **Step 2: Run** `npm run build && npx vitest run && npm run lint` (README is linted only by markdownlint if configured; check `git diff --stat` shows docs only).
-- [ ] **Step 3: Commit**: `git commit -m "docs: backend roles"`
+- [x] **Step 2: Run** `npm run build && npx vitest run && npm run lint` (README is linted only by markdownlint if configured; check `git diff --stat` shows docs only).
+- [x] **Step 3: Commit**: `git commit -m "docs: backend roles"`

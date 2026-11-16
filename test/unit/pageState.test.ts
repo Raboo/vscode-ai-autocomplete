@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
-import { buildPageState, dotFor, modelTag, type PageInputs } from '../../src/manage/pageState';
+import { buildPageState, dotFor, modelListTag, modelTag, type PageInputs } from '../../src/manage/pageState';
 import type { BackendConfig } from '../../src/types';
 import type { BackendForm, TestStep } from '../../src/manage/protocol';
 
@@ -61,6 +61,26 @@ describe('page state', () => {
     expect(modelTag(cfg(), 'z-ai/glm-5', base(), true)).toBe('chat prompt, cannot turn thinking off');
     expect(modelTag(cfg({ fimMode: 'chat' }), 'qwen2.5-coder-7b', base())).toBe('chat prompt');
     expect(modelTag(cfg({ fimMode: 'native' }), 'qwen2.5-coder-7b', base())).toBe('prompt mode "native" does not work with this server');
+  });
+
+  test('modelListTag: completion tags with Completions ticked, the Next Edit format without', () => {
+    const cfg = (use: BackendConfig['use']): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use });
+    const both = { completions: true, nextEdit: true };
+    expect(modelListTag(cfg(both), 'zeta-2.1', base())).toBe('no completion template');
+    expect(modelListTag(cfg(both), 'qwen2.5-coder-7b', base())).toBe('ready');
+    expect(modelListTag(cfg(both), 'gpt-oss-20b', base(), true)).toBe('chat prompt, cannot turn thinking off');
+    const ne = { completions: false, nextEdit: true };
+    expect(modelListTag(cfg(ne), 'zeta-2.1', base())).toBe('Zeta 2.1 format');
+    expect(modelListTag(cfg(ne), 'sweep-next-edit-v2-7b', base())).toBe('Sweep v2 format');
+    expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', base())).toBe('chat prompt (chatXtab)');
+    const forced = { ...base(), nextEdit: { ...base().nextEdit, format: 'zeta21' as const } };
+    expect(modelListTag(cfg(ne), 'qwen2.5-coder-7b', forced)).toBe('Zeta 2.1 format');
+  });
+
+  test('a draft with a malformed use counts as ticked', () => {
+    const bad = { ...form(), use: { completions: 'no', nextEdit: false } } as unknown as BackendForm;
+    const s = buildPageState(inputs({ edit: { cardId: 'lm', form: bad, testing: false } }));
+    expect(s.edit!.form.use).toEqual({ completions: true, nextEdit: false });
   });
 
   test('a Mistral chat-family model on kind mistral: the tag and the card say to choose a Codestral model', () => {

@@ -65,6 +65,12 @@ export function retypeForm(prev: BackendForm, next: BackendForm, taken: readonly
   return out;
 }
 
+/** The uses of an untrusted form: only real booleans are taken; anything missing or malformed counts as ticked, as a missing `use` does in the settings. */
+export function useFromUnknown(v: unknown): BackendForm['use'] {
+  const o = isObj(v) ? v : {};
+  return { completions: typeof o.completions === 'boolean' ? o.completions : true, nextEdit: typeof o.nextEdit === 'boolean' ? o.nextEdit : true };
+}
+
 /** The ticked uses of a stored `use` list: a missing, empty or unusable list is both, as in the settings. */
 function usesOf(raw: unknown): BackendForm['use'] {
   const list = Array.isArray(raw) ? raw : [];

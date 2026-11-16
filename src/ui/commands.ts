@@ -46,7 +46,7 @@ export async function useBackend(id: string): Promise<void> {
 }
 
 /** Selects the Next Edit backend ("" turns Next Edit off), in the same place `useBackend` writes. */
-async function useNextEditBackend(id: string): Promise<void> {
+export async function useNextEditBackend(id: string): Promise<void> {
   const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, validateForm } from '../../src/manage/form';
+import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, useFromUnknown, validateForm } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
@@ -308,5 +308,16 @@ describe('uses in the form', () => {
   test('no use ticked is a form error', () => {
     expect(validateForm({ ...form(), use: { completions: false, nextEdit: false } }, []).map((e) => e.field)).toContain('use');
     expect(validateForm(form(), []).map((e) => e.field)).not.toContain('use');
+  });
+});
+
+describe('useFromUnknown', () => {
+  test('takes real booleans; anything missing or malformed counts as ticked', () => {
+    expect(useFromUnknown({ completions: false, nextEdit: true })).toEqual({ completions: false, nextEdit: true });
+    expect(useFromUnknown({ completions: true, nextEdit: false })).toEqual({ completions: true, nextEdit: false });
+    expect(useFromUnknown({ completions: false, nextEdit: false })).toEqual({ completions: false, nextEdit: false });
+    expect(useFromUnknown({ completions: 'false', nextEdit: 0 })).toEqual({ completions: true, nextEdit: true });
+    expect(useFromUnknown({ completions: false })).toEqual({ completions: false, nextEdit: true });
+    for (const bad of [undefined, null, 'x', 3, [], [false, false]]) expect(useFromUnknown(bad)).toEqual({ completions: true, nextEdit: true });
   });
 });

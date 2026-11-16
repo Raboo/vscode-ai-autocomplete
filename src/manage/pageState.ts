@@ -4,7 +4,7 @@ import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoR
 import { parseBackendEntry, type Settings } from '../config/settings';
 import { nextEditFormatLabel, nextEditOnlyNote } from '../nextEdit/formats';
 import type { BackendConfig } from '../types';
-import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
+import { fieldViews, formWarnings, knownChanged, useFromUnknown, validateForm } from './form';
 import type { BackendForm, CardView, Dot, EditView, PageState, TestStep } from './protocol';
 import { SERVER_TYPES, serverTypeOf } from './serverTypes';
 
@@ -31,9 +31,6 @@ export function dotFor(steps: TestStep[] | undefined, offlineWarning: boolean, l
   return 'grey';
 }
 
-/** A real boolean from an untrusted form; anything else counts as ticked, as a missing `use` does in the settings. */
-const boolOr = (v: unknown): boolean => (typeof v === 'boolean' ? v : true);
-
 const typeLabel = (id: string): string => SERVER_TYPES.find((t) => t.id === id)?.label ?? id;
 
 /** How the backend would send `model`: its route (or why there is none) and whether the model's thinking cannot be switched off. */
@@ -50,6 +47,11 @@ export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkin
   if ('why' in p) return noRouteText(p.why, cfg.fimMode, cfg.kind);
   if (p.route !== 'chat') return 'ready';
   return p.cannotDisable || thinkingMandatory ? 'chat prompt, cannot turn thinking off' : 'chat prompt';
+}
+
+/** The model list's tag for `model`: the completion tag with Completions ticked; otherwise the format Next Edit would use (completion routes mean nothing there). */
+export function modelListTag(cfg: BackendConfig, model: string, s: Settings, thinkingMandatory = false): string {
+  return cfg.use.completions ? modelTag(cfg, model, s, thinkingMandatory) : nextEditFormatLabel(s.nextEdit.format, model);
 }
 
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
@@ -103,7 +105,7 @@ export function buildPageState(i: PageInputs): PageState {
     const form: BackendForm = {
       ...(d.form.originalId !== undefined ? { originalId: d.form.originalId } : {}),
       type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, nextEditModel: d.form.nextEditModel,
-      use: { completions: boolOr(d.form.use?.completions), nextEdit: boolOr(d.form.use?.nextEdit) }, changed: knownChanged(d.form.changed),
+      use: useFromUnknown(d.form.use), changed: knownChanged(d.form.changed),
     };
     const own = form.originalId;
     const found = own !== undefined ? i.detected.get(own) : undefined;

@@ -341,7 +341,7 @@ export class BackendsPanel implements vscode.Disposable {
       if (!r || !c) return;
       c.testing = false;
       c.test = r.steps;
-      if (id !== undefined) this.finish(id, r, form.model.trim() === '');
+      if (id !== undefined) this.finish(id, r, !form.use.completions || form.model.trim() === '');
       void this.post();
     });
   }

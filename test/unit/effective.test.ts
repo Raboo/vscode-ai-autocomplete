@@ -149,6 +149,12 @@ describe('Next Edit values', () => {
     expect(resolveNextEdit(strata({ fim }), 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
     expect(resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
   });
+  test('on a Next Edit-only backend the page fields describe the Next Edit model, so the whole fim block applies', () => {
+    const fim = { thinking: 'reasoningEffortNone' } as const;
+    const only = strata({ fim, nextEditModel: 'qwen3-8b', use: { completions: false, nextEdit: true } });
+    expect(resolveNextEdit(only, 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
+    expect(resolveNextEdit({ ...only, use: { completions: true, nextEdit: true } }, 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
+  });
   test('a separate Next Edit model keeps the backend extraBody and its extra-context restriction, nothing else', () => {
     const fim = { extraContext: false, extraBody: { cache_prompt: true }, temperature: 0.9, maxTokens: 7 };
     const v = resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings());

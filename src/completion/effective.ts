@@ -131,7 +131,8 @@ export function nextEditModel(backend: BackendConfig, detected: string | undefin
  * keeps only what belongs to the backend: its `extraBody` and its `extraContext` restriction. Sampling and the deadline are Next Edit's own.
  */
 export function resolveNextEdit(backend: BackendConfig, model: string | undefined, s: Settings): FimValues {
-  const own = backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
+  // On a Next Edit-only backend the page's fields describe its Next Edit model, so nothing is split off.
+  const own = backend.use.completions && backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
   const b = backend.fim;
   const kept = { ...(b?.extraBody ? { extraBody: b.extraBody } : {}), ...(b?.extraContext !== undefined ? { extraContext: b.extraContext } : {}) };
   const target: BackendConfig = own ? { ...backend, fim: Object.keys(kept).length > 0 ? kept : undefined } : backend;

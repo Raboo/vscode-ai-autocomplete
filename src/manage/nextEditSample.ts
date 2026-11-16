@@ -11,7 +11,7 @@ const HUNKS = [{ oldStart: 1, newStart: 1, oldLines: [BEFORE[1]], newLines: [REN
 /**
  * Our own small Python file for the Backends page's Next Edit check: `area` was just renamed to `a` on line 2, the cursor
  * sits after the rename, and two more uses of `area` follow. A model that does Next Edit renames them. The text has no
- * reserved string of any format, and the whole file is inside every format's editable region.
+ * reserved string of any format, and the whole file is inside every format's editable region while `regionLinesBelow` is at least 3 (and `regionLinesAbove` at least 1).
  */
 export function nextEditSample(format: NextEditFormat, settings: Settings): NextEditInput {
   const lines = BEFORE.map((l, n) => (n === 1 ? RENAMED : l));

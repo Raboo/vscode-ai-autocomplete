@@ -1,7 +1,7 @@
 // Portions adapted from sweepai/sweep-next-edit-1.5B run_model.py @ 409016591c6c1a94f545f22328a85a3516118f34 and sweepai/sweep-next-edit-v2-7B inference.py @ 851f4ac1427ec91eb6c19d408409490d6e0c00a0 (Apache-2.0). Copyright Sweep AI.
-import { spanBefore, type DiffHunk, type Snippet } from '../history';
+import { spanBefore, type DiffHunk } from '../history';
 import { clipAroundRegion, editableRegion, type LineSpan } from '../region';
-import { tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
+import { hasReserved, newestThatFit, pickSnippets, tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
 
 type Variant = 'v1' | 'v2';
 
@@ -40,38 +40,19 @@ function changeBlocks(i: NextEditInput, variant: Variant): string[] {
   const all: { path: string; hunk: DiffHunk }[] = [];
   for (const entry of i.history) for (const hunk of entry.hunks) all.push({ path: entry.path, hunk });
 
-  const kept: string[] = [];
-  let used = 0;
-  for (let n = all.length - 1; n >= 0; n--) {
-    const { path, hunk } = all[n];
-    if ([path, ...hunk.oldLines, ...hunk.newLines].some((t) => reserved.some((r) => t.includes(r)))) continue;
-    const old = hunk.oldLines.join('\n');
-    const next = hunk.newLines.join('\n');
-    let header = `${FILE_SEP}${path}.diff`;
-    if (variant === 'v2') {
-      const start = hunk.newStart + 1;
-      header = `${FILE_SEP}${path}:${start}:${start + hunk.newLines.length - 1}`;
-    }
-    const block = `${header}\noriginal:\n${old}\nupdated:\n${next}`;
-    if (used + block.length + 1 > i.budgets.historyChars) break;
-    used += block.length + 1;
-    kept.push(block);
-  }
-  return kept.reverse();
-}
-
-/** The snippets that fit the budget, in the order given and without reserved strings. */
-function pickSnippets(i: NextEditInput, variant: Variant): Snippet[] {
-  const reserved = reservedFor(variant);
-  let remaining = i.budgets.snippetsChars;
-  const out: Snippet[] = [];
-  for (const s of i.snippets) {
-    if ([s.path, s.text].some((t) => reserved.some((r) => t.includes(r)))) continue;
-    if (s.text.length > remaining) continue;
-    remaining -= s.text.length;
-    out.push(s);
-  }
-  return out;
+  return newestThatFit(
+    all,
+    ({ path, hunk }) => {
+      if (hasReserved([path, ...hunk.oldLines, ...hunk.newLines], reserved)) return undefined;
+      let header = `${FILE_SEP}${path}.diff`;
+      if (variant === 'v2') {
+        const start = hunk.newStart + 1;
+        header = `${FILE_SEP}${path}:${start}:${start + hunk.newLines.length - 1}`;
+      }
+      return `${header}\noriginal:\n${hunk.oldLines.join('\n')}\nupdated:\n${hunk.newLines.join('\n')}`;
+    },
+    i.budgets.historyChars,
+  );
 }
 
 /** The v2 file section: the file clipped around the region. */
@@ -82,14 +63,14 @@ function problem(variant: Variant, i: NextEditInput): string | undefined {
   const texts = [...window, ...originalWindow(i, window)];
   if (variant === 'v2') texts.push(...fileSection(i));
   const reserved = reservedFor(variant);
-  if (texts.some((t) => reserved.some((r) => t.includes(r)))) return 'reserved';
+  if (hasReserved(texts, reserved)) return 'reserved';
   return tooLong(i) ? 'tooLong' : undefined;
 }
 
 function promptV1(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   const window = take(i.lines, i.region);
   const parts: string[] = [];
-  for (const s of pickSnippets(i, 'v1')) parts.push(`${FILE_SEP}${s.path}\n${s.text}`);
+  for (const s of pickSnippets(i.snippets, i.budgets.snippetsChars, reservedFor('v1'))) parts.push(`${FILE_SEP}${s.path}\n${s.text}`);
   parts.push(...changeBlocks(i, 'v1'));
   parts.push(`${FILE_SEP}original/${i.path}\n${originalWindow(i, window).join('\n')}`);
   parts.push(`${FILE_SEP}current/${i.path}\n${window.join('\n')}`);
@@ -100,7 +81,7 @@ function promptV1(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
 function promptV2(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   const window = take(i.lines, i.region);
   const range = `${i.region.start + 1}:${i.region.end + 1}`;
-  const snippets = pickSnippets(i, 'v2')
+  const snippets = pickSnippets(i.snippets, i.budgets.snippetsChars, reservedFor('v2'))
     .map((s) => `${FILE_SEP}${s.path}\n${s.text}\n`)
     .join('');
   const above = Math.max(0, Math.min(window.length, i.cursor.line - i.region.start));

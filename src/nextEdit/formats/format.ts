@@ -54,3 +54,37 @@ export type NextEditFormat = ChatFormat | CompletionFormat;
 export function tooLong(input: NextEditInput): boolean {
   return input.lines.slice(input.region.start, input.region.end + 1).join('\n').length > 2 * input.budgets.fileChars;
 }
+
+/** Whether any text contains one of the format's reserved strings. */
+export const hasReserved = (texts: string[], reserved: string[]): boolean => texts.some((t) => reserved.some((r) => t.includes(r)));
+
+/** The snippets that fit `budgetChars` (by text length), in the order given, minus those with a reserved string in path or text. */
+export function pickSnippets(snippets: Snippet[], budgetChars: number, reserved: string[]): Snippet[] {
+  let remaining = budgetChars;
+  const out: Snippet[] = [];
+  for (const s of snippets) {
+    if (hasReserved([s.path, s.text], reserved)) continue;
+    if (s.text.length > remaining) continue;
+    remaining -= s.text.length;
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Takes items newest first (the input is oldest first) while their rendered text plus a newline fits `budgetChars`
+ * and `max` is not reached, and returns the rendered texts oldest first. `render` returns undefined to skip an item.
+ * The first item that does not fit ends the selection.
+ */
+export function newestThatFit<T>(items: T[], render: (item: T) => string | undefined, budgetChars: number, max = Infinity): string[] {
+  const kept: string[] = [];
+  let used = 0;
+  for (let n = items.length - 1; n >= 0 && kept.length < max; n--) {
+    const text = render(items[n]);
+    if (text === undefined) continue;
+    if (used + text.length + 1 > budgetChars) break;
+    used += text.length + 1;
+    kept.push(text);
+  }
+  return kept.reverse();
+}

@@ -249,6 +249,14 @@ describe('zeta21 parse', () => {
     expect(parse('<|marker_1|><|user_cursor|><|marker_1|>')).toEqual({ kind: 'noChange' });
   });
 
+  it('a block before a marker other than the closing one must end in a newline', () => {
+    const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
+    const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
+    expect(parse('<|marker_1|>X<|marker_2|>', i)).toEqual({ kind: 'invalid', why: 'glued' });
+    expect(parse('<|marker_1|>X\n<|marker_2|>', i).kind).toBe('rewrite');
+    expect(parse('<|marker_1|>X<|user_cursor|><|marker_2|>', i)).toEqual({ kind: 'invalid', why: 'glued' });
+  });
+
   it('markers between the first and the last are dropped from the text', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });

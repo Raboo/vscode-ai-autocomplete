@@ -1,7 +1,6 @@
 // The prompt layout follows the format described on the zed-industries/zeta-2.1 model card (Apache-2.0); no code is copied from any implementation.
-import type { DiffEntry, Snippet } from '../history';
 import { clipAroundRegion, editableRegion, type LineSpan } from '../region';
-import { tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
+import { hasReserved, newestThatFit, pickSnippets, tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
 
 const EOS = '<[end▁of▁sentence]>';
 const CURSOR = '<|user_cursor|>';
@@ -12,7 +11,7 @@ const MIN_BLOCK_LINES = 6;
 const MAX_HISTORY_ENTRIES = 6;
 
 const isBlank = (line: string): boolean => line.trim() === '';
-const reserved = (...texts: string[]): boolean => texts.some((t) => RESERVED.some((r) => t.includes(r)));
+const reserved = (...texts: string[]): boolean => hasReserved(texts, RESERVED);
 const take = (lines: string[], span: LineSpan): string[] => (span.end < span.start ? [] : lines.slice(span.start, span.end + 1));
 
 /** The 0-based line indexes where marker blocks start: after 16 lines, or at a non-blank line after a blank one once the block has 6 lines. */
@@ -44,29 +43,12 @@ function markedRegion(i: NextEditInput, region: string[]): string {
 
 /** The newest entries that fit the budget (at most 6) as `--- a/` / `+++ b/` diffs, oldest first, minus entries with reserved strings. */
 function historyDiffs(i: NextEditInput): string[] {
-  const kept: string[] = [];
-  let used = 0;
-  for (let n = i.history.length - 1; n >= 0 && kept.length < MAX_HISTORY_ENTRIES; n--) {
-    const e: DiffEntry = i.history[n];
-    if (reserved(e.path, e.text)) continue;
-    const diff = [`--- a/${e.path}`, `+++ b/${e.path}`, ...e.text.split('\n').slice(2)].join('\n');
-    if (used + diff.length + 1 > i.budgets.historyChars) break;
-    used += diff.length + 1;
-    kept.push(diff);
-  }
-  return kept.reverse();
-}
-
-/** The snippets that fit the budget, in the order given and without reserved strings. */
-function pickSnippets(i: NextEditInput): Snippet[] {
-  let remaining = i.budgets.snippetsChars;
-  const out: Snippet[] = [];
-  for (const s of i.snippets) {
-    if (reserved(s.path, s.text) || s.text.length > remaining) continue;
-    remaining -= s.text.length;
-    out.push(s);
-  }
-  return out;
+  return newestThatFit(
+    i.history,
+    (e) => (reserved(e.path, e.text) ? undefined : [`--- a/${e.path}`, `+++ b/${e.path}`, ...e.text.split('\n').slice(2)].join('\n')),
+    i.budgets.historyChars,
+    MAX_HISTORY_ENTRIES,
+  );
 }
 
 const clipped = (i: NextEditInput): LineSpan => clipAroundRegion(i.lines, i.region, i.budgets.fileChars);
@@ -85,7 +67,7 @@ function prompt(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   const after = take(i.lines, { start: i.region.end + 1, end: clip.end });
   const suffix = after.length === 0 ? '\n' : `\n${after.join('\n')}\n`;
 
-  const snippets = pickSnippets(i);
+  const snippets = pickSnippets(i.snippets, i.budgets.snippetsChars, RESERVED);
   const related = snippets.length === 0 ? '' : `${snippets.map((s) => `<filename>${s.path}\n${s.text}\n`).join('')}\n`;
   const diffs = historyDiffs(i);
   const history = diffs.length === 0 ? '' : `<filename>edit_history\n${diffs.map((d) => `${d}\n`).join('')}\n`;
@@ -112,8 +94,12 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
   if (s < 1 || e > offsets.length || s > e) return { kind: 'invalid', why: 'range' };
 
   let inner = '';
-  for (let n = 0; n + 1 < tags.length; n++) inner += text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index);
-  inner = inner.split(CURSOR).join('');
+  for (let n = 0; n + 1 < tags.length; n++) {
+    const segment = text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index).split(CURSOR).join('');
+    // A block before any marker but the closing one ends in a newline, else its last line would run into the next kept line.
+    if (Number(tags[n + 1][1]) !== offsets.length && segment !== '' && !segment.endsWith('\n')) return { kind: 'invalid', why: 'glued' };
+    inner += segment;
+  }
   // The closing marker is glued to the text's end, but a model may put it on its own line.
   if (e === offsets.length && inner.endsWith('\n')) inner = inner.slice(0, -1);
 

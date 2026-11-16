@@ -108,11 +108,12 @@ function promptV2(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
 function parse(variant: Variant, answer: string, i: NextEditInput): FormatAnswer {
   const window = take(i.lines, i.region);
   const prefill = prefillOf(variant, i, window);
-  const generated = answer.startsWith(prefill) ? answer.slice(prefill.length) : answer;
+  // A stray cursor marker is dropped, also one the model echoes at the start of the cursor line.
+  const generated = (answer.startsWith(prefill) ? answer.slice(prefill.length) : answer).split(CURSOR).join('');
   if (generated.startsWith('<|')) return { kind: 'invalid', why: 'special' };
   // Nothing (or only blank lines) generated would delete the window's non-blank lines from the cursor line down (v1: the whole window).
   const below = window.slice(prefilledLines(variant, i, window));
-  if (generated.split(CURSOR).join('').trim() === '' && below.some((l) => !isBlank(l))) return { kind: 'invalid', why: 'empty' };
+  if (generated.trim() === '' && below.some((l) => !isBlank(l))) return { kind: 'invalid', why: 'empty' };
   let text = answer.endsWith('\n') ? answer.slice(0, -1) : answer;
   text = text.split(CURSOR).join('');
 

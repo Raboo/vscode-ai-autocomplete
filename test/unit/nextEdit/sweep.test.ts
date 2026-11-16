@@ -263,6 +263,13 @@ describe('sweep v2 prompt', () => {
     expect(v2.parse(`${prefill}\n`, i)).toEqual({ kind: 'invalid', why: 'empty' });
   });
 
+  it('an echoed cursor marker at column 0 of the cursor line is removed, not read as a special answer', () => {
+    const i = input({ cursor: { line: 12, character: 0 } });
+    const prefill = completion(v2, i).prefill;
+    const tail = ['def volume(radius, h):', ...WINDOW.slice(11)];
+    expect(v2.parse(`${prefill}<|cursor|>${tail.join('\n')}\n`, i)).toEqual({ kind: 'rewrite', lines: [...WINDOW.slice(0, 10), ...tail] });
+  });
+
   it('a generation of blank lines only is invalid too', () => {
     const i = input();
     const prefill = completion(v2, i).prefill;

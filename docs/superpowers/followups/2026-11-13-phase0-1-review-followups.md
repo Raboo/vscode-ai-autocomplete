@@ -259,3 +259,7 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 ### From the smoke test (Phase 3b)
 
 - LM Studio's MLX engine drops the leading space of the first generated token on `/v1/completions`, streaming or not (seen 2026-11-16 with Sweep v2 7B and Qwen3.5-4B: `def f(x):\n    return` gives `"x**2"`, `def f(x):\n` gives `"   return x**2"`). Sweep now restores the missing space on its first generated line. Completions on the template route are likely affected too (`total = total +` gave `"1"`): ghost text after a word or at the start of an indented line can lose a space. **Fixed in 0.5.1** (design `docs/superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md`): the cause is mlx-lm's `_maybe_trim_space`; LM Studio requests hold back the end of the cursor line, and at line start a leading space is restored. Still open: report it to LM Studio, and skip the hold-back for GGUF models (`/api/v0/models` `compatibility_type`) if the shortened prompt ever shows a quality cost. Also fixed: LM Studio's StopIteration error when generation ends inside a partial `\n\n\n` match.
+
+### From the Phase 4 work
+
+- `test/unit/nextEdit/history.test.ts` "merged diff is too large" failed once in a full run (passes isolated); find the timing dependence.

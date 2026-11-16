@@ -38,6 +38,47 @@ If the server is not running yet, the status bar shows an error and the extensio
 
 Backends go in your user settings only; see [Privacy](#privacy) for why.
 
+### Local models
+
+**AI Autocomplete: Set Up Local Model** does the steps above for you. It is also in the status bar menu (**Set up local model...**) and on the Backends page (the button next to **+ Add backend**). It works in local windows only, not in a remote window.
+
+It asks for a runtime and a model, and then:
+
+1. downloads the model file with a progress notification (Cancel stops it; running the command again resumes from the partial file);
+2. starts the model;
+3. adds a backend, selects it for what the model can do (completions, Next Edit or both) and runs the Test from the Backends page;
+4. shows the result in a notification. If the Test fails, the backend stays and the notification offers **Open Backends**.
+
+If a step before the Test fails, setup writes no backend, puts your selection settings back and stops the server it started. If the backend already exists, setup asks before it replaces it.
+
+**Runtimes.** Neither one is installed for you. The picker shows how to install one that is missing.
+
+- **llama-server** (from llama.cpp). VS Code starts it on `127.0.0.1` (port 8012, or a free port if that one is taken) and stops it when VS Code closes. It starts again with VS Code whenever its backend is selected for completions or Next Edit. The backend id is `local-<model>`, for example `local-sweep-1-5b`.
+- **LM Studio**, through its `lms` command. Setup imports the file into LM Studio, starts LM Studio's server if it is off and loads the model under the model name in the table below. LM Studio keeps running on its own, and setup never stops it. The backend id ends in `-lmstudio`, for example `local-sweep-1-5b-lmstudio`.
+
+If a command is not on PATH or in the usual install places, set `aiAutocomplete.local.llamaServerPath` or `aiAutocomplete.local.lmsPath` in your user settings. Both are machine-scoped: a workspace cannot set them.
+
+**Models.** Each file is a GGUF, pinned to one Hugging Face revision and checked by sha256 after the download. The context size is 8192 for all of them. A model whose file is more than 40% of your memory is marked "may not fit in memory".
+
+| Model | Size | Use | Licence | Model name |
+| --- | --- | --- | --- | --- |
+| Sweep Next Edit 1.5B (recommended) | 1.5 GB | completions and Next Edit | Apache-2.0 | `sweep-next-edit-1.5b` |
+| Qwen2.5-Coder 1.5B | 1.6 GB | completions | Apache-2.0 | `qwen2.5-coder-1.5b` |
+| Qwen2.5-Coder 3B | 3.3 GB | completions | Apache-2.0 | `qwen2.5-coder-3b` |
+| Qwen2.5-Coder 7B | 8.1 GB | completions | Apache-2.0 | `qwen2.5-coder-7b` |
+| Mellum 4B | 4.3 GB | completions | Apache-2.0 | `mellum-4b-base` |
+
+Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set them up by hand on the Backends page. LM Studio runs these GGUF files on its llama.cpp engine; to use an MLX model, add it by hand too.
+
+**Where files go.** In VS Code's global storage for the extension, under `models/<owner>/<repo>/<file>`. On macOS that is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
+
+**Stopping and removing.**
+
+- **AI Autocomplete: Stop Local Models** stops the llama-server processes now. They start again with the next VS Code start if their backends are still selected. It does not touch LM Studio.
+- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A model imported into LM Studio keeps its own copy of the data there, which you remove in LM Studio. A backend whose file was deleted stops working until you set it up again.
+
+The only request that leaves your machine is the download from `huggingface.co` (which redirects to Hugging Face's file servers). After that, the extension talks to `127.0.0.1` only.
+
 ### Other backends
 
 **Mistral Codestral:**
@@ -213,14 +254,14 @@ A value outside its limits is ignored, and a warning names it. The region settin
 
 ## Privacy
 
-- No telemetry. The extension sends nothing except completion requests to the backend you configure.
+- No telemetry. The extension sends nothing except completion requests to the backend you configure, and the model download from `huggingface.co` when you run **Set Up Local Model** (see [Local models](#local-models)).
 - Next Edit, when you choose a backend for it, sends the region around the cursor, clipped pages of the current file and the current file's recent edits to that backend; see [Next Edit](#next-edit).
 - Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
 - OpenRouter forwards your code to the model's provider. The extension sends no attribution headers to it.
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.
 - With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
-- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
+- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the paths of the local runtimes (`aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
 - Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem` and `*.key`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.

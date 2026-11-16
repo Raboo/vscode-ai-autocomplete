@@ -11,8 +11,8 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## Hard rules
 
 - No telemetry, ever. Nothing leaves the machine except requests to the user-configured backend.
-- Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from `globalValue` only; workspace values are ignored.
-- Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`, `src/nextEdit/vscode/*`. Everything else is pure and unit-testable.
+- Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`, `aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from `globalValue` only; workspace values are ignored.
+- Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`, `src/nextEdit/vscode/*`, `src/local/vscode/*`. Everything else is pure and unit-testable.
 - The Backends page never receives an API key, and server-supplied text (model ids, error bodies) is HTML-escaped before it reaches the page. Error text shown in the page is fixed text.
 - Prompt and completion text, reasoning text and server error bodies are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
 - The chat prompt (`src/completion/holeFiller.ts`) is our own wording. Never copy Continue's hole-filler prompt (its upstream license is unverified).
@@ -64,6 +64,13 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
   - `optIn.ts`: the argv.json path and edit for the native-UI opt-in;
   - `vscode/decorations.ts`: draws a decoration plan and sets the `aiAutocomplete.nextEditPending` context key that the Tab and Esc keybindings read;
   - `vscode/controller.ts`: events, history, trigger rules, requests and the latest result; the proposed-API `.d.ts` is `src/types/vscode.proposed.inlineCompletionsAdditions.d.ts` (pinned from `release/1.146`).
+- Local model helper (`src/local/`, all pure except `vscode/`; design: `docs/superpowers/specs/2026-11-16-local-model-helper-design.md`):
+  - `recipes.ts`: the curated GGUF recipes (Hugging Face repo, pinned revision, file, size, sha256, licence, model name) and the memory check;
+  - `runtimes.ts`: finding `llama-server` and `lms` (settings path, PATH, usual install places) and the install hints;
+  - `download.ts`: the resumable, sha256-checked download;
+  - `llamaServer.ts`: llama-server arguments, free port choice, health polling; `serverPool.ts`: the servers VS Code started (start, stop, start again for selected backends);
+  - `lmStudio.ts`: the `lms` calls (import, server, load); `backendEntry.ts`: the backend entry a recipe writes, backend ids and the managed-server records kept in global state;
+  - `vscode/servers.ts`: the pool wired to VS Code (global state, user settings); `vscode/setup.ts`: the Set Up Local Model and Remove Downloaded Models flows.
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 

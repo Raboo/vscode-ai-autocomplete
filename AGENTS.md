@@ -45,7 +45,8 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 
 - Pure modules (config parsing, backends, models, most of `completion/`) never import `vscode` and are unit-tested in `test/unit/`.
 - Chat path and thinking control: `src/models/thinking.ts` (request fields per strategy and host flavor, reasoning filter), `src/models/capabilities.ts` (what a server rejected or lacks, learned per session, never persisted), `src/completion/holeFiller.ts` (the chat prompt), `src/completion/stream.ts` (streaming of all routes), `src/backends/chat.ts` (`/v1/chat/completions`) and `src/backends/openrouter.ts` (OpenRouter's model list). Route choice lives in `src/completion/route.ts`.
-- `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
+- `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test, and `nextEditSample.ts`, the fixture of the Test's Next Edit step). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
+- A backend's `use` (`completions`, `nextEdit` or both; missing means both) says what it serves: `src/config/settings.ts` parses it, `usesFor` answers it, the pickers, the selection fallbacks and the Backends page's Test follow it, and `NEXT_EDIT_TOKENS` in `src/completion/postprocess.ts` keeps Next Edit markers out of ghost text. Design: `docs/superpowers/specs/2026-11-16-backend-roles-design.md`.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - Next Edit (`src/nextEdit/`, all pure except `vscode/`):
   - `history.ts`: edit-diff history per file (merged per area, with structured hunks and the text before the latest change) and recently viewed snippets;

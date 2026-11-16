@@ -174,10 +174,16 @@ export class NextEditController implements vscode.Disposable {
     this.accepted();
   }
 
-  /** Esc on a pending decoration: a rejection. */
+  /** Esc on a pending decoration: a rejection. An Esc with nothing pending (a stale context key) rejects nothing. */
   nextEditDismiss(): void {
+    if (!this.pending) return;
     this.clearPending();
     this.rejected();
+  }
+
+  /** A snooze started: a pending decoration goes, so Tab and Esc are the editor's again. */
+  snoozed(): void {
+    this.clearPending();
   }
 
   private clearPending(): void {

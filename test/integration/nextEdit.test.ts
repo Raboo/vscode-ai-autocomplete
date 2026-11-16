@@ -103,6 +103,21 @@ async function typeKeys(editor: vscode.TextEditor, text: string): Promise<void> 
   assert.ok(await waitFor(() => editor.document.getText().length === length, 1000), `typing ${JSON.stringify(text)} did not reach ${editor.document.uri.toString()}`);
 }
 
+/** Runs a command that shows a quick pick and accepts its first item. */
+async function pickFirst(command: string): Promise<void> {
+  let done = false;
+  const run = Promise.resolve(vscode.commands.executeCommand(command)).then(() => {
+    done = true;
+  });
+  // Accepting before the quick pick shows does nothing, so keep accepting until the command finishes.
+  const picked = await waitFor(() => {
+    if (!done) void vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+    return done;
+  }, 3000);
+  assert.ok(picked, `${command}: no quick pick item was accepted`);
+  await run;
+}
+
 /** The rename's last step on CIRCLE: the user selects `r` on line 4 and types `radius`; the cursor stays on that line. */
 async function openAndRename(): Promise<vscode.TextEditor> {
   const editor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument({ language: 'python', content: BEFORE_RENAME.join('\n') }));
@@ -273,13 +288,21 @@ suite('Next Edit', () => {
   });
 
   test('Esc dismisses a pending edit', async () => {
-    await withPendingRename(async (editor) => {
+    await withPendingRename(async (editor, m) => {
       await vscode.commands.executeCommand('aiAutocomplete.nextEditDismiss');
+      const dismissedAt = Date.now();
       assert.equal(api.nextEditPending(), undefined);
       await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
       assert.equal(editor.document.getText(), CIRCLE.join('\n'));
-      // Esc is a rejection: the cooldown it starts would keep the next tests' requests from being sent.
-      await sleep(REJECTION_COOLDOWN_WAIT_MS);
+
+      // Esc is a rejection: a cursor move shortly after the edit would ask again, but not during the cooldown.
+      const asked = nextEdits(m).length;
+      await vscode.commands.executeCommand('cursorUp');
+      assert.equal(editor.selection.active.line, 3);
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(nextEdits(m).length, asked, `mock saw ${seen(m)}`);
+      // The rest of the cooldown, which would keep the next tests' requests from being sent.
+      await sleep(Math.max(0, dismissedAt + REJECTION_COOLDOWN_WAIT_MS - Date.now()));
     });
   });
 
@@ -296,6 +319,19 @@ suite('Next Edit', () => {
       await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
       await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
       assert.equal(editor.document.getText(), typed);
+    });
+  });
+
+  test('a snooze clears a pending edit', async () => {
+    await withPendingRename(async (editor) => {
+      await pickFirst('aiAutocomplete.snooze'); // "15 minutes"
+      try {
+        assert.equal(api.nextEditPending(), undefined);
+        await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+        assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      } finally {
+        await pickFirst('aiAutocomplete.snooze'); // "Resume now"
+      }
     });
   });
 

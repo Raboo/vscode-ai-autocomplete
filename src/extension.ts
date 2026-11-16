@@ -191,6 +191,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
       get: snoozedUntil,
       set: async (until, persist) => {
         sessionSnooze = until;
+        if (until > Date.now()) nextEdit.snoozed();
         // An in-memory snooze ("Until restart", "Resume now") also clears an older persisted one.
         await context.globalState.update(SNOOZE_KEY, persist ? until : undefined);
       },

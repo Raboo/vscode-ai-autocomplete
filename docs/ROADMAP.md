@@ -76,10 +76,10 @@ Phase 3b (Publish step 4 of the [Phase 3b plan](superpowers/plans/2026-11-16-pha
 - A Zeta and a Sweep edit near the end of a file that ends with a newline keeps the final newline.
 - Next Edit still fires with FIM on against the same llama.cpp/LM Studio server.
 
-Phase 3c (Publish step of the [Phase 3c plan](superpowers/plans/2026-11-16-backend-roles.md), run on the PR's CI `.vsix`):
+Phase 3c (check before merging the Phase 3c PR, on its CI `.vsix`; [plan](superpowers/plans/2026-11-16-backend-roles.md)):
 
 - A Zeta-only LM Studio backend (Use for: Next Edit only): Test shows the Next Edit step and no completion step.
 - **Select Backend** does not list that backend.
-- A both-uses Strata backend: Test shows both the completion steps and the Next Edit step.
+- A both-uses Strata backend selected with **Select Next Edit Backend**: Test shows both the completion steps and the Next Edit step; unselected and without a Next Edit model, only the completion steps.
 - An existing backend without `use` looks and works as before (both boxes ticked).
 - Unticking Completions on the selected completion backend turns completions off, with a problem in the log.

@@ -58,6 +58,11 @@ export interface MockOptions {
    * contains `<|file_sep|>updated/` (Sweep), `POST /v1/completions` as OpenAI events when it contains `<[fim-middle]>` (Zeta).
    */
   nextEditRaw?: { content: string[] };
+  /**
+   * `POST /v1/completions` (any prompt but Zeta's) streams this content as OpenAI events, ending with finish `stop`, after
+   * removing one leading space from the first non-empty text, as LM Studio's MLX engine does.
+   */
+  mlx?: { content: string[] };
 }
 
 /** What only a Sweep Next Edit prompt contains. */
@@ -102,6 +107,18 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
           const text = (t: string, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ text: t, finish_reason: finish }] })}\n\n`;
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           for (const c of o.nextEditRaw.content) res.write(text(c));
+          res.write(text('', 'stop'));
+          res.end('data: [DONE]\n\n');
+        } else if (path === '/v1/completions' && req.method === 'POST' && o.mlx !== undefined) {
+          const text = (t: string, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ text: t, finish_reason: finish }] })}\n\n`;
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          let first = true;
+          for (const c of o.mlx.content) {
+            if (first && c !== '') {
+              first = false;
+              res.write(text(c.startsWith(' ') ? c.slice(1) : c));
+            } else res.write(text(c));
+          }
           res.write(text('', 'stop'));
           res.end('data: [DONE]\n\n');
         } else if (path === '/completion' && o.infill501) {

@@ -5,6 +5,7 @@ import { COMPLETION_CLOSE, holeFillerMessages, stableUserChars, type HoleFillerI
 import { thinkingFields } from '../models/thinking';
 import type { FimValues } from './effective';
 import { TEMPLATES, type TemplateInput } from '../models/templates';
+import { heldText } from '../backends/firstSpace';
 import type { BackendKind, FimMode, FimTemplateId, HostFlavor, ThinkingStrategy } from '../types';
 
 export type FimRoute = 'native' | 'template' | 'chat';
@@ -130,18 +131,25 @@ export interface FimRequestPlan {
   multiline: boolean;
   input: TemplateInput;
   signal: AbortSignal;
+  /** LM Studio's template requests get the first-space repair. */
+  flavor?: HostFlavor;
 }
 
 export function buildFimRequest(p: FimRequestPlan): FimRequest {
   const { fim, input } = p;
   let payload: FimRequest['payload'];
+  let held: string | undefined;
   if (p.route === 'native') {
     payload = { route: 'native', ...input };
   } else {
     if (!fim.fimTemplate) throw new Error(`preset "${fim.presetId}" has no FIM template`);
-    payload = { route: 'template', prompt: TEMPLATES[fim.fimTemplate].render(input) };
+    // LM Studio's MLX engine drops the answer's first space: the prompt holds back the end of the cursor line (firstSpace.ts).
+    if (p.flavor === 'lmstudio') held = heldText(input.prefix);
+    const shown = held ? { ...input, prefix: input.prefix.slice(0, input.prefix.length - held.length) } : input;
+    payload = { route: 'template', prompt: TEMPLATES[fim.fimTemplate].render(shown) };
   }
   return {
+    ...(held !== undefined ? { firstSpace: { held } } : {}),
     ...(p.model !== undefined ? { model: p.model } : {}),
     payload,
     stop: fim.stop,

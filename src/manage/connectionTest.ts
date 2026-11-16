@@ -245,7 +245,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         limit = req.timeoutMs;
         maxTokens = req.maxTokens; // with the chat overhead
       } else {
-        planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
+        const req = buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal, flavor: inferHostFlavor(cfg) });
+        const onUnrepaired = (): void => i.log.debug('connection test completion: the answer did not continue the line (LM Studio first-space repair)');
+        planned = { route, req: { ...req, timeoutMs: TEST_TIMEOUT_MS, onUnrepaired } };
       }
       let collected: Collected;
       try {

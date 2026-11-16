@@ -58,6 +58,14 @@ async function run(f: ReturnType<typeof fake>, extra: Partial<ConnectionTestInpu
 }
 
 describe('runConnectionTest', () => {
+  test('an LM Studio template completion goes through the first-space repair, as in the editor', async () => {
+    const f = fake({ config: { kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'qwen2.5-coder-7b' }, native: false });
+    await run(f);
+    const req = f.requests.find((r) => r.payload.route === 'template');
+    expect(req?.firstSpace).toEqual({ held: 'n ' }); // the sample ends with `return `
+    expect(req?.onUnrepaired).toBeTypeOf('function');
+  });
+
   test('happy path: reach, model, completion, context all ok', async () => {
     const f = fake({ info: { models: ['qwen2.5-coder-7b'], contextWindows: { 'qwen2.5-coder-7b': 32768 } } });
     const { res, emitted } = await run(f);

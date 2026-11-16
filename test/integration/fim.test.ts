@@ -120,6 +120,42 @@ suite('FIM inline completion', () => {
     assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
   });
 
+  suite('LM Studio MLX first-space repair', () => {
+    let lm: MockServer | undefined;
+    const lmStudio = async (content: string[]): Promise<MockServer> => {
+      lm = await startMockServer({ mlx: { content } });
+      await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1`, fimModel: 'qwen2.5-coder-1.5b' }], 'fim.backend': BACKEND_ID });
+      return lm;
+    };
+    const completions = (m: MockServer) => m.requests.filter((r) => r.path === '/v1/completions');
+    teardown(async () => {
+      await lm?.close();
+      lm = undefined;
+    });
+
+    test('after a word: the prompt holds back its last letter and the answer keeps its space', async () => {
+      // The model continues the held-back `n` with ` a + b;`; MLX would have sent `a + b;` for the unshortened prompt.
+      const m = await lmStudio(['n a', ' + b;']);
+      const editor = await openSource('function add(a: number, b: number) {\n  return');
+      await trigger(editor);
+      assert.ok(await waitFor(() => completions(m).length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+      assert.ok(editor.document.getText().endsWith('  return a + b;'), JSON.stringify(editor.document.getText()));
+      const body = completions(m)[0].body!;
+      assert.ok(String(body.prompt).includes('  retur<|fim_suffix|>'), String(body.prompt));
+      assert.ok(!(body.stop as string[]).includes('\n\n\n'), JSON.stringify(body.stop));
+    });
+
+    test('at the start of a line: the space MLX drops from the indentation comes back', async () => {
+      const m = await lmStudio(['  return a + b;']);
+      const editor = await openSource('function add(a: number, b: number) {\n');
+      await trigger(editor);
+      assert.ok(await waitFor(() => completions(m).length >= 1, 5000), `mock saw ${JSON.stringify(m.requests)}`);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+      assert.equal(editor.document.getText(), 'function add(a: number, b: number) {\n  return a + b;');
+    });
+  });
+
   test('excluded file gets no request', async () => {
     // No language is disabled, so only the `**/.env` entry of fim.disableInFiles can stop the request.
     await useLlamaCpp(mock.baseUrl, { 'fim.disableInLanguages': [] });

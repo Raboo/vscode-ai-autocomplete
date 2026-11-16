@@ -106,6 +106,20 @@ describe('OpenAiCompatBackend', () => {
     expect(m.requests.filter((r) => r.url === '/api/v0/models')).toHaveLength(1);
   });
 
+  test('the engine lookup is shared and survives a cancelled completion', async () => {
+    m = await startMockHttp((r) => (r.url === '/api/v0/models'
+      ? { json: { data: [{ id: 'mlxm', compatibility_type: 'mlx' }] } }
+      : { sse: ['{"choices":[{"text":"   return"}]}', '[DONE]'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+    // A keystroke cancels the first request before anything arrives.
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await collect(b.streamFim(req({ model: 'mlxm', firstSpace: { held: '' }, signal: cancelled.signal }))).catch(() => undefined);
+    const both = await Promise.all([1, 2].map(async () => (await collect(b.streamFim(req({ model: 'mlxm', firstSpace: { held: '' } })))).join('')));
+    expect(both).toEqual(['    return', '    return']);
+    expect(m.requests.filter((r) => r.url === '/api/v0/models')).toHaveLength(1);
+  });
+
   test('LM Studio chat requests also get only stops without whitespace', async () => {
     m = await startMockHttp(() => ({ sse: ['{"choices":[{"delta":{"content":"x"}}]}', '[DONE]'] }));
     const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());

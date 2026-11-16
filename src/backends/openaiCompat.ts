@@ -97,32 +97,44 @@ export class OpenAiCompatBackend implements FimBackend {
     if (!req.firstSpace) return yield* text;
     const { held } = req.firstSpace;
     // The line-start rule adds a space, so it needs a model known to run on MLX; the hold-back is right on any engine.
-    const lineStart = held === '' && (await this.runsOnMlx(req.model, req.signal));
+    // The lookup runs alongside the completion and is awaited only at the answer's first text.
+    const lineStart = held === '' ? this.runsOnMlx(req.model) : false;
     yield* repairFirstSpace(text, { held, lineStart }, req.onUnrepaired);
   }
 
   /** LM Studio's engine per model (`/api/v0/models` `compatibility_type`), listed once and again for a model it did not know after a while. */
   private engines: { at: number; mlx: Set<string>; known: Set<string> } | undefined;
+  /** The engine list being fetched, shared by concurrent requests. */
+  private enginesFetch: Promise<void> | undefined;
 
-  private async runsOnMlx(model: string | undefined, signal: AbortSignal): Promise<boolean> {
+  /** Never rejects. The list is fetched with its own deadline, so a keystroke that cancels the completion does not cancel it. */
+  private async runsOnMlx(model: string | undefined): Promise<boolean> {
     if (model === undefined) return false;
     const e = this.engines;
     if (!e || (!e.known.has(model) && Date.now() - e.at > ENGINES_RETRY_MS)) {
-      const next = { at: Date.now(), mlx: new Set<string>(), known: new Set<string>() };
-      try {
-        const body = await getJson(`${new URL(this.config.baseUrl).origin}/api/v0/models`, { headers: await this.headers(), signal, timeoutMs: LIST_MODELS_TIMEOUT_MS });
-        const data = (body as { data?: unknown } | null)?.data;
-        for (const m of Array.isArray(data) ? (data as { id?: unknown; compatibility_type?: unknown }[]) : []) {
-          if (typeof m?.id !== 'string') continue;
-          next.known.add(m.id);
-          if (m.compatibility_type === 'mlx') next.mlx.add(m.id);
-        }
-      } catch {
-        // best effort: without the list, no space is added
-      }
-      this.engines = next;
+      this.enginesFetch ??= this.fetchEngines().finally(() => {
+        this.enginesFetch = undefined;
+      });
+      await this.enginesFetch;
     }
-    return this.engines!.mlx.has(model);
+    return this.engines?.mlx.has(model) ?? false;
+  }
+
+  private async fetchEngines(): Promise<void> {
+    const next = { at: Date.now(), mlx: new Set<string>(), known: new Set<string>() };
+    try {
+      const url = `${new URL(this.config.baseUrl).origin}/api/v0/models`;
+      const body = await getJson(url, { headers: await this.headers(), signal: new AbortController().signal, timeoutMs: LIST_MODELS_TIMEOUT_MS });
+      const data = (body as { data?: unknown } | null)?.data;
+      for (const m of Array.isArray(data) ? (data as { id?: unknown; compatibility_type?: unknown }[]) : []) {
+        if (typeof m?.id !== 'string') continue;
+        next.known.add(m.id);
+        if (m.compatibility_type === 'mlx') next.mlx.add(m.id);
+      }
+    } catch {
+      // best effort: without the list (an older LM Studio, a timeout), no space is added until the next try
+    }
+    this.engines = next;
   }
 
   /**

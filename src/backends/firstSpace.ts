@@ -16,11 +16,12 @@ export function heldText(prefix: string): string {
 }
 
 /**
- * The answer `chunks` repaired for `held` (see heldText); `lineStart` applies the line-start rule when nothing is held.
+ * The answer `chunks` repaired for `held` (see heldText); `lineStart` applies the line-start rule when nothing is held (it may
+ * still be pending: it is awaited only at the first text).
  * Buffers until it can decide, as a chunk can end inside the held text.
  * An answer that does not start with `held` yields nothing and calls `onMiss`; one that ends inside it yields nothing.
  */
-export async function* repairFirstSpace(chunks: AsyncIterable<string>, rules: { held: string; lineStart: boolean }, onMiss?: () => void): AsyncGenerator<string> {
+export async function* repairFirstSpace(chunks: AsyncIterable<string>, rules: { held: string; lineStart: boolean | Promise<boolean> }, onMiss?: () => void): AsyncGenerator<string> {
   const { held, lineStart } = rules;
   let head = '';
   let decided = false;
@@ -33,7 +34,7 @@ export async function* repairFirstSpace(chunks: AsyncIterable<string>, rules: { 
     if (head === '') continue;
     if (held === '') {
       decided = true;
-      yield lineStart && head.startsWith(' ') ? ` ${head}` : head;
+      yield head.startsWith(' ') && (await lineStart) ? ` ${head}` : head;
       continue;
     }
     if (head.length < held.length) {

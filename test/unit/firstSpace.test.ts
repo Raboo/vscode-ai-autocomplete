@@ -57,6 +57,11 @@ describe('repairFirstSpace at the start of a line', () => {
     expect(await repaired('', ['   return', ' x'])).toBe('    return x');
     expect(await repaired('', ['', ' x'])).toBe('  x');
   });
+  test('the line-start rule may be decided while the answer streams (a pending engine lookup)', async () => {
+    let out = '';
+    for await (const c of repairFirstSpace(chunks('   return'), { held: '', lineStart: Promise.resolve(true) })) out += c;
+    expect(out).toBe('    return');
+  });
   test('without the line-start rule (an engine not known to trim) nothing is added', async () => {
     expect(await repaired('', ['    return'], undefined, false)).toBe('    return');
     // The held text is still removed: the prompt was shortened either way.

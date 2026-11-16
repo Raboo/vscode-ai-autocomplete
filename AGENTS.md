@@ -21,7 +21,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - Never touch the GitHub repo `Raboo/ai-autocomplete`.
 - Interactive sessions ask the user before creating repos, pushing, changing repo settings or releasing, and wait for a yes.
 - Commit subjects follow Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `build:`); nobody edits `CHANGELOG.md` or the `version` field by hand.
-- AI-authored commits end with a Co-Authored-By trailer naming the model.
+- Commits carry no Co-Authored-By trailer: they show only the user (their choice, 2026-11-16).
 - Never run upstream code; read it only (for example with `gh api repos/<o>/<r>/contents/<path>?ref=<sha>`).
 - Two versions are pinned on purpose: `typescript ~6.0.x` (typescript-eslint supports TypeScript below 6.1 only) and `@types/vscode ~1.100.0` (tracks `engines.vscode`).
 - Runtime dependencies: only `diff` and `jsonc-parser` (`test/unit/manifest.test.ts` pins the list). esbuild bundles both; jsonc-parser through its ES module build (`mainFields: ['module', 'main']`), because its UMD build cannot be bundled.

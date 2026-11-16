@@ -28,8 +28,14 @@ export interface CommandDeps {
   retry(): void;
   /** Opens (or reveals) the Backends page. */
   manageBackends(o: OpenOptions): void;
+  /** Whether VS Code's native Next Edit UI is available (the proposed API is enabled for this extension). */
+  nativeNextEdit(): boolean;
   /** A Next Edit item was accepted. */
   nextEditAccepted(): void;
+  /** Tab on a Next Edit shown as decorations: jump to it, or apply it. */
+  nextEditTab(): Promise<void>;
+  /** Esc on a Next Edit shown as decorations. */
+  nextEditDismiss(): void;
 }
 
 /** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
@@ -69,7 +75,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length, readSettings().settings.nextEdit.backendId);
+      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length, readSettings().settings.nextEdit.backendId, d.nativeNextEdit());
       const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
@@ -118,6 +124,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       await useNextEditBackend(pick.label === OFF ? '' : pick.label);
     }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
+    reg('openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`)),
     reg('setApiKey', async () => {
       const id = await pickBackend('Set the API key for which backend?');
       if (!id) return;
@@ -145,6 +152,8 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       d.status.setStats(accepted);
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),
+    reg('nextEditTab', () => d.nextEditTab()),
+    reg('nextEditDismiss', () => d.nextEditDismiss()),
     reg('enableNativeNextEdit', async () => {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');

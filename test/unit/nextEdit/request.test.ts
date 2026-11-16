@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import type { ChatEvent, ChatRequest, FimBackend } from '../../../src/backends/types';
+import type { ChatEvent, ChatRequest, FimBackend, FimRequest } from '../../../src/backends/types';
 import { resolveNextEdit } from '../../../src/completion/effective';
 import { ThinkingError } from '../../../src/completion/stream';
 import { parseSettings, type RawSettingsSource } from '../../../src/config/settings';
-import { CHAT_XTAB_SYSTEM, chatXtabMessages, type NextEditInput } from '../../../src/nextEdit/formats/chatXtab';
-import { editableRegion } from '../../../src/nextEdit/region';
+import { pickFormat } from '../../../src/nextEdit/formats';
+import { CHAT_XTAB_SYSTEM, chatXtabMessages } from '../../../src/nextEdit/formats/chatXtab';
+import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
+import type { CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from '../../../src/nextEdit/formats/format';
+import { editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
 import { nextEditMaxTokens, runNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
 import type { BackendConfig, HostFlavor } from '../../../src/types';
 
@@ -19,7 +22,7 @@ const CIRCLE = [
 const snapshot = (lines = CIRCLE, line = 4): NextEditSnapshot => {
   const input: NextEditInput = {
     path: 'circle.py', lines, cursor: { line, character: lines[line].length },
-    region: editableRegion(line, lines.length), history: [], snippets: [],
+    region: editableRegion(line, lines.length), history: [], snippets: [], budgets: nextEditBudgets(3500),
   };
   return { uri: 'file:///circle.py', version: 3, input };
 };
@@ -30,8 +33,15 @@ const regionOf = (s: NextEditSnapshot, answer: string[]): string => fence(answer
 const content = (text: string): ChatEvent => ({ type: 'content', text });
 class TimeoutError extends Error { override name = 'TimeoutError'; }
 
-function run(events: ChatEvent[], o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error } = {}) {
-  const captured: { req?: ChatRequest; pulled: number } = { pulled: 0 };
+function run(
+  events: ChatEvent[],
+  o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error; format?: NextEditFormat; chunks?: string[]; truncate?: boolean } = {},
+) {
+  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[]; truncated: number } = {
+    pulled: 0,
+    prompts: [],
+    truncated: 0,
+  };
   const backend = {
     streamChat: async function* (req: ChatRequest) {
       captured.req = req;
@@ -41,11 +51,41 @@ function run(events: ChatEvent[], o: { snap?: NextEditSnapshot; flavor?: HostFla
       }
       if (o.fail) throw o.fail;
     },
+    streamFim: async function* (req: FimRequest) {
+      captured.fim = req;
+      for (const c of o.chunks ?? []) {
+        captured.pulled++;
+        yield c;
+      }
+      if (o.truncate) req.onTruncated?.();
+      if (o.fail) throw o.fail;
+    },
   } as unknown as FimBackend;
   const ctl = new AbortController();
   const snap = o.snap ?? snapshot();
-  const result = runNextEdit({ backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', snapshot: snap, rejected: new Set(), signal: ctl.signal, onRejected: undefined });
+  const result = runNextEdit({
+    backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', format: o.format ?? pickFormat('chatXtab', 'm'), snapshot: snap,
+    rejected: new Set(), signal: ctl.signal, onRejected: undefined, onPrompt: (p) => captured.prompts.push(p),
+    onTruncated: () => captured.truncated++,
+  });
   return { result, captured, ctl, snap };
+}
+
+/** A completion format that records what it parses and answers with `answer`. */
+function stubFormat(answer: (text: string) => FormatAnswer = () => ({ kind: 'noChange' })): CompletionFormat & { parsed: string[] } {
+  const parsed: string[] = [];
+  return {
+    id: 'sweep',
+    transport: 'completion',
+    parsed,
+    region: (c, n) => editableRegion(c, n),
+    problem: () => undefined,
+    prompt: () => ({ prompt: 'P', prefill: 'pre\n', stop: ['<|x|>'], maxTokens: 99 }),
+    parse: (text) => {
+      parsed.push(text);
+      return answer(text);
+    },
+  };
 }
 
 describe('nextEditMaxTokens', () => {
@@ -141,5 +181,96 @@ describe('runNextEdit', () => {
 
   test('a timeout propagates', async () => {
     await expect(run([content('```\nx')], { fail: new TimeoutError('t') }).result).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+});
+
+describe('runNextEdit with a completion format', () => {
+  test('a completion format sends a template prompt with temperature 0', async () => {
+    const format = stubFormat();
+    const r = run([], { format, chunks: ['a', 'b\n'] });
+    await expect(r.result).resolves.toBeUndefined();
+    const req = r.captured.fim!;
+    expect(r.captured.req).toBeUndefined();
+    expect(req.payload).toEqual({ route: 'template', prompt: 'P' });
+    expect(req.sampling).toEqual({ temperature: 0, maxTokens: 99 });
+    expect(req.stop).toEqual(['<|x|>']);
+    expect(req.model).toBe('m');
+    expect(req.timeoutMs).toBe(values.timeoutMs);
+    expect(req.extraBody).toBe(values.extraBody);
+    expect(req.timeMaxPredictMs).toBeUndefined();
+    expect(typeof req.onTruncated).toBe('function');
+    expect(format.parsed).toEqual(['pre\nab\n']);
+    expect(r.captured.prompts).toEqual(['P']);
+  });
+
+  test('a stop string echoed at the end is removed before parsing', async () => {
+    const format = stubFormat();
+    await run([], { format, chunks: ['ab', '<|x|>'] }).result;
+    expect(format.parsed).toEqual(['pre\nab']);
+  });
+
+  test('a rewrite becomes an edit, as on the chat route', async () => {
+    const snap = snapshot();
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
+    const res = await run([], { format, snap, chunks: ['x'] }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+  });
+
+  test('a truncated completion gives no result', async () => {
+    const snap = snapshot();
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
+    await expect(run([], { format, snap, chunks: ['x'], truncate: true }).result).resolves.toBeUndefined();
+  });
+
+  test('a truncated completion is reported through onTruncated, a complete one is not', async () => {
+    const cut = run([], { format: stubFormat(), chunks: ['x'], truncate: true });
+    await cut.result;
+    expect(cut.captured.truncated).toBe(1);
+    const whole = run([], { format: stubFormat(), chunks: ['x'] });
+    await whole.result;
+    expect(whole.captured.truncated).toBe(0);
+  });
+
+  test('an empty rewrite of a non-blank region gives no result', async () => {
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: [] }));
+    await expect(run([], { format, chunks: ['x'] }).result).resolves.toBeUndefined();
+  });
+
+  test('an answer that drops the blank last line of a region at the end of the file keeps the final newline', async () => {
+    const lines = [...CIRCLE, ''];
+    const snap = snapshot(lines, 12);
+    expect(snap.input.region.end).toBe(lines.length - 1);
+    const region = (src: string[]) => src.slice(snap.input.region.start, snap.input.region.end + 1);
+    const answer = region([...renamed, '']).slice(0, -1);
+    const res = await run([], { format: stubFormat(() => ({ kind: 'rewrite', lines: answer })), snap, chunks: ['x'] }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+    const echo = region(lines).slice(0, -1);
+    await expect(run([], { format: stubFormat(() => ({ kind: 'rewrite', lines: echo })), snap, chunks: ['x'] }).result).resolves.toBeUndefined();
+  });
+
+  test('the same answer on the chat route keeps the final newline too', async () => {
+    const lines = [...CIRCLE, ''];
+    const snap = snapshot(lines, 12);
+    const answer = renamed.slice(snap.input.region.start, snap.input.region.end + 1);
+    const res = await run([content(fence(answer))], { snap }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+  });
+
+  test('a Sweep v2 generation that stops at once gives no result, not a deletion below the cursor', async () => {
+    const lines = Array.from({ length: 30 }, (_, n) => `line ${n}`);
+    const format = sweepFormat('v2');
+    const input: NextEditInput = {
+      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines.length, { above: 5, below: 10 }),
+      history: [], snippets: [], budgets: nextEditBudgets(3500),
+    };
+    const snap = { uri: 'file:///a.py', version: 1, input };
+    await expect(run([], { format, snap, chunks: ['<|file_sep|>'] }).result).resolves.toBeUndefined();
+    await expect(run([], { format, snap, chunks: [] }).result).resolves.toBeUndefined();
+  });
+
+  test('a timeout propagates and aborts the request', async () => {
+    const r = run([], { format: stubFormat(), chunks: ['x'], fail: new TimeoutError('t') });
+    await expect(r.result).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(r.captured.fim!.signal.aborted).toBe(true);
   });
 });

@@ -12,11 +12,15 @@ import { ThinkingError } from '../../completion/stream';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
-import { SNIPPETS_BUDGET_CHARS, regionProblem, type NextEditInput } from '../formats/chatXtab';
+import { decorationPlan, displayFor } from '../decorations';
+import { toItemText, type LineEdit } from '../diff';
+import { pickFormat } from '../formats';
+import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, type RecentSnippets } from '../history';
-import { editableRegion } from '../region';
+import { nextEditBudgets } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
+import { EditDecorations } from './decorations';
 
 export interface NextEditDeps {
   getSettings(): Settings;
@@ -50,6 +54,9 @@ export class NextEditController implements vscode.Disposable {
   private readonly models = new WeakMap<FimBackend, string>();
   private readonly inflight = new Map<string, { version: number; ctl: AbortController }>();
   private result: NextEditResult | undefined;
+  /** An inline edit shown as decorations, waiting for Tab or Esc. Never returned by itemFor(). */
+  private pending: NextEditResult | undefined;
+  private readonly decorations = new EditDecorations();
   /** The version and cursor line each document was last asked about, so a repeated trigger does not ask again. */
   private readonly asked = new Map<string, { version: number; line: number }>();
   /** The version and time of each document's last edit (not undo/redo) in the active editor. */
@@ -71,8 +78,10 @@ export class NextEditController implements vscode.Disposable {
       vscode.workspace.onDidChangeTextDocument((e) => this.changed(e)),
       vscode.window.onDidChangeTextEditorSelection((e) => this.selectionChanged(e)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
+        this.clearPending();
         if (e) this.selectionVersions.set(e.document.uri.toString(), e.document.version);
       }),
+      this.decorations,
     );
   }
 
@@ -121,6 +130,68 @@ export class NextEditController implements vscode.Disposable {
     this.result = undefined;
   }
 
+  /** The inline edit shown as decorations, for tests. */
+  pendingEdit(): { uri: string; version: number; edit: LineEdit } | undefined {
+    const p = this.pending;
+    return p && { uri: p.uri, version: p.version, edit: p.edit };
+  }
+
+  /**
+   * Tab on a pending decoration: jumps to the edit when the cursor is away from it, otherwise applies it. A pending edit
+   * for another document or version, or one while snoozed, is cleared instead.
+   */
+  async nextEditTab(): Promise<void> {
+    const p = this.pending;
+    const editor = vscode.window.activeTextEditor;
+    const doc = editor?.document;
+    if (!p || !editor || !doc || doc.uri.toString() !== p.uri || doc.version !== p.version || this.d.snoozedUntil() > Date.now() || p.show.kind !== 'edit') {
+      this.clearPending();
+      return;
+    }
+    // The version matches the result's, so the document's lines are the ones the edit was computed on.
+    const lines = doc.getText().split(/\r?\n/);
+    const plan = decorationPlan(p.edit, lines, editor.selection.active);
+    if (plan.jump) {
+      const target = new vscode.Position(plan.target.line, plan.target.character);
+      editor.selection = new vscode.Selection(target, target);
+      editor.revealRange(new vscode.Range(target, target), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      this.decorations.show(editor, decorationPlan(p.edit, lines, plan.target));
+      return;
+    }
+    const { start, end, text } = p.show;
+    const range = new vscode.Range(start.line, start.character, end.line, end.character);
+    const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    // Cleared first, so the edit's own change event finds nothing to clear.
+    this.clearPending();
+    const applied = await editor.edit((b) => b.replace(range, toItemText(text, eol)), { undoStopBefore: true, undoStopAfter: true });
+    // False when the document changed after the check above: nothing was applied.
+    if (!applied) return;
+    const { startLine, newLines } = p.edit;
+    const last = newLines.length - 1;
+    const at = last < 0 ? new vscode.Position(start.line, start.character) : new vscode.Position(startLine + last, newLines[last].length);
+    const cursor = editor.document.validatePosition(at);
+    editor.selection = new vscode.Selection(cursor, cursor);
+    this.accepted();
+  }
+
+  /** Esc on a pending decoration: a rejection. An Esc with nothing pending (a stale context key) rejects nothing. */
+  nextEditDismiss(): void {
+    if (!this.pending) return;
+    this.clearPending();
+    this.rejected();
+  }
+
+  /** A snooze started: a pending decoration goes, so Tab and Esc are the editor's again. */
+  snoozed(): void {
+    this.clearPending();
+  }
+
+  private clearPending(): void {
+    if (!this.pending) return;
+    this.pending = undefined;
+    this.decorations.clear();
+  }
+
   /** Forgets everything planned or recorded under the old settings; a newly excluded file must not keep diffs that would be sent. */
   reset(): void {
     this.clear();
@@ -137,6 +208,7 @@ export class NextEditController implements vscode.Disposable {
     for (const f of this.inflight.values()) f.ctl.abort();
     this.inflight.clear();
     this.result = undefined;
+    this.clearPending();
     for (const t of [...this.pauseTimers.values(), ...this.chainTimers.values()]) clearTimeout(t);
     for (const { timer } of this.idleTimers.values()) clearTimeout(timer);
     this.pauseTimers.clear();
@@ -193,7 +265,10 @@ export class NextEditController implements vscode.Disposable {
   private changed(e: vscode.TextDocumentChangeEvent): void {
     const doc = e.document;
     // First, and silently: the log is a document too, so logging about its changes would loop.
-    if (e.contentChanges.length === 0 || !this.tracking() || !this.eligible(doc)) return;
+    if (e.contentChanges.length === 0) return;
+    // Any change to its document, an undo included, leaves a pending edit pointing at shifted lines.
+    if (this.pending?.uri === doc.uri.toString()) this.clearPending();
+    if (!this.tracking() || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
     this.cancel(uri);
     this.restartIdle(doc);
@@ -249,7 +324,10 @@ export class NextEditController implements vscode.Disposable {
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
-    if (this.tracking()) this.history.commit(this.path(doc), doc.getText());
+    if (!this.tracking()) return;
+    // The current size, set just before this commit so it applies to it; 0 keeps no history.
+    this.history.maxEntries = this.d.getSettings().nextEdit.historySize;
+    this.history.commit(this.path(doc), doc.getText());
   }
 
   private schedulePause(uri: string, version: number, delayMs: number): void {
@@ -287,18 +365,16 @@ export class NextEditController implements vscode.Disposable {
     if (this.inflight.get(uri)?.version === version) return;
     const editor = this.editorFor(doc);
     if (!editor) return;
-    // A result that can still be shown here stays; one for another cursor is replaced.
+    // A result that can still be shown here stays; one for another cursor is replaced. A pending decoration stays too:
+    // moving the cursor towards it must not replace it.
     if (this.itemFor(doc, editor.selection.active)) return;
+    if (this.pending?.uri === uri && this.pending.version === version) return;
     const asked = this.asked.get(uri);
     if (asked?.version === version && asked.line === editor.selection.active.line) return;
     if (!s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
     const backend = this.d.getBackend(s.nextEdit.backendId);
     if (!backend) return;
     const id = backend.config.id;
-    if (!backend.routes().chat) {
-      this.once(`route:${id}`, () => this.d.log.info(`next edit: backend "${id}" has no chat completions route; Next Edit needs one`));
-      return;
-    }
     const backoff = this.d.backoff(id);
     if (!backoff.canRequest()) return;
 
@@ -320,9 +396,12 @@ export class NextEditController implements vscode.Disposable {
         this.once(`model:${id}`, () => this.d.log.warn(`next edit: backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
         return;
       }
+      const format = pickFormat(s.nextEdit.format, model);
+      if (!this.routeFor(backend, format)) return;
       const values = resolveNextEdit(backend.config, model, s);
       const learned = this.d.capabilities.get(id, model);
-      const blocked = thinkingBlocked(values.thinking, flavor, learned);
+      // Thinking is a chat-route matter: a raw completion has no reasoning channel.
+      const blocked = format.transport === 'chat' ? thinkingBlocked(values.thinking, flavor, learned) : undefined;
       if (blocked) {
         const why = blocked === 'cannotDisable' ? 'cannot turn thinking off' : 'keeps thinking';
         this.once(`thinking:${blocked}:${id}:${model ?? ''}`, () => this.d.log.info(`next edit: backend "${id}": ${model ?? 'the model'} ${why}; no Next Edit requests to it`));
@@ -332,29 +411,33 @@ export class NextEditController implements vscode.Disposable {
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
       const lines = doc.getText().split(/\r?\n/);
-      const region = editableRegion(at.line, lines.length);
-      const problem = regionProblem(lines, region);
-      if (problem) {
-        if (this.skipped.get(uri) !== version) {
-          this.skipped.set(uri, version);
-          this.d.log.debug(`next edit: not asked, ${problem === 'fence' ? 'the region has a ``` line' : 'the region is too long'}`);
-        }
-        return;
-      }
-
-      for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
-      this.flush(doc);
       const path = this.path(doc);
-      // Other files' diffs and snippets go out only with extra context, as for FIM.
-      const extra = values.extraContext;
-      const input: NextEditInput = {
+      const budgets = nextEditBudgets(s.nextEdit.contextBudget);
+      const base: NextEditInput = {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region,
-        history: this.history.entries(extra ? undefined : (p) => p === path),
-        snippets: extra ? this.d.snippets.pick(path, SNIPPETS_BUDGET_CHARS) : [],
+        region: format.region(at.line, lines.length, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
+        history: [],
+        snippets: [],
+        budgets,
       };
+      // Checked before the history is flushed, so a region that cannot be sent leaves the pending edits uncommitted.
+      if (this.notSendable(format, base, uri, version)) return;
+
+      for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
+      this.flush(doc);
+      // Other files' diffs and snippets go out only with extra context, as for FIM. `previous` is always the current file's.
+      const extra = values.extraContext;
+      const previous = this.history.previous(path);
+      const input: NextEditInput = {
+        ...base,
+        history: this.history.entries(extra ? undefined : (p) => p === path),
+        snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
+        ...(previous ? { previous } : {}),
+      };
+      // Again on what is sent: `previous` (Sweep's original window) is known only after the flush.
+      if (this.notSendable(format, input, uri, version)) return;
       const started = Date.now();
       this.policy.requested(uri, at.line, started);
       this.asked.set(uri, { version, line: at.line });
@@ -364,17 +447,19 @@ export class NextEditController implements vscode.Disposable {
         values,
         flavor,
         model,
+        format,
         snapshot: { uri, version, input },
         rejected: learned.rejected,
         signal: ctl.signal,
         onRejected: (fields) => this.rejectedFields(id, model, fields),
+        onTruncated: () => log.debug('next edit: answer cut at max_tokens'),
         ...(s.debug.logPrompts
-          ? { onPrompt: (m: ChatMessage[]) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
+          ? { onPrompt: (m: ChatMessage[] | string) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
           : {}),
       });
       backoff.recordSuccess();
       log.debug(
-        `next edit ${id} model=${model ?? '?'} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
+        `next edit ${id} model=${model ?? '?'} format=${format.id} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
           `→ ${result ? result.show.kind : 'no edit'} in ${Date.now() - started} ms`,
       );
       if (!result || ctl.signal.aborted) return;
@@ -392,9 +477,20 @@ export class NextEditController implements vscode.Disposable {
         log.debug('next edit: result dropped, the cursor moved');
         return;
       }
-      if (result.show.kind === 'edit' && !this.native) {
+      const display = displayFor(result.show, s.nextEdit.display, this.native);
+      if (display === 'drop') {
         log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
         this.offerNativeUi();
+        return;
+      }
+      this.clearPending();
+      if (display === 'decorations') {
+        const shown = vscode.window.activeTextEditor;
+        if (!shown) return;
+        this.result = undefined;
+        this.pending = result;
+        // The version was checked above, so `lines` is still the document's text.
+        this.decorations.show(shown, decorationPlan(result.edit, lines, shown.selection.active));
         return;
       }
       this.result = result;
@@ -406,6 +502,27 @@ export class NextEditController implements vscode.Disposable {
     } finally {
       if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
     }
+  }
+
+  /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */
+  private routeFor(backend: FimBackend, format: NextEditFormat): boolean {
+    const routes = backend.routes();
+    if (format.transport === 'chat' ? routes.chat : routes.template) return true;
+    const id = backend.config.id;
+    const route = format.transport === 'chat' ? 'chat completions' : 'raw completions';
+    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${route} route; the ${format.id} format needs one`));
+    return false;
+  }
+
+  /** Whether the format cannot send this input; logged once per document version. */
+  private notSendable(format: NextEditFormat, input: NextEditInput, uri: string, version: number): boolean {
+    const problem = format.problem(input);
+    if (!problem) return false;
+    if (this.skipped.get(uri) !== version) {
+      this.skipped.set(uri, version);
+      this.d.log.debug(`next edit: not asked, ${problem}`);
+    }
+    return true;
   }
 
   private offeredNative = false;

@@ -2,13 +2,21 @@ import { DEFAULT_NEXT_EDIT_TIMEOUT_MS } from '../completion/effective';
 import { TEMPLATES } from '../models/templates';
 import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
 
+export const NEXT_EDIT_FORMATS = ['auto', 'chatXtab', 'sweep', 'zeta21'] as const;
+export const NEXT_EDIT_DISPLAYS = ['auto', 'native', 'decorations'] as const;
+export type NextEditFormatSetting = (typeof NEXT_EDIT_FORMATS)[number];
+export type NextEditDisplay = (typeof NEXT_EDIT_DISPLAYS)[number];
+
 export interface Settings {
   backends: BackendConfig[];
   fim: {
     enabled: boolean; backendId?: string; debounceMs: number | null; multiline: Multiline; maxTokens: number;
     prefixLines: number; suffixLines: number; extraContext: boolean; disableInLanguages: string[]; disableInFiles: string[]; skipMidWord: boolean;
   };
-  nextEdit: { enabled: boolean; backendId?: string; timeoutMs: number };
+  nextEdit: {
+    enabled: boolean; backendId?: string; timeoutMs: number; format: NextEditFormatSetting; display: NextEditDisplay;
+    regionLinesAbove: number; regionLinesBelow: number; historySize: number; contextBudget: number;
+  };
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
@@ -62,6 +70,14 @@ export const FIM_LIMITS: Record<'temperature' | 'topP' | 'topK' | 'maxTokens' | 
   debounceMs: { min: 0, max: 2000, integer: true },
   timeoutMs: { min: 500, max: 60000, integer: true },
 };
+
+/** Allowed range and default of the numeric Next Edit settings; package.json uses the same values. */
+export const NEXT_EDIT_LIMITS = {
+  regionLinesAbove: { min: 0, max: 20, integer: true, default: 5 },
+  regionLinesBelow: { min: 0, max: 40, integer: true, default: 10 },
+  historySize: { min: 0, max: 10, integer: true, default: 5 },
+  contextBudget: { min: 1000, max: 16000, integer: true, default: 3500 },
+} as const;
 
 function limitText(l: { min: number; max?: number; integer: boolean; exclusiveMin?: boolean }): string {
   const lo = l.exclusiveMin ? `greater than ${l.min}` : `${l.min}`;
@@ -252,6 +268,20 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
   const nextEditTimeoutOk = typeof nextEditTimeout === 'number' && Number.isInteger(nextEditTimeout) && nextEditTimeout >= tl.min && nextEditTimeout <= (tl.max as number);
   if (!nextEditTimeoutOk && nextEditTimeout !== DEFAULT_NEXT_EDIT_TIMEOUT_MS) problems.push(`aiAutocomplete.nextEdit.timeoutMs: expected ${limitText(tl)}, ignored`);
 
+  const nextEditEnum = <T extends string>(key: 'format' | 'display', allowed: readonly T[]): T => {
+    const v = resource<unknown>(`nextEdit.${key}`, 'auto');
+    if (typeof v === 'string' && (allowed as readonly string[]).includes(v)) return v as T;
+    if (v !== 'auto') problems.push(`aiAutocomplete.nextEdit.${key}: expected one of ${allowed.join(', ')}, ignored`);
+    return 'auto' as T;
+  };
+  const nextEditInt = (key: keyof typeof NEXT_EDIT_LIMITS): number => {
+    const l = NEXT_EDIT_LIMITS[key];
+    const v = resource<unknown>(`nextEdit.${key}`, l.default);
+    if (typeof v === 'number' && Number.isInteger(v) && v >= l.min && v <= l.max) return v;
+    if (v !== l.default) problems.push(`aiAutocomplete.nextEdit.${key}: expected ${limitText(l)}, ignored`);
+    return l.default;
+  };
+
   const multiline = resource<string>('fim.multiline', 'auto');
   const num = (key: string, d: number): number => {
     const v = resource<unknown>(key, d);
@@ -282,6 +312,12 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       enabled: resource('nextEdit.enabled', true),
       ...(nextEditBackendId !== undefined ? { backendId: nextEditBackendId } : {}),
       timeoutMs: nextEditTimeoutOk ? nextEditTimeout : DEFAULT_NEXT_EDIT_TIMEOUT_MS,
+      format: nextEditEnum('format', NEXT_EDIT_FORMATS),
+      display: nextEditEnum('display', NEXT_EDIT_DISPLAYS),
+      regionLinesAbove: nextEditInt('regionLinesAbove'),
+      regionLinesBelow: nextEditInt('regionLinesBelow'),
+      historySize: nextEditInt('historySize'),
+      contextBudget: nextEditInt('contextBudget'),
     },
     privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,

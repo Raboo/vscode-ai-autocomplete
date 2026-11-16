@@ -236,8 +236,8 @@ There is no universal switch, so this is a table, not scattered `if`s.
 | FIM, chat hole-filler | temperature 0.1–0.2, max_tokens 160, stop `</COMPLETION>`; no reasoning allowance |
 | NES, dedicated models (Zeta/Sweep/Instinct) | greedy (temperature 0), max_tokens ≈ editable-region size × 1.5 + margin, format-specific end markers |
 | NES, chat models (Qwen3.8 etc.) | thinking off; temperature 0.2, top_p 0.8, top_k 20, **presence_penalty 0** (the model card's 0.7 / 1.5 values are chat settings that penalise repeated brackets and indentation); max_tokens ≈ region size × 1.5 |
-| NES, Sweep (1.5B / v2 7B) | temperature 0; max 512 (1.5B) / 1024 (7B); stop `<\|file_sep\|>`, `</s>` (1.5B) or `<\|endoftext\|>`, `<\|file_sep\|>` (v2) |
-| NES, Zeta 2.1 | temperature 0.2, max_tokens 256–512; stop `<[end▁of▁sentence]>` only. Never stop on `<\|marker_2\|>`, which cuts off multi-block edits. |
+| NES, Sweep (1.5B / v2 7B) | temperature 0; max 512 (1.5B) / 1024 (7B); stop `<\|file_sep\|>`, `<\|endoftext\|>`, `</s>` (1.5B) or `<\|endoftext\|>`, `<\|file_sep\|>` (v2) |
+| NES, Zeta 2.1 | temperature 0 (Phase 3b ruling 7: a live probe at 0 answered well, and greedy keeps one request per version deterministic); `max_tokens = min(1024, max(256, ceil(regionChars / 3 × 1.5) + 64))`; stop `<[end▁of▁sentence]>` only. Never stop on `<\|marker_2\|>`, which cuts off multi-block edits. |
 
 Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backend preset therefore omits `top_p`. Twinny notes that some hosted completion endpoints reject more than 4 stop sequences, so the stop list is capped per backend.
 
@@ -288,25 +288,62 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
   - on cursor moves within 10 s of the last edit;
   - cooldown after a rejection.
 - **Region**: cursor −5/+10 lines, capped at ~25; each format can override this.
-- **Context budget** (`aiAutocomplete.nextEdit.contextBudget`, default ~1500 tokens for the current file, ~1000 for diff history and ~1000 for snippets): the current file is clipped in 10-line pages around the region, the way Copilot does it. The whole file is **not** sent, which suits the user's small-context Qwen3.8 setup.
+- **Context budget** (`aiAutocomplete.nextEdit.contextBudget`, one number since Phase 3b, default 3500 tokens, split 3/7 file, 2/7 history and 2/7 snippets, i.e. ~1500 tokens for the current file, ~1000 for diff history and ~1000 for snippets): the current file is clipped in 10-line pages around the region, the way Copilot does it. The whole file is **not** sent, which suits the user's small-context Qwen3.8 setup.
 - **Formats** (each provides `buildPrompt(ctx)` and `parse(text, ctx)` returning the new region text, or "no change"):
   1. **chatXtab** (first): a system prompt plus one user message using the Copilot/Mercury tags `<|recently_viewed_code_snippets|>`, `<|current_file_content|>`, `<|code_to_edit|>…<|cursor|>…<|/code_to_edit|>`, `<|edit_diff_history|>`. The answer is the rewritten region in a ``` fence, or `NO_CHANGE`. A missing closing fence means the output was truncated, so it is dropped.
      - Section order runs from most stable to most volatile (snippets → clipped file → diff history → editable region with cursor last) so that Strata's and llama.cpp's prefix caches reuse the start of the prompt between keystrokes.
-  2. **sweep**: raw `/completion` on llama.cpp.
+  2. **sweep**: the raw completion route, built in Phase 3b (`formats/sweep.ts`).
      - Sections: `<|file_sep|>{path}` context files, `<|file_sep|>{file}.diff` with `original:`/`updated:` blocks, `original/{file}`, `current/{file}`, then generation after `<|file_sep|>updated/{file}`.
      - v2 7B adds `:start:end` line ranges, the `<|cursor|>` marker, a ±10-line window, and a prefill up to the cursor line.
      - Sources: the model's `run_model.py` and `inference.py` on Hugging Face.
-  3. **zeta21**: suffix-first layout.
+  3. **zeta21**: suffix-first layout, built in Phase 3b (`formats/zeta21.ts`).
      - `<[fim-suffix]>after<[fim-prefix]><filename>related…<filename>edit_history(diff)<filename>target before<|marker_1|>…<|user_cursor|>…<|marker_N|><[fim-middle]>`.
      - The output is the region between the first and last marker that it echoes back; the same marker number at both ends means no edit.
      - Blocks are 6–16 lines; prompt budget ~4K; at most 6 edit events.
-     - Implement from the model card. Check the license of Zed's `zeta_prompt` crate before porting any code, because parts of Zed are GPL.
-  4. **instinct**: optional.
+     - Implemented from the model card only. Zed's `zeta_prompt` crate is GPL-3.0-or-later, so nothing is ported (see "To verify").
+  4. **instinct**: optional, not built in 3b.
+- **Phase 3b decisions** (2026-11-16, plan `docs/superpowers/plans/2026-11-16-phase3b-formats-decorations.md`, rulings 1 to 14):
+  - Formats and transport:
+    1. In `nextEdit.format: auto` a model id matching `/zeta/i` gets `zeta21`, `/sweep/i` gets `sweep` (the v2 layout when it also matches `/v2|7b/i`, else v1), anything else or an unknown model gets `chatXtab`. The setting is global; a user who runs a Zeta model next to a FIM model sets the backend's `nextEditModel`.
+    2. `sweep` and `zeta21` use the backend's existing `streamFim` with a `template` payload (llama.cpp `/completion` with `cache_prompt`, OpenAI-compatible `/v1/completions`). `FimRequest` has an optional `onTruncated()`, so an answer cut at `max_tokens` is dropped. Each format's answer becomes new region lines, so `regionEdit`, `isTrivialEdit` and `classify` stay shared.
+    3. Sweep v1 follows the official script (no cursor marker, no line ranges, no prefill); v2 follows `inference.py`. Which layout the 0.5B/1.5B GGUFs were trained on is open (see "To verify").
+    4. Sweep's window is its trained one, 10 lines above and below the cursor; the region settings apply to `chatXtab` and `zeta21` only.
+    5. Zeta's blocks follow our own rule: a block ends at 16 lines, or at a non-blank line after a blank one once it has 6 lines. The model reads markers wherever they are.
+    6. Zeta's history is our zero-context unified diff with `a/` and `b/` path prefixes.
+    7. Temperature 0 for both raw formats (see "Sampling presets").
+  - Budget: `nextEdit.contextBudget` is one number in tokens (default 3500), split 3/7 file, 2/7 history, 2/7 snippets: 1500, 1000 and 1000 tokens, as in 3a (ruling 8).
+  - Execution rulings:
+    - Zeta parse: if the answer's span ends at the last marker, the old region text does not end with `\n` and the span's new content ends with `\n`, that one `\n` is dropped (a model may put the closing marker on its own line). When the old region text ends with `\n` (its last line is blank, often the file's final newline), the span keeps its trailing `\n` or gets one, and deleting the tail keeps the newline before it. A non-empty block before a non-last marker without a trailing `\n` is invalid ("glued").
+    - Zeta and Sweep share the snippet and history budgeting helpers in `formats/format.ts` (`hasReserved`, `pickSnippets`, `newestThatFit`).
+    - A region or current-file excerpt that contains a format's reserved strings gets no request, and snippets and history entries with one are left out, never sent half-escaped. Reserved for Sweep: `<|file_sep|>`, `<|endoftext|>` and, in v2, `<|cursor|>`; for Zeta: `<[fim-`, `<filename>`, `<|marker_`, `<|user_cursor|>` and the end-of-sentence token. The controller runs the check again after the history flush, because Sweep's original window comes from the history's previous text, known only after the flush. The "not asked" log line names the problem (`fence`, `tooLong`, `reserved`). A truncated raw answer logs `next edit: answer cut at max_tokens`.
+    - Sweep drops an answer whose generated text (the answer minus the v2 prefill, with stray `<|cursor|>` markers removed) starts with `<|`, or is blank while the window from the cursor line down (v1: the whole window) has a non-blank line, or an answer more than 20 lines longer than the window.
+    - Final newline, all formats (`request.ts`): when the region ends at the document's last line and that line is `''`, an answer whose lines do not end with `''` gets `''` appended, so an edit never removes the file's final newline.
+  - Display and decorations:
+    9. `display: auto` uses native when the proposal is enabled and decorations otherwise; `native` drops inline edits without the proposal (3a behaviour, with its one-time notice); `decorations` always uses decorations. Ghost text (a pure insertion at the cursor) ignores the setting.
+    10. The decoration preview is text, not an image: changed parts of the old lines get a red background, each changed line shows its new text as an `after` decoration, extra new lines are counted ("(+1 line)", "(+N lines)", every added line), and a hint on the cursor line says what Tab does. Text inserted inside a line marks the one character before the insertion point (else the first); the hint's line number is clamped like the jump target; the preview text is cut at 80 code points. The native UI stays the better view.
+    11. Tab jumps first when the edit is away from the cursor (the cursor line is outside `[startLine - 1, max(endLine, startLine)]`): it moves the cursor to the edit's first line, and a second Tab applies. Esc dismisses and counts as a rejection (the 5 s cooldown). Both keybindings read the context key `aiAutocomplete.nextEditPending`. Tab's `when` clause also excludes a selection, multiple cursors, a visible ghost text or native inline edit, the suggest widget, snippet mode, Tab-moves-focus and read-only editors, so Tab keeps its normal jobs; Esc's excludes multiple cursors (Esc collapses them), the suggest widget, snippet mode and a visible ghost text; the `!inSnippetMode` term is ours (sr-tream/vscode-nes lacks it).
+    12. A pending decoration is cleared by any change to its document, an active-editor change, a new result, Esc, apply, snooze or `reset()`, not by cursor moves, because the jump is a cursor move. Applying checks the document version first and clears instead of applying when it changed. While a decoration is pending for a document version, no new request is sent for that version; Esc with nothing pending does nothing.
+  - Menu (ruling 14): the status-bar menu gains **Enable native Next Edit UI...** (until the proposed API is enabled) and **Settings...** (the Settings page filtered to this extension).
+  - Deferred (ruling 13): suppression rules, LSP diagnostics in the prompt, a hunk queue, piggybacking on typing, a cursor target after accept and native `displayLocation` labels are in the follow-ups doc.
+  - **(research)** facts behind the formats, from 2026-11-16:
+    - Sweep: `sweepai/sweep-next-edit-1.5B` `run_model.py` @ `409016591c6c1a94f545f22328a85a3516118f34` and `sweepai/sweep-next-edit-v2-7B` `inference.py` @ `851f4ac1427ec91eb6c19d408409490d6e0c00a0`, both Apache-2.0.
+      - **v1** (0.5B/1.5B, the official script): context files as `<|file_sep|>{path}` blocks; each recent change in its own `<|file_sep|>{path}.diff` block with `original:`/`updated:` text (no unified diff); then `<|file_sep|>original/{path}`, `<|file_sep|>current/{path}` and `<|file_sep|>updated/{path}`; no cursor marker, no line ranges, no prefill; the window is 10 lines above and 10 below the cursor, and the model rewrites all of it.
+      - **v2** (7B) adds a file section of about 300 lines, `:start:end` ranges (1-based, absolute), `<|cursor|>` in `current/`, change blocks headed `{path}:{start}:{end}` and a prefill of the window lines above the cursor line after the `updated/` header; the new window is prefill + output.
+      - Both: greedy, `max_tokens` 512 (v1) / 1024 (v2), stop `<|file_sep|>` and `<|endoftext|>`. They have no chat template and no BOS. "No change" is an answer equal to the window.
+    - Zeta 2.1 (`zed-industries/zeta-2.1` model card, Apache-2.0):
+      - Layout: `<[fim-suffix]>{after}<[fim-prefix]>{related <filename> files}{<filename>edit_history + unified diffs}<filename>{path}\n{before}{region with inline <|marker_N|> and <|user_cursor|>}\n<[fim-middle]>`.
+      - Markers sit at block starts (blocks of 6–16 lines), and the last marker is glued to the end of the region.
+      - The answer is `<|marker_s|>new text<|marker_e|>` and replaces old blocks s..e. The same number twice means no edit.
+      - Stop only on `<[end▁of▁sentence]>`; never on a marker, because a span can cover several blocks.
+      - The three `<[fim-*]>` strings are special tokens; `<filename>`, the markers and the cursor marker are plain text.
+      - Zed's own prompt builder (`zeta_prompt`, `edit_prediction`) is GPL-3.0-or-later, so this format is written from the model card and our probe only. The card's sample prompt and output are not stored in the repo.
+    - Live probe (LM Studio, `randmaru/zeta-2.1-mlx`, raw `/v1/completions`, temperature 0, a synthetic `circle.py` where `area(r)` was renamed to `area(radius)`): the answer was `<|marker_1|>def circumference(radius):…def diameter(radius):…<|marker_2|>` in 4.0 s cold (171 prompt, 50 completion tokens). An unrelated edit gave `<|marker_1|><|marker_1|>` in 1.1 s. LM Studio's raw completion route parses the FIM special tokens.
+    - sr-tream/vscode-nes (AGPL-3.0, ideas only, no code): it shows its fallback as a red background on the old range plus the new text beside it; a context key gates Tab and Esc (its Tab binding lacks `!inSnippetMode`); its SVG/shiki preview, clipboard context and temp-dir files are things to avoid.
 - **Diff and classify**:
   - trim identical leading and trailing lines;
   - if the change is a pure insertion at the cursor, show it as ghost text;
-  - otherwise it is an inline edit, shown with the native renderer when the proposal is available. Phase 3a drops it without the proposal; the decoration fallback is Phase 3b.
-  - Before applying, check that the original text hasn't drifted. Not possible in Phase 3a: VS Code applies a native inline edit itself, with no hook before it; the decoration fallback (3b) can check.
+  - otherwise it is an inline edit, shown with the native renderer when the proposal is available, else as decorations (Phase 3b, "Phase 3b decisions" above). Phase 3a dropped it without the proposal.
+  - Before applying, check that the original text hasn't drifted. Not possible for a native inline edit: VS Code applies it itself, with no hook before it. The decoration fallback checks the document version before it applies (Phase 3b, ruling 12).
   - After an accept, chain the next prediction (re-trigger after ~60 ms) so repeated Tabs walk through a refactor.
 - **Arbitration with FIM**: one registered provider returns a fresh NES result for the current document version if there is one, otherwise the FIM result. While the user is typing mid-line, FIM wins.
 - **Phase 3a decisions** (2026-11-15, plan `docs/superpowers/plans/2026-11-15-phase3a-next-edit.md`, rulings 2, 3, 5, 6 and 9 to 13):
@@ -329,7 +366,7 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 | `aiAutocomplete.fim.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
 | `aiAutocomplete.privacy.localOnly` | Workspace-settable (it can only restrict). Refuses non-loopback, non-private backends, and shows a lock icon in the status bar. |
 | `aiAutocomplete.fim.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
-| `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b: `format` (`auto`, `chatXtab`, `zeta21`, `sweep`, `instinct`), region size, history size, `display` (`auto`, `native`, `decorations`), `contextBudget`. |
+| `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b, all resource scope: `format` (`auto`, `chatXtab`, `sweep`, `zeta21`; `instinct` is not built), `display` (`auto`, `native`, `decorations`), `regionLinesAbove` (integer 0 to 20, default 5), `regionLinesBelow` (0 to 40, default 10), `historySize` (0 to 10, default 5) and `contextBudget` (1000 to 16000 tokens, default 3500). A value out of range is ignored with a warning. |
 | `aiAutocomplete.modelOverrides` | machine scope: regex → `{fimTemplate, stop, sampling, extraBody, thinking}` |
 
 - **Status bar**: idle, loading, error, snoozed, local-lock, and a "thinking" warning. Clicking it opens a quick pick to toggle, snooze, switch backend, show the log, or set up a local model.
@@ -408,7 +445,7 @@ After this plan is approved, the next step is a detailed implementation plan (su
 2. **Chat path and thinking control** (v0.2): hole-filler; `thinking.ts` and capability learning; OpenRouter backend; presets for Qwen3/3.5/3.8, DeepSeek, GLM, Kimi, MiniMax, Gemma, Granite, Nemotron, gpt-oss, Mistral; Strata host flavor.
 3. **Next Edit** (v0.3), split on 2026-11-15 into two plans:
    - **3a. Next Edit core, chatXtab, native display** (implemented): history, region, trigger, the chatXtab format, ghost text for insertions, native inline edits with the opt-in command.
-   - **3b. Sweep and Zeta formats, decoration fallback** (plan not written yet): the `sweep` and `zeta21` formats need their own research into prompt layouts and licenses; the settings `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget` move here (they are constants in 3a).
+   - **3b. Sweep and Zeta formats, decoration fallback** (implemented on `feat/next-edit-formats`, plan `docs/superpowers/plans/2026-11-16-phase3b-formats-decorations.md`): the `sweep` and `zeta21` formats, the decoration fallback with Tab and Esc, and the settings `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget` (constants in 3a).
    Original scope:
    - history, region, trigger;
    - the **chatXtab** format (tested with Qwen3.8-Flash-Next on Strata, measuring latency);
@@ -453,8 +490,9 @@ After this plan is approved, the next step is a detailed implementation plan (su
 - `codestral.mistral.ai` (the free personal-key endpoint) is live, but its current terms weren't confirmed. The user should check them before depending on the free tier.
 - ~~OpenRouter `/api/v1/completions` and `suffix` support.~~ Answered (verified 2026-11-15, openrouter.ai docs and openapi.json): the route exists but is undocumented, and `suffix` is undocumented, so OpenRouter is chat only.
 - ~~LM Studio's per-request thinking toggle.~~ Answered (verified 2026-11-15 on LM Studio 0.4.28 with an MLX Qwen3.5-4B downloaded from Hugging Face): no per-request switch works on `/v1/chat/completions`. LM Studio ignores `chat_template_kwargs`, and maps `reasoning_effort:"none"` only to an "Enable Thinking" custom field in the model's `model.yaml`. Models from LM Studio's catalog have that field; Hugging Face downloads do not (server log: "No valid custom reasoning fields found in model …"; `/api/v1/chat` answers 400 "does not expose reasoning configuration"). `/no_think` has no effect on Qwen3.5. Adding `{%- set enable_thinking = false %}` as the first line of the model's prompt template in LM Studio turns thinking off. A raw `/v1/completions` prompt with an empty think block already filled in also avoids thinking (a follow-up idea).
-- Whether Sweep 1.5B's prompt uses a cursor marker. Its layout is otherwise known from `run_model.py`.
-- The license of Zed's `zeta_prompt` crate (GPL risk), and whether `zed-zeta-bindings` can be used as a reference.
+- ~~Whether Sweep 1.5B's prompt uses a cursor marker.~~ Answered (2026-11-16, the model repos' scripts): v1 (0.5B/1.5B, `run_model.py`) has none; v2 (7B, `inference.py`) has `<|cursor|>`.
+- **Open (Phase 3b ruling 3):** which Sweep layout the 0.5B/1.5B GGUFs were trained on. The official script is v1, but Sweep's own local server feeds those models the v2 layout. The Phase 3b smoke test compares them; the model id decides the variant (`v2` or `7b` in the name gives v2).
+- ~~The license of Zed's `zeta_prompt` crate (GPL risk), and whether `zed-zeta-bindings` can be used as a reference.~~ Answered (2026-11-16): Zed's prompt builder (`zeta_prompt`, `edit_prediction`) is GPL-3.0-or-later, so it is not read or ported. The Zeta 2.1 model card is Apache-2.0; `zeta21.ts` is written from the card and a live probe (clean room).
 - Granite 4.1 FIM token order, and llama.cpp support for Mellum2.
 - Whether llama.cpp's `--spm-infill` lets Mellum (suffix-first) use `/infill` with `input_extra`, which would be cheaper than a hand-built `/completion` prompt.
 - Whether `llama serve` and `llama-server` are aliases in the user's installed llama.cpp build.

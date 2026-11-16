@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { EditHistory, RecentSnippets, renderDiff } from '../../../src/nextEdit/history';
+import { EditHistory, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
 
 test('renderDiff renders zero-context hunks with 1-based numbers', () => {
   expect(renderDiff('f.py', 'a\nb\nc\n', 'a\nB\nc\n')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
@@ -205,4 +205,145 @@ test('when the merged diff is too large, the edit becomes its own entry', () => 
   const e = h.entries();
   expect(e).toHaveLength(2);
   expect(e[1].text.startsWith('--- f\n+++ f\n@@ -1,1 +1,1 @@\n-y0\n+z0\n@@ -201,200 +201,200 @@\n')).toBe(true);
+});
+
+test('entries carry zero-context hunks', () => {
+  const h = new EditHistory();
+  h.open('f', 'a\nb\nc\n');
+  h.commit('f', 'a\nB\nB2\nc\n');
+  const e = h.entries();
+  expect(e).toHaveLength(1);
+  expect(e[0].hunks).toEqual([{ oldStart: 1, newStart: 1, oldLines: ['b'], newLines: ['B', 'B2'] }]);
+  expect(e[0].text).toBe('--- f\n+++ f\n@@ -2,1 +2,2 @@\n-b\n+B\n+B2');
+});
+
+test('a pure insertion has an empty old side', () => {
+  const h = new EditHistory();
+  h.open('f', 'a\nc\n');
+  h.commit('f', 'a\nb\nc\n');
+  expect(h.entries()[0].hunks).toEqual([{ oldStart: 1, newStart: 1, oldLines: [], newLines: ['b'] }]);
+});
+
+test('a pure deletion has an empty new side', () => {
+  const h = new EditHistory();
+  h.open('f', 'a\nb\nc\n');
+  h.commit('f', 'a\nc\n');
+  expect(h.entries()[0].hunks).toEqual([{ oldStart: 1, newStart: 1, oldLines: ['b'], newLines: [] }]);
+});
+
+test('previous gives the text before the latest change', () => {
+  const h = new EditHistory();
+  h.open('f', 'a\nb\nc\n');
+  h.commit('f', 'a\nB\nB2\nc\n');
+  expect(h.previous('f')).toEqual({
+    lines: ['a', 'b', 'c'],
+    hunks: [{ oldStart: 1, newStart: 1, oldLines: ['b'], newLines: ['B', 'B2'] }],
+  });
+  expect(h.previous('other')).toBeUndefined();
+});
+
+test('previous follows a merged entry', () => {
+  const h = new EditHistory();
+  h.open('f', 'x = 1\ny = 2\n');
+  h.commit('f', 'x = 12\ny = 2\n');
+  h.commit('f', 'x = 123\ny = 2\n');
+  expect(h.entries()).toHaveLength(1);
+  expect(h.previous('f')).toEqual({
+    lines: ['x = 1', 'y = 2'],
+    hunks: [{ oldStart: 0, newStart: 0, oldLines: ['x = 1'], newLines: ['x = 123'] }],
+  });
+});
+
+test('previous is the newest entry of that path only', () => {
+  const h = new EditHistory();
+  h.open('a', '1\n');
+  h.open('b', 'p\n');
+  h.commit('a', '2\n');
+  h.commit('b', 'q\n');
+  expect(h.previous('a')?.lines).toEqual(['1']);
+  expect(h.previous('b')?.lines).toEqual(['p']);
+});
+
+test('previous is undefined after a commit that exceeded the diff budget', () => {
+  const h = new EditHistory();
+  const lines = Array.from({ length: 3000 }, (_, i) => `x${i} = ${i}`);
+  h.open('f', lines.join('\n') + '\n');
+  h.commit('f', lines.join('\n') + '\nextra\n');
+  expect(h.previous('f')).toBeDefined();
+  h.commit('f', lines.map((l) => `    ${l}`).join('\n') + '\n');
+  expect(h.previous('f')).toBeUndefined();
+  // A later recorded edit makes the newest entry describe the text again.
+  h.commit('f', lines.map((l) => `    ${l}`).join('\n').replace('x0 = 0', 'x0 = 1') + '\n');
+  expect(h.previous('f')?.hunks).toHaveLength(1);
+});
+
+test('previous is undefined after a commit that undoes the last edit', () => {
+  const h = new EditHistory();
+  h.open('f', 'x = 1\ny = 2\n');
+  h.commit('f', 'x = 12\ny = 2\n');
+  expect(h.previous('f')).toBeDefined();
+  h.commit('f', 'x = 1\ny = 2\n');
+  expect(h.entries()).toEqual([]);
+  expect(h.previous('f')).toBeUndefined();
+});
+
+test('previous is undefined once the entry is evicted, and after forget and clear', () => {
+  const h = new EditHistory({ maxEntries: 1 });
+  h.open('a', '1\n');
+  h.open('b', 'p\n');
+  h.commit('a', '2\n');
+  h.commit('b', 'q\n');
+  expect(h.previous('a')).toBeUndefined();
+  expect(h.previous('b')).toBeDefined();
+  h.forget('b');
+  expect(h.previous('b')).toBeUndefined();
+  h.open('c', 'x\n');
+  h.commit('c', 'y\n');
+  h.clear();
+  expect(h.previous('c')).toBeUndefined();
+});
+
+test('previous drops a final newline and CRLF', () => {
+  const h = new EditHistory();
+  h.open('f', 'a\r\nb');
+  h.commit('f', 'a\r\nB');
+  expect(h.previous('f')?.lines).toEqual(['a', 'b']);
+  h.open('g', '');
+  h.commit('g', 'x');
+  expect(h.previous('g')?.lines).toEqual([]);
+});
+
+test('spanBefore maps across an insertion', () => {
+  const hunks = [{ oldStart: 1, newStart: 1, oldLines: ['b'], newLines: ['B', 'B2'] }];
+  expect(spanBefore(hunks, { start: 3, end: 4 })).toEqual({ start: 2, end: 3 });
+  expect(spanBefore(hunks, { start: 2, end: 3 })).toEqual({ start: 1, end: 2 });
+  expect(spanBefore(hunks, { start: 0, end: 0 })).toEqual({ start: 0, end: 0 });
+  expect(spanBefore(hunks, { start: 0, end: 1 })).toEqual({ start: 0, end: 1 });
+});
+
+test('spanBefore maps across a deletion and several hunks', () => {
+  const del = [{ oldStart: 1, newStart: 1, oldLines: ['b', 'c'], newLines: [] }];
+  expect(spanBefore(del, { start: 1, end: 2 })).toEqual({ start: 3, end: 4 });
+  expect(spanBefore(del, { start: 0, end: 2 })).toEqual({ start: 0, end: 4 });
+  const two = [
+    { oldStart: 0, newStart: 0, oldLines: [], newLines: ['n'] },
+    { oldStart: 4, newStart: 5, oldLines: ['o'], newLines: [] },
+  ];
+  expect(spanBefore(two, { start: 6, end: 8 })).toEqual({ start: 6, end: 8 });
+  expect(spanBefore(two, { start: 2, end: 5 })).toEqual({ start: 1, end: 5 });
+});
+
+test('maxEntries can be lowered', () => {
+  const h = new EditHistory();
+  const lines = Array.from({ length: 8 }, (_, i) => `l${i}`);
+  h.open('f', lines.join('\n') + '\n');
+  for (let i = 0; i < 5; i++) {
+    lines[i] = `L${i}`;
+    h.commit('f', lines.join('\n') + '\n');
+  }
+  expect(h.entries()).toHaveLength(5);
+  h.maxEntries = 2;
+  lines[5] = 'L5';
+  h.commit('f', lines.join('\n') + '\n');
+  expect(h.entries().map((e) => e.text.split('\n')[3])).toEqual(['-l4', '-l5']);
 });

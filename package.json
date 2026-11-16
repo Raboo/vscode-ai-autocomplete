@@ -253,6 +253,63 @@
           "default": 10000,
           "description": "Deadline for one Next Edit request."
         },
+        "aiAutocomplete.nextEdit.format": {
+          "type": "string",
+          "scope": "resource",
+          "default": "auto",
+          "enum": ["auto", "chatXtab", "sweep", "zeta21"],
+          "enumDescriptions": [
+            "Picks the format by the model name.",
+            "Chat prompt with the chatXtab tags (our own wording).",
+            "Sweep next-edit models on a raw completions route.",
+            "Zeta 2.1 on a raw completions route."
+          ],
+          "description": "Prompt and answer format of Next Edit requests."
+        },
+        "aiAutocomplete.nextEdit.display": {
+          "type": "string",
+          "scope": "resource",
+          "default": "auto",
+          "enum": ["auto", "native", "decorations"],
+          "enumDescriptions": [
+            "Native inline edits when the proposed API is enabled, otherwise decorations.",
+            "Native ghost text and inline edits (needs the proposed API).",
+            "Editor decorations; works without the proposed API."
+          ],
+          "description": "How Next Edit suggestions are shown."
+        },
+        "aiAutocomplete.nextEdit.regionLinesAbove": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 5,
+          "description": "Lines above the cursor the model may rewrite."
+        },
+        "aiAutocomplete.nextEdit.regionLinesBelow": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 0,
+          "maximum": 40,
+          "default": 10,
+          "description": "Lines below the cursor the model may rewrite."
+        },
+        "aiAutocomplete.nextEdit.historySize": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 5,
+          "description": "Number of recent edit diffs sent to the model."
+        },
+        "aiAutocomplete.nextEdit.contextBudget": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 1000,
+          "maximum": 16000,
+          "default": 3500,
+          "description": "Prompt budget in tokens, split between the file, the edit history and recently viewed snippets."
+        },
         "aiAutocomplete.fim.backend": {
           "type": "string",
           "scope": "resource",
@@ -385,6 +442,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.openSettings",
+        "title": "Open Settings",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.setApiKey",
         "title": "Set API Key",
         "category": "AI Autocomplete"
@@ -418,6 +480,16 @@
         "command": "aiAutocomplete.enableNativeNextEdit",
         "title": "Enable Native Next Edit UI",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditTab",
+        "title": "Next Edit: Jump or Apply (internal)",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditDismiss",
+        "title": "Next Edit: Dismiss (internal)",
+        "category": "AI Autocomplete"
       }
     ],
     "menus": {
@@ -429,9 +501,29 @@
         {
           "command": "aiAutocomplete.nextEditAccepted",
           "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditTab",
+          "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditDismiss",
+          "when": "false"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "aiAutocomplete.nextEditTab",
+        "key": "tab",
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !editorHasMultipleSelections && !inlineSuggestionVisible && !inlineEditIsVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly"
+      },
+      {
+        "command": "aiAutocomplete.nextEditDismiss",
+        "key": "escape",
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasMultipleSelections && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

@@ -1,6 +1,7 @@
+import { CHARS_PER_TOKEN } from '../completion/effective';
+
 export const REGION_ABOVE = 5;
 export const REGION_BELOW = 10;
-export const REGION_MAX_LINES = 25;
 export const PAGE_LINES = 10;
 
 /** Inclusive 0-based line range. */
@@ -10,12 +11,21 @@ export interface LineSpan {
 }
 
 /** The lines the model may rewrite: a few above the cursor, more below. */
-export function editableRegion(cursorLine: number, lineCount: number): LineSpan {
+export function editableRegion(cursorLine: number, lineCount: number, above = REGION_ABOVE, below = REGION_BELOW): LineSpan {
   const lastLine = Math.max(0, lineCount - 1);
   const cursor = Math.min(Math.max(0, cursorLine), lastLine);
-  const start = Math.max(0, cursor - REGION_ABOVE);
-  const end = Math.min(lastLine, cursor + REGION_BELOW, start + REGION_MAX_LINES - 1);
+  const start = Math.max(0, cursor - above);
+  const end = Math.min(lastLine, cursor + below);
   return { start, end };
+}
+
+/** Prompt budgets in chars for the file, the edit history and the viewed snippets. */
+export interface NextEditBudgets { fileChars: number; historyChars: number; snippetsChars: number }
+
+/** Splits `contextTokens` worth of chars 3/7 file, 2/7 history, 2/7 snippets, each rounded. */
+export function nextEditBudgets(contextTokens: number): NextEditBudgets {
+  const chars = contextTokens * CHARS_PER_TOKEN;
+  return { fileChars: Math.round((chars * 3) / 7), historyChars: Math.round((chars * 2) / 7), snippetsChars: Math.round((chars * 2) / 7) };
 }
 
 /**

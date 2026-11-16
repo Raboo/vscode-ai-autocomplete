@@ -1,11 +1,13 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { commit, commitWhen, configure, registerProbe, showAtEnd, sleep, trigger, unconfigure, waitFor } from './helpers';
-import { NEXT_EDIT_TAG, startMockServer, userMessage, type MockOptions, type MockServer, type RecordedRequest } from './mockServer';
+import { NEXT_EDIT_TAG, SWEEP_TAG, ZETA_TAG, startMockServer, userMessage, type MockOptions, type MockServer, type RecordedRequest } from './mockServer';
 
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
   nativeNextEdit: boolean;
+  /** The inline edit shown as decorations, if any. */
+  nextEditPending(): { uri: string; version: number; edit: { startLine: number; endLine: number; newLines: string[] } } | undefined;
 }
 
 type Launch = 'main' | 'proposed';
@@ -23,7 +25,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend'];
+const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -55,6 +57,13 @@ const RENAMED = CIRCLE.map((l, i) => (i === 7 ? 'def circle_circumference(radius
 /** A chatXtab answer: the rewritten region in one fenced block. The documents here are short, so the region is the whole file. */
 const fence = (lines: string[]): string[] => ['```\n', `${lines.join('\n')}\n`, '```\n'];
 
+/** The model's edit of CIRCLE: lines 7 and 8 replaced. */
+const RENAME_EDIT = { startLine: 7, endLine: 9, newLines: [RENAMED[7], RENAMED[8]] };
+/** How long a decoration takes to appear once the mock has the request. */
+const PENDING_WAIT_MS = 2000;
+/** Past the rejection cooldown (REJECTION_COOLDOWN_MS is 5000) that Esc starts, during which nothing is asked. */
+const REJECTION_COOLDOWN_WAIT_MS = 5200;
+
 const isChat = (r: RecordedRequest): boolean => r.method === 'POST' && r.path === '/v1/chat/completions';
 const isNextEdit = (r: RecordedRequest): boolean => isChat(r) && userMessage(r.body).includes(NEXT_EDIT_TAG);
 const nextEdits = (m: MockServer) => m.requests.filter(isNextEdit);
@@ -69,6 +78,12 @@ const nextEditsFor = (m: MockServer, doc: vscode.TextDocument) => nextEdits(m).f
 /** The mock's requests without their bodies, for failure messages. */
 const seen = (m: MockServer): string =>
   JSON.stringify(m.requests.map((r) => `${r.method} ${r.path}${userMessage(r.body).includes(NEXT_EDIT_TAG) ? ' (next edit)' : ''}`));
+
+/** The POST requests the mock saw on `path`. */
+const posts = (m: MockServer, path: string): RecordedRequest[] => m.requests.filter((r) => r.method === 'POST' && r.path === path);
+/** Model names `auto` picks the raw formats for. */
+const SWEEP_MODEL = 'sweep-next-edit-1.5b';
+const ZETA_MODEL = 'zeta-2.1';
 
 /** Untitled documents: the test launch opens no folder, and Next Edit reads unsaved files and workspace files only. */
 const open = async (lines: string[]): Promise<vscode.TextEditor> =>
@@ -86,6 +101,21 @@ async function typeKeys(editor: vscode.TextEditor, text: string): Promise<void> 
   const length = doc.getText().length - (doc.offsetAt(selection.end) - doc.offsetAt(selection.start)) + text.length;
   for (const key of text) await vscode.commands.executeCommand('type', { text: key });
   assert.ok(await waitFor(() => editor.document.getText().length === length, 1000), `typing ${JSON.stringify(text)} did not reach ${editor.document.uri.toString()}`);
+}
+
+/** Runs a command that shows a quick pick and accepts its first item. */
+async function pickFirst(command: string): Promise<void> {
+  let done = false;
+  const run = Promise.resolve(vscode.commands.executeCommand(command)).then(() => {
+    done = true;
+  });
+  // Accepting before the quick pick shows does nothing, so keep accepting until the command finishes.
+  const picked = await waitFor(() => {
+    if (!done) void vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+    return done;
+  }, 3000);
+  assert.ok(picked, `${command}: no quick pick item was accepted`);
+  await run;
 }
 
 /** The rename's last step on CIRCLE: the user selects `r` on line 4 and types `radius`; the cursor stays on that line. */
@@ -114,6 +144,34 @@ async function withNextEdit(nextEdit: MockOptions['nextEdit'], fn: (m: MockServe
     await m.close();
   }
 }
+
+/**
+ * One backend for Next Edit only, with FIM off: the controller then asks after the edit pause on its own (a raw FIM
+ * backend's answer would never be empty, so FIM would always win). The model comes from the mock's alias.
+ */
+async function withRawNextEdit(
+  options: MockOptions,
+  backend: (m: MockServer) => Record<string, unknown>,
+  fn: (m: MockServer) => Promise<void>,
+  settings: Record<string, unknown> = {},
+): Promise<void> {
+  const m = await startMockServer(options);
+  try {
+    await configure({
+      backends: [{ id: BACKEND_ID, ...backend(m) }],
+      'fim.enabled': false,
+      'nextEdit.backend': BACKEND_ID,
+      'nextEdit.format': 'auto',
+      ...settings,
+    });
+    await fn(m);
+  } finally {
+    await m.close();
+  }
+}
+
+const llamaCpp = (m: MockServer): Record<string, unknown> => ({ kind: 'llamacpp', baseUrl: m.baseUrl });
+const lmStudio = (m: MockServer): Record<string, unknown> => ({ kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${m.baseUrl}/v1` });
 
 suite('Next Edit', () => {
   let api: Api;
@@ -176,7 +234,7 @@ suite('Next Edit', () => {
     });
   });
 
-  testIn('main', 'without the proposed API an edit elsewhere is not applied', async () => {
+  testIn('main', 'display native drops an edit elsewhere without the proposed API', async () => {
     await withNextEdit({ content: fence(RENAMED) }, async (m) => {
       const editor = await openAndRename();
 
@@ -185,6 +243,107 @@ suite('Next Edit', () => {
       await commit();
 
       assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
+    }, { 'nextEdit.display': 'native' });
+  });
+
+  testIn('main', 'without the proposed API, auto shows an edit elsewhere as decorations', async () => {
+    await withNextEdit({ content: fence(RENAMED) }, async (m) => {
+      const editor = await openAndRename();
+
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+      assert.equal(api.nextEditPending()?.uri, editor.document.uri.toString());
+    }, { 'nextEdit.display': 'auto' });
+  });
+
+  /** CIRCLE renamed by the user, with the model's rename of the functions below shown as decorations. */
+  async function withPendingRename(fn: (editor: vscode.TextEditor, m: MockServer) => Promise<void>): Promise<void> {
+    await withNextEdit({ content: fence(RENAMED) }, async (m) => {
+      const editor = await openAndRename();
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+      await fn(editor, m);
+    }, { 'nextEdit.display': 'decorations' });
+  }
+
+  test('the edit is pending and Tab jumps, then applies', async () => {
+    await withPendingRename(async (editor) => {
+      assert.equal(editor.selection.active.line, 4);
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      // The first Tab only moves the cursor to the edit.
+      assert.equal(editor.selection.active.line, 7);
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), RENAMED.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
+      // The cursor ends after the last new line.
+      assert.equal(editor.selection.active.line, 8);
+      assert.equal(editor.selection.active.character, RENAMED[8].length);
+    });
+  });
+
+  test('Esc dismisses a pending edit', async () => {
+    await withPendingRename(async (editor, m) => {
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditDismiss');
+      const dismissedAt = Date.now();
+      assert.equal(api.nextEditPending(), undefined);
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+
+      // Esc is a rejection: a cursor move shortly after the edit would ask again, but not during the cooldown.
+      const asked = nextEdits(m).length;
+      await vscode.commands.executeCommand('cursorUp');
+      assert.equal(editor.selection.active.line, 3);
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(nextEdits(m).length, asked, `mock saw ${seen(m)}`);
+      // The rest of the cooldown, which would keep the next tests' requests from being sent.
+      await sleep(Math.max(0, dismissedAt + REJECTION_COOLDOWN_WAIT_MS - Date.now()));
+    });
+  });
+
+  test('typing clears a pending edit', async () => {
+    await withPendingRename(async (editor, m) => {
+      // Otherwise the request for the typed version would show the rename again.
+      m.setNextEdit({ content: ['NO_CHANGE'] });
+      editor.selection = new vscode.Selection(0, CIRCLE[0].length, 0, CIRCLE[0].length);
+      await typeKeys(editor, ' ');
+      const typed = CIRCLE.map((l, i) => (i === 0 ? `${l} ` : l)).join('\n');
+      assert.equal(editor.document.getText(), typed);
+      assert.equal(api.nextEditPending(), undefined);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), typed);
+    });
+  });
+
+  test('a snooze clears a pending edit', async () => {
+    await withPendingRename(async (editor) => {
+      try {
+        await pickFirst('aiAutocomplete.snooze'); // "15 minutes"
+        assert.equal(api.nextEditPending(), undefined);
+        await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+        assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      } finally {
+        await pickFirst('aiAutocomplete.snooze'); // "Resume now"
+      }
+    });
+  });
+
+  testIn('proposed', 'display decorations wins over native', async () => {
+    await withPendingRename(async (editor) => {
+      // The commit command would accept a visible inline edit wherever it is: none is shown.
+      for (let i = 0; i < 20; i++) {
+        await commit();
+        await sleep(50);
+      }
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
     });
   });
 
@@ -322,5 +481,78 @@ suite('Next Edit', () => {
       // The current file's own diff is always sent.
       assert.ok(off.user.includes(`--- ${pathOf(off.b)}\n`), off.user);
     });
+  });
+
+  test('sweep on llama.cpp', async () => {
+    // The window is the whole two-line document; the answer adds a line after the cursor line, so it shows as ghost text.
+    const accepted = [...GREETED, RETURN_LINE].join('\n');
+    await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: [`${GREETED.join('\n')}\n`, `${RETURN_LINE}\n`] } }, llamaCpp, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => posts(m, '/completion').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await commitWhen(editor, (t) => t === accepted);
+
+      assert.equal(editor.document.getText(), accepted);
+      const body = posts(m, '/completion')[0].body ?? {};
+      assert.ok(typeof body.prompt === 'string' && body.prompt.includes('<|file_sep|>current/') && body.prompt.includes(SWEEP_TAG), JSON.stringify(body.prompt));
+      assert.equal(body.temperature, 0);
+      assert.ok(Array.isArray(body.stop) && body.stop.includes('<|file_sep|>'), JSON.stringify(body.stop));
+      assert.ok(!('top_p' in body), JSON.stringify(body));
+      assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${seen(m)}`);
+    });
+  });
+
+  test('zeta21 on an OpenAI-compatible server', async () => {
+    const accepted = [...GREETED, RETURN_LINE].join('\n');
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ['<|marker_1|>', accepted, '<|marker_2|>'] } }, lmStudio, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => posts(m, '/v1/completions').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await commitWhen(editor, (t) => t === accepted);
+
+      assert.equal(editor.document.getText(), accepted);
+      const body = posts(m, '/v1/completions')[0].body ?? {};
+      assert.ok(typeof body.prompt === 'string' && body.prompt.includes(ZETA_TAG) && body.prompt.includes('<|marker_1|>'), JSON.stringify(body.prompt));
+      assert.equal(body.temperature, 0);
+      assert.equal(body.model, ZETA_MODEL);
+      assert.ok(Array.isArray(body.stop) && body.stop.includes('<[end▁of▁sentence]>'), JSON.stringify(body.stop));
+      assert.ok(!('top_p' in body) && !('top_k' in body), JSON.stringify(body));
+      assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${seen(m)}`);
+    });
+  });
+
+  test('a reserved string sends nothing', async () => {
+    // `<|file_sep|>` in the window would become one of Sweep's control tokens.
+    await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: ['x\n'] } }, llamaCpp, async (m) => {
+      const reserved = await open(['SEP = "<|file_sep|>"', 'total = 1']);
+      await typeKeys(reserved, '0');
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(m.requests.filter((r) => r.method === 'POST').length, 0, `mock saw ${seen(m)}`);
+
+      // The same without the reserved string asks.
+      const plain = await open(['SEP = "file"', 'total = 1']);
+      await typeKeys(plain, '0');
+      assert.ok(await waitFor(() => posts(m, '/completion').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+    });
+  });
+
+  test('a chat-only backend skips raw formats', async () => {
+    // Strata has no raw completion route, so the sweep format cannot be sent to it.
+    await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+      const editor = await open(['total = 1']);
+
+      await typeKeys(editor, '0');
+      assert.ok(await waitFor(() => m.requests.some((r) => isChat(r) && !isNextEdit(r)), REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(nextEdits(m).length, 0, `mock saw ${seen(m)}`);
+      assert.equal(posts(m, '/v1/completions').length + posts(m, '/completion').length, 0, `mock saw ${seen(m)}`);
+
+      // With the format back on auto (chatXtab), the same asks.
+      await configure({ 'nextEdit.format': 'auto' });
+      await typeKeys(editor, '1');
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+    }, { 'nextEdit.format': 'sweep' });
   });
 });

@@ -16,12 +16,15 @@ const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
 const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
+const ENABLE_NATIVE: MenuEntry = { label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' };
 const MENU: MenuEntry[] = [
   { label: 'Toggle completions on/off', id: 'toggle' },
   { label: 'Snooze...', id: 'snooze' },
   { label: 'Select backend...', id: 'selectBackend' },
   NEXT_EDIT,
+  ENABLE_NATIVE,
   MANAGE,
+  { label: 'Settings...', id: 'openSettings' },
   { label: 'Set API key...', id: 'setApiKey' },
   RETRY,
   { label: 'Show log', id: 'showLog' },
@@ -30,10 +33,10 @@ const MENU: MenuEntry[] = [
 
 /**
  * The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed.
- * "Next Edit: <backend>" (or off) follows the backend selection. With no backend configured, "Manage backends..." comes before both.
+ * "Next Edit: <backend>" (or off) follows the backend selection, then "Enable native Next Edit UI..." unless the native UI is already on. With no backend configured, "Manage backends..." comes before both.
  */
-export function menuEntries(shown: StatusState, backendCount: number, nextEditBackend: string | undefined): MenuEntry[] {
-  const menu = MENU.map((e) => (e === NEXT_EDIT ? { ...e, label: `Next Edit: ${nextEditBackend ?? 'off'}` } : e));
+export function menuEntries(shown: StatusState, backendCount: number, nextEditBackend: string | undefined, nativeNextEdit: boolean): MenuEntry[] {
+  const menu = MENU.filter((e) => !(nativeNextEdit && e === ENABLE_NATIVE)).map((e) => (e === NEXT_EDIT ? { ...e, label: `Next Edit: ${nextEditBackend ?? 'off'}` } : e));
   let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
   if (backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
   return list;

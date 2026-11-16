@@ -7,8 +7,8 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 0. Scaffold | Project skeleton, license files, CI, GitHub automation, AI-session handoff | [Phase 0–1 plan](superpowers/plans/2026-11-13-ai-autocomplete-phase0-1.md) | released in [v0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.1.0) |
 | 1. FIM core (v0.1) | llama.cpp `/infill`, openaiCompat, Mistral/Codestral; coder-family presets; full FIM pipeline; status bar; SecretStorage keys; `localOnly`; backends page ([design](superpowers/specs/2026-11-14-backend-manager-design.md)) | [Phase 0–1 plan](superpowers/plans/2026-11-13-ai-autocomplete-phase0-1.md) | released in [v0.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.1.0) |
 | 2. Chat path and thinking control (v0.2) | Hole-filler, `thinking.ts` and capability learning, OpenRouter backend, model-family presets, Strata host flavor | [Phase 2 plan](superpowers/plans/2026-11-15-phase2-chat-thinking.md), [revisions](superpowers/plans/2026-11-15-phase2-revisions.md) | released in [v0.2.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.2.0) |
-| 3a. Next Edit core, chatXtab, native display (v0.3) | Edit history, region, trigger; chatXtab format; ghost text for insertions; native inline edits with the argv.json opt-in | [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md) | implemented on `feat/next-edit` (not merged or released) |
-| 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | not written yet | not started |
+| 3a. Next Edit core, chatXtab, native display (v0.3) | Edit history, region, trigger; chatXtab format; ghost text for insertions; native inline edits with the argv.json opt-in | [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md) | released in [v0.3.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.3.0) |
+| 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md) | implemented on `feat/next-edit-formats` (not merged or released) |
 | 4. Local model helper (v0.4) | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | not written yet | not started |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
@@ -63,3 +63,14 @@ Phase 3a (Publish step 4 of the [Phase 3a plan](superpowers/plans/2026-11-15-pha
 - A Markdown file with a fenced code block: editing next to the block offers no deletion (no Next Edit request near a ```` ``` ```` line).
 - A multi-root workspace with the same relative path in two folders (for example `src/index.ts` in both): edits in one never show up as the other's diff, and the prompt names the folder.
 - With Next Edit off, format a large file (thousands of lines, all re-indented): no stall; with Next Edit on, the same change records no history entry and nothing stalls.
+
+Phase 3b (Publish step 4 of the [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md), run on the PR's CI `.vsix`):
+
+- LM Studio with `randmaru/zeta-2.1-mlx` as the Next Edit model (`nextEditModel`): a rename propagates, and an unrelated edit offers nothing.
+- Sweep 1.5B (GGUF in LM Studio or llama.cpp): a rename propagates. Note whether the v1 or the v2 layout answers better (force v2 with a model name containing `v2`; the spec's "To verify" has the open question).
+- Decorations without the opt-in: Tab jumps to the edit and then applies it, Esc dismisses it, and Tab still indents, accepts ghost text and moves through snippet placeholders.
+- `nextEdit.display: decorations` with the opt-in active shows decorations, not the native view.
+- A file in this repo that contains `<|file_sep|>` gets no Next Edit request with a Sweep model (the Debug log says why).
+- The status-bar menu shows **Enable native Next Edit UI...** until the opt-in is active, and **Settings...** opens the Settings page filtered to this extension.
+- A Zeta and a Sweep edit near the end of a file that ends with a newline keeps the final newline.
+- Next Edit still fires with FIM on against the same llama.cpp/LM Studio server.

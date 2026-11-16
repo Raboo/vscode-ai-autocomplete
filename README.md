@@ -75,9 +75,9 @@ Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set
 **Stopping and removing.**
 
 - **AI Autocomplete: Stop Local Models** stops the llama-server processes now. They start again with the next VS Code start if their backends are still selected. It does not touch LM Studio.
-- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A model imported into LM Studio keeps its own copy of the data there, which you remove in LM Studio. A backend whose file was deleted stops working until you set it up again.
+- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A model imported into LM Studio is a hard link to the file, so the data stays on disk until you also remove the model in LM Studio. A backend whose file was deleted stops working until you set it up again.
 
-The only request that leaves your machine is the download from `huggingface.co` (which redirects to Hugging Face's file servers). After that, the extension talks to `127.0.0.1` only.
+The only request that leaves your machine is the download from `huggingface.co` (which redirects to Hugging Face's file servers). Setup sends nothing else off the machine, and the local backend it adds is on `127.0.0.1`.
 
 ### Other backends
 

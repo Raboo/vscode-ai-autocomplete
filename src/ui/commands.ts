@@ -8,7 +8,7 @@ import { usesFor, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
-import { menuEntries } from './statusModel';
+import { menuEntries, menuInputs } from './statusModel';
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -53,11 +53,11 @@ export async function useBackend(id: string): Promise<void> {
   if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
 }
 
-/** Selects the Next Edit backend ("" turns Next Edit off), in the same place `useBackend` writes. Next Edit turned off is turned back on. */
+/** Selects the Next Edit backend, in the same place `useBackend` writes. Next Edit turned off is turned back on. */
 export async function useNextEditBackend(id: string): Promise<void> {
   const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
-  if (id !== '' && !readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
+  if (!readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
 }
 
 /** The command argument as OpenOptions; anything else opens the page as it is. */
@@ -91,12 +91,13 @@ async function pickBackend(placeHolder: string, use?: BackendUse): Promise<strin
 
 const OFF = 'Off';
 
-/** The backends serving `use` plus Off, the current one marked; resolves to the picked id, OFF, or undefined when dismissed. */
-async function pickBackendOrOff(placeHolder: string, use: BackendUse, current: string | undefined): Promise<string | undefined> {
+/** The backends serving `use` plus Off, the current choice marked; resolves to the picked id, OFF, or undefined when dismissed. */
+async function pickBackendOrOff(placeHolder: string, use: BackendUse, current: string | undefined, off: boolean): Promise<string | undefined> {
   const ids = pickableBackends(use);
   if (!ids) return undefined;
+  const mark = (yes: boolean) => (yes ? { description: 'current' } : {});
   const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(
-    [...ids.map((id) => ({ label: id, ...(id === current ? { description: 'current' } : {}) })), { label: OFF, ...(current === undefined ? { description: 'current' } : {}) }],
+    [...ids.map((id) => ({ label: id, ...mark(!off && id === current) })), { label: OFF, ...mark(off) }],
     { placeHolder },
   );
   return pick?.label;
@@ -111,15 +112,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const s = readSettings().settings;
-      const entries = menuEntries(d.status.state(), {
-        backendCount: s.backends.length,
-        enabled: s.enabled,
-        // "none": completions are on, but no backend serves them.
-        ...(s.fim.enabled ? { completionBackend: s.fim.backendId ?? 'none' } : {}),
-        ...(s.nextEdit.enabled && s.nextEdit.backendId !== undefined ? { nextEditBackend: s.nextEdit.backendId } : {}),
-        nativeNextEdit: d.nativeNextEdit(),
-      });
+      const entries = menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit()));
       const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
@@ -151,18 +144,18 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       else await d.snooze.set(Date.now() + pick.ms, true);
       d.status.refresh();
     }),
-    // Off turns completions off and keeps the backend, so picking one again turns them back on.
+    // Off turns the feature off and keeps its backend, so picking one again turns it back on.
     reg('selectBackend', async () => {
       const { fim } = readSettings().settings;
-      const pick = await pickBackendOrOff('Select the completion backend', 'completions', fim.enabled ? fim.backendId : undefined);
+      const pick = await pickBackendOrOff('Select the completion backend', 'completions', fim.backendId, !fim.enabled);
       if (pick === undefined) return;
       await (pick === OFF ? setSwitch('fim.enabled', false) : useBackend(pick));
     }),
     reg('selectNextEditBackend', async () => {
       const { nextEdit } = readSettings().settings;
-      const pick = await pickBackendOrOff('Select the Next Edit backend', 'nextEdit', nextEdit.enabled ? nextEdit.backendId : undefined);
+      const pick = await pickBackendOrOff('Select the Next Edit backend', 'nextEdit', nextEdit.backendId, !nextEdit.enabled || nextEdit.backendId === undefined);
       if (pick === undefined) return;
-      await useNextEditBackend(pick === OFF ? '' : pick);
+      await (pick === OFF ? setSwitch('nextEdit.enabled', false) : useNextEditBackend(pick));
     }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
     reg('openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`)),

@@ -30,6 +30,22 @@ export interface MenuEntry { label: string; id: string }
 /** What the menu shows besides the status; a backend is undefined when that feature is off. */
 export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean }
 
+type MenuSettings = { enabled: boolean; backends: unknown[]; fim: { enabled: boolean; backendId?: string }; nextEdit: { enabled: boolean; backendId?: string } };
+
+/**
+ * The menu's inputs from the settings. The entries name their backends while the switch is off: that is what "Turn on" brings back.
+ * Completions on without a backend serving them read "none"; Next Edit without a backend is simply off.
+ */
+export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs {
+  return {
+    backendCount: s.backends.length,
+    enabled: s.enabled,
+    ...(s.fim.enabled ? { completionBackend: s.fim.backendId ?? 'none' } : {}),
+    ...(s.nextEdit.enabled && s.nextEdit.backendId !== undefined ? { nextEditBackend: s.nextEdit.backendId } : {}),
+    nativeNextEdit,
+  };
+}
+
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };

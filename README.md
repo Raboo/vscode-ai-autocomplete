@@ -75,7 +75,7 @@ You can list several backends and switch between them with **AI Autocomplete: Se
 Click **AI** in the status bar for the menu:
 
 - **Turn off AI Autocomplete** stops completions and Next Edit together (the `aiAutocomplete.enabled` setting); **Turn on AI Autocomplete** brings back exactly what you had, because both backend choices stay. The status bar shows the off icon meanwhile. **AI Autocomplete: Turn On/Off** in the Command Palette does the same.
-- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit. With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions off".
+- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions off".
 - **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
 
 ### What a backend is used for
@@ -203,7 +203,7 @@ With the opt-in (and `display` on `auto` or `native`), an edit away from the cur
 
 A value outside its limits is ignored, and a warning names it. The region settings apply to `chatXtab` and `zeta21`, not to Sweep.
 
-**Status bar menu:** besides **Next Edit: <backend>**, the menu has **Enable native Next Edit UI...** appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
+**Status bar menu:** besides **Next Edit: <backend>**, the menu has **Enable native Next Edit UI...**, which appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
 
 **A Zeta or Sweep model as the completion model:** these models do Next Edit only. Choosing one as a backend's **Model** (Completions ticked) shows a warning on the page and in **Test connection**, for example "zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions" (for a Sweep model: "... is a Sweep Next Edit model; ..."), with the hint "untick Completions, or choose a completion model". Ghost text also cuts an answer at the first Next Edit marker token (`<|marker_N|>`, `<|user_cursor|>`, `<|file_sep|>`, `<|endoftext|>`, `<|cursor|>`), so those tokens never reach the editor, and an answer that starts with one shows nothing. Untick **Completions** for that backend and tick only **Next Edit**, or choose a coder model as its completion model.
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { activity, displayState, menuEntries, noCompletionBackend, type MenuInputs } from '../../src/ui/statusModel';
+import { activity, displayState, menuEntries, menuInputs, noCompletionBackend, type MenuInputs } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -71,6 +71,29 @@ describe('menuEntries', () => {
     expect(ids('error', 0).slice(0, 2)).toEqual(['manageBackends', 'retry']);
     expect(ids('snoozed', 0).slice(0, 2)).toEqual(['manageBackends', 'resume']);
     for (const state of ['idle', 'error', 'snoozed'] as const) expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+  });
+});
+
+describe('menuInputs', () => {
+  const S = (patch: { enabled?: boolean; fim?: { enabled: boolean; backendId?: string }; nextEdit?: { enabled: boolean; backendId?: string } } = {}) => ({
+    enabled: true, backends: [{}, {}], fim: { enabled: true, backendId: 'coder' }, nextEdit: { enabled: true, backendId: 'strata' }, ...patch,
+  });
+  test('names both backends', () => {
+    expect(menuInputs(S(), false)).toEqual({ backendCount: 2, enabled: true, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: false });
+  });
+  test('the entries keep naming their backends while the switch is off', () => {
+    expect(menuInputs(S({ enabled: false }), true)).toMatchObject({ enabled: false, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: true });
+  });
+  test('a feature turned off shows off; its backend is kept in the settings, not in the label', () => {
+    const m = menuInputs(S({ fim: { enabled: false, backendId: 'coder' }, nextEdit: { enabled: false, backendId: 'strata' } }), false);
+    expect(m.completionBackend).toBeUndefined();
+    expect(m.nextEditBackend).toBeUndefined();
+  });
+  test('completions on without a backend read none; Next Edit without one is off', () => {
+    const m = menuInputs(S({ fim: { enabled: true }, nextEdit: { enabled: true } }), false);
+    expect(m.completionBackend).toBe('none');
+    expect(m.nextEditBackend).toBeUndefined();
+    expect(menuEntries('idle', m).find((e) => e.id === 'selectBackend')?.label).toBe('Completions: none');
   });
 });
 

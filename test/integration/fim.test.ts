@@ -115,6 +115,7 @@ suite('FIM inline completion', () => {
 
     await vscode.commands.executeCommand('aiAutocomplete.toggleEnabled');
     assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('enabled'), true);
+    assert.ok(await waitFor(() => api.status.current() !== 'disabled', 2000), `status: ${api.status.current()}`);
     await trigger(editor);
     assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
   });

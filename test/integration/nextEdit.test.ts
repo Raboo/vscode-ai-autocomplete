@@ -367,13 +367,18 @@ suite('Next Edit', () => {
     }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
   });
 
-  test('the AI Autocomplete switch off sends no Next Edit request', async () => {
+  test('the AI Autocomplete switch off sends no Next Edit request; turned on again, Next Edit asks', async () => {
     // With FIM off the controller asks after the edit pause on its own, so only the switch can stop the request.
     await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
       const editor = await open(['x = 1']);
       await typeKeys(editor, '0');
       await sleep(NO_REQUEST_WAIT_MS);
       assert.equal(nextEdits(m).length, 0, `mock saw ${seen(m)}`);
+
+      // Turning it on takes fresh snapshots, so the next edit has a history and asks.
+      await vscode.commands.executeCommand('aiAutocomplete.toggleEnabled');
+      await typeKeys(editor, '1');
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
     }, { enabled: false, 'fim.enabled': false });
   });
 

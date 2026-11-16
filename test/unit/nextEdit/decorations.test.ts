@@ -135,4 +135,37 @@ describe('decorationPlan', () => {
     const exact = decorationPlan({ startLine: 0, endLine: 1, newLines: ['y'.repeat(80)] }, ['a'], far);
     expect(exact.added[0].text).toBe('→ ' + 'y'.repeat(80) + '  ·  Tab to apply · Esc to dismiss');
   });
+
+  it('cuts by code points, never splitting a surrogate pair', () => {
+    const emoji = '😀';
+    const fits = decorationPlan({ startLine: 0, endLine: 1, newLines: [emoji.repeat(80)] }, ['a'], { line: 5, character: 0 });
+    expect(fits.added[0].text).toBe('→ ' + emoji.repeat(80));
+    const over = decorationPlan({ startLine: 0, endLine: 1, newLines: [emoji.repeat(81)] }, ['a'], { line: 5, character: 0 });
+    expect(over.added[0].text).toBe('→ ' + emoji.repeat(80) + '…');
+    expect(over.added[0].text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
+  it('says "+1 line" in the singular', () => {
+    const plan = decorationPlan({ startLine: 1, endLine: 2, newLines: ['b2', 'n1'] }, ['a', 'b', 'c'], { line: 9, character: 0 });
+    expect(plan.added[0].text).toBe('→ b2 (+1 line)');
+  });
+
+  it('the hint names the clamped line when the edit is past the end', () => {
+    const plan = decorationPlan({ startLine: 9, endLine: 9, newLines: ['q'] }, ['a', 'b'], { line: 0, character: 0 });
+    expect(plan.hint.text).toBe('Next edit at line 2 · Tab to jump · Esc to dismiss');
+  });
+
+  it('a whitespace-only target line puts the target at its end', () => {
+    const plan = decorationPlan({ startLine: 1, endLine: 2, newLines: ['x'] }, ['a', '    ', 'c'], { line: 0, character: 0 });
+    expect(plan.target).toEqual({ line: 1, character: 4 });
+  });
+
+  it('deleting the last lines leaves only deletedLines', () => {
+    const plan = decorationPlan({ startLine: 2, endLine: 4, newLines: [] }, ['a', 'b', 'c', 'd'], { line: 1, character: 0 });
+    expect(plan.deletedLines).toEqual([2, 3]);
+    expect(plan.added).toEqual([]);
+    expect(plan.removed).toEqual([]);
+    expect(plan.jump).toBe(false);
+    expect(plan.hint).toEqual({ line: 1, text: 'Tab to apply · Esc to dismiss' });
+  });
 });

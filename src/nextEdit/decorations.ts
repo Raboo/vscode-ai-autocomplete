@@ -31,12 +31,12 @@ export function displayFor(show: NextEditShow, display: NextEditDisplay, native:
 }
 
 function cut(text: string): string {
-  const trimmed = text.trimStart();
-  return trimmed.length > MAX_SHOWN ? trimmed.slice(0, MAX_SHOWN) + '…' : trimmed;
+  const chars = [...text.trimStart()]; // code points, so a surrogate pair is never split
+  return chars.length > MAX_SHOWN ? chars.slice(0, MAX_SHOWN).join('') + '…' : chars.join('');
 }
 
 function moreLines(n: number): string {
-  return ` (+${n} lines)`;
+  return n === 1 ? ' (+1 line)' : ` (+${n} lines)`;
 }
 
 export function decorationPlan(edit: LineEdit, docLines: string[], cursor: Pos): DecorationPlan {
@@ -89,7 +89,7 @@ export function decorationPlan(edit: LineEdit, docLines: string[], cursor: Pos):
   const firstNonBlank = targetText.search(/\S/);
   const target: Pos = { line: targetLine, character: firstNonBlank === -1 ? targetText.length : firstNonBlank };
 
-  const hintText = jump ? `Next edit at line ${startLine + 1} · Tab to jump · Esc to dismiss` : 'Tab to apply · Esc to dismiss';
+  const hintText = jump ? `Next edit at line ${targetLine + 1} · Tab to jump · Esc to dismiss` : 'Tab to apply · Esc to dismiss';
   const sameLine = added.find((a) => a.line === cursor.line);
   let hint: DecorationPlan['hint'];
   if (sameLine) {

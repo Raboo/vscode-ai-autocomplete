@@ -191,3 +191,37 @@ Parked by the revisions' task reviews and final review (the fix wave did the res
 - No test covers the non-BMP branch of `stableUserChars`.
 - No test checks that the user's `extraBody` overrides the Strata pin.
 - No integration test covers "a settings change unblocks" or "a passing Test unblocks" a model that keeps thinking; only code reading confirms them (`extension.ts` settings rebuild, `backendsPanel.ts` → `onTestPassed`).
+
+## Phase 3a (2026-11-16)
+
+Left open by the Phase 3a plan, its task reviews and its final review.
+
+- Copilot's replace-to-end-of-line rebase (Ruling 12): an edit that rewrites the rest of the cursor line is dropped as an inline edit instead of being rebased into ghost text.
+- No drift check is possible right before VS Code applies a native inline edit (Review Focus 1): between an edit appearing and Tab, VS Code may have shifted its range. Covered only by the smoke test.
+- Rejected-edit memory: after Esc, only a 5 s cooldown applies, so the same edit can come back.
+- The import-only edit filter: edits that only change import lines are not filtered out.
+- Use the proposed `onDidChange` instead of the `inlineSuggest.trigger` command to show a fresh result (Ruling 9). After an explicit trigger (Alt+\) at a document version and cursor, VS Code never shows a later Next Edit result for that same state (it treats the trigger as answered); fixing it needs the `onDidChange` path or a design change.
+- A Next Edit state in the status bar (Ruling 8): failures are only logged and notified.
+- Test on the Backends page should also test Next Edit (the `nextEditModel`).
+- The settings deferred in Ruling 7: `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget`.
+- `EDIT_ECHO_MS` is a 100 ms time heuristic; a version-based echo check would be sturdier, and a slow CI runner could double-request.
+- The shared backoff means a Next Edit timeout pauses FIM on the same backend: decide whether Next Edit should have its own backoff.
+- Requests already asked for a version and line are not retried after a dropped result or a failure until the document changes (R16 trade-off).
+- The extra-context ring (FIM) has the same "file reopened in a disabled language" gap that Next Edit's history now handles with `forget()`.
+- During a backoff caused by a Next Edit failure, FIM goes silent with the status bar idle: FIM's own failure detail is what shows the countdown, and Next Edit records none (final review M3).
+- Two workspace folders with the same name still collide: paths carry the folder name (R24), not a unique folder id, so their same-named files share one history snapshot and one snippet.
+- A region with a line starting with ```` ``` ```` (a Markdown code block) is not sent (R22): the answer's own fence would close on it. Supporting it needs a longer outer fence, which is a prompt change.
+- Pull the controller's eligibility and store-or-drop decisions (version, editor, snooze, cursor, native UI) into pure functions with unit tests; today only the integration tests cover them.
+
+### Smaller review notes (Phase 3a)
+
+- A stream cut off at max tokens right after a bare ```` ``` ```` line counts as closed; treat `finish_reason: length` as truncated (R29).
+- If the cursor moves after a ghost result is stored but before VS Code runs the queued trigger, FIM runs once at the new cursor (R30). The ghost-cursor rule, remote eligibility, snooze during a request and the remote-side opt-in path have no automated tests.
+- `history.test.ts` "when the merged diff is too large, the edit becomes its own entry" relies on two ~400-edit diffs finishing inside the 50 ms bound; shrink the file if CI ever flakes (R31).
+- Unit-test gaps: history merge cancel-out and merge-then-cap paths, top-of-file insertion header; region tests with mixed line lengths and an exact-budget boundary; chatXtab lines after the region, real clipping, several snippets, `stableChars` with exactly 4 lines; classify on an empty file, a file without a trailing newline and the ghost path that starts above the cursor line; caller-abort propagation and a split empty think block in `request.test.ts`; the Backends page placeholder with a blank model.
+- `clipAroundRegion` throws on a region past the file end (callers pass matching line counts), and unused budget below the region does not flow back above it.
+- `parseChatXtab`'s think-block check duplicates `stream.ts`'s predicate; `runNextEdit` adds its abort listener before its `try`.
+- The provider does not guard `itemFor`; a throw there leaves FIM empty for that call.
+- argv.json is written in place, without a backup or an atomic rename.
+- `useNextEditBackend` repeats `useBackend`'s target rule and `pickBackend`'s lookup; the collapsed backend card does not show `nextEditModel`.
+- Integration: "without the proposed API an edit elsewhere is not applied" also passes when nothing is offered; the stale-result test may pass through cancellation; both launches share one user-data dir.

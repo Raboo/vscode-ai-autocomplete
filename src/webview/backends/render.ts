@@ -151,6 +151,8 @@ function connection(s: PageState, ed: EditView, ui: LocalUi): string {
     + `<div class="field wide" data-field="model"><div class="label-row"><label for="f-model">Model</label>`
     + `${button('reloadModels', '↻ reload list', { id: 'a-reloadModels', cls: 'link' })}</div>`
     + `${textInput('f-model', f.model, ` list="f-model-list" placeholder="auto-detect"${invalid(ed.modelsError)}${modelNotes.describedBy}`)}${datalist}${modelNotes.html}</div>`
+    + `<div class="field wide" data-field="nextEditModel"><div class="label-row"><label for="f-nextEditModel">Next Edit model</label></div>`
+    + `${textInput('f-nextEditModel', f.nextEditModel, ` list="f-model-list" placeholder="${f.model === '' ? 'same as the completion model' : `same as the completion model (${e(f.model)})`}"`)}</div>`
     + `<div class="field" data-field="key"><div class="label-row"><label for="f-key">API key</label>${removeKey}</div>${key}${keyNotes}</div>`
     + '</div>';
 }

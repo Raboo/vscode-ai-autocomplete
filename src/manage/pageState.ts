@@ -93,7 +93,7 @@ export function buildPageState(i: PageInputs): PageState {
     // Copy field by field: whatever else the incoming object carries must never reach the page.
     const form: BackendForm = {
       ...(d.form.originalId !== undefined ? { originalId: d.form.originalId } : {}),
-      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, changed: knownChanged(d.form.changed),
+      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, nextEditModel: d.form.nextEditModel, changed: knownChanged(d.form.changed),
     };
     const own = form.originalId;
     const model = form.model !== '' ? form.model : own !== undefined ? i.detected.get(own) : undefined;

@@ -13,9 +13,23 @@ const userDataDir = join(dirname(fileURLToPath(import.meta.url)), '.vscode-test'
 mkdirSync(join(userDataDir, 'User'), { recursive: true });
 writeFileSync(join(userDataDir, 'User', 'settings.json'), `${JSON.stringify({ 'chat.disableAIFeatures': true }, null, 2)}\n`);
 
-export default defineConfig({
-  files: 'out/test/integration/**/*.test.js',
-  version: 'stable',
-  launchArgs: [`--user-data-dir=${userDataDir}`],
-  mocha: { timeout: 20000 },
-});
+const shared = { version: 'stable', mocha: { timeout: 20000 } };
+
+// Two launches, run one after the other: `main` runs every test on Stable as users get it (no proposed API),
+// `proposed` runs the Next Edit tests again with the inline-edit proposal enabled. Tests read their launch from the env.
+export default defineConfig([
+  {
+    ...shared,
+    label: 'main',
+    files: 'out/test/integration/**/*.test.js',
+    launchArgs: [`--user-data-dir=${userDataDir}`],
+    env: { AI_AUTOCOMPLETE_TEST_LAUNCH: 'main' },
+  },
+  {
+    ...shared,
+    label: 'proposed',
+    files: 'out/test/integration/nextEdit.test.js',
+    launchArgs: [`--user-data-dir=${userDataDir}`, '--enable-proposed-api', 'raboo.ai-autocomplete'],
+    env: { AI_AUTOCOMPLETE_TEST_LAUNCH: 'proposed' },
+  },
+]);

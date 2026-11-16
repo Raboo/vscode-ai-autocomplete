@@ -15,6 +15,9 @@
   "engines": {
     "vscode": "^1.100.0"
   },
+  "enabledApiProposals": [
+    "inlineCompletionsAdditions"
+  ],
   "categories": [
     "AI",
     "Programming Languages"
@@ -230,6 +233,26 @@
           "scope": "resource",
           "markdownDescription": "Enable inline fill-in-the-middle completions."
         },
+        "aiAutocomplete.nextEdit.enabled": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Show Next Edit suggestions when a Next Edit backend is chosen."
+        },
+        "aiAutocomplete.nextEdit.backend": {
+          "type": "string",
+          "scope": "resource",
+          "default": "",
+          "description": "Backend for Next Edit suggestions (an id from aiAutocomplete.backends). Empty: Next Edit is off."
+        },
+        "aiAutocomplete.nextEdit.timeoutMs": {
+          "type": "integer",
+          "scope": "resource",
+          "minimum": 500,
+          "maximum": 60000,
+          "default": 10000,
+          "description": "Deadline for one Next Edit request."
+        },
         "aiAutocomplete.fim.backend": {
           "type": "string",
           "scope": "resource",
@@ -352,6 +375,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.selectNextEditBackend",
+        "title": "Select Next Edit Backend",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.manageBackends",
         "title": "Manage Backends",
         "category": "AI Autocomplete"
@@ -380,12 +408,26 @@
         "command": "aiAutocomplete.accepted",
         "title": "Completion Accepted (internal)",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditAccepted",
+        "title": "Next Edit Accepted (internal)",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.enableNativeNextEdit",
+        "title": "Enable Native Next Edit UI",
+        "category": "AI Autocomplete"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "aiAutocomplete.accepted",
+          "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditAccepted",
           "when": "false"
         }
       ]
@@ -419,5 +461,9 @@
   "overrides": {
     "minimatch": "^11.0.1",
     "serialize-javascript": "^7.1.3"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "jsonc-parser": "^3.3.1"
   }
 }

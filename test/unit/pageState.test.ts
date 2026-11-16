@@ -15,7 +15,7 @@ const inputs = (over: Partial<PageInputs> = {}): PageInputs => ({
   settings: base(), rawBackends: [lm, cpp], keysStored: new Set(), local: new Map([['lm', true], ['cpp', true]]), detected: new Map(), tests: new Map(), ...over,
 });
 const ok: TestStep = { id: 'reach', state: 'ok', text: 'x' };
-const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {}, ...over });
+const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
 
 describe('page state', () => {
   test('cards: in use, key stored, detected model, lock and template warning', () => {

@@ -13,6 +13,8 @@ import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/loca
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { createLog } from './log';
+import { RecentSnippets } from './nextEdit/history';
+import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
@@ -23,7 +25,7 @@ const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined } {
+export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -76,10 +78,33 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   const ring = new ExtraContextRing();
   const inflight = new InFlight();
   const excluded = (doc: vscode.TextDocument): boolean => settings.fim.disableInFiles.some((pattern) => vscode.languages.match({ pattern }, doc) > 0);
+  // Files completions may not use: no extra context, Next Edit history, snippet or request comes from them.
+  const offLimits = (doc: vscode.TextDocument): boolean => settings.fim.disableInLanguages.includes(doc.languageId) || excluded(doc);
+  const snippets = new RecentSnippets();
   // Extra context only comes from files completions are allowed in (the tracker also limits it to workspace files).
-  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || settings.fim.disableInLanguages.includes(doc.languageId) || excluded(doc)));
+  sub(new ContextTracker(ring, (doc) => !settings.fim.extraContext || offLimits(doc), snippets));
+  const backoff = (id: string): ErrorBackoff => {
+    let b = backoffs.get(id);
+    if (!b) backoffs.set(id, (b = new ErrorBackoff()));
+    return b;
+  };
 
-  const provider = new FimProvider({
+  const nextEdit = new NextEditController({
+    getSettings: () => settings,
+    getBackend: (id) => backends.get(id),
+    capabilities,
+    backoff,
+    isLocal,
+    log,
+    snoozedUntil,
+    snippets,
+    isExcluded: offLimits,
+    // FIM's detected model first, so the same server is not asked twice.
+    detectedModel: (b, signal) => Promise.resolve(provider.detectedModel(b.config.id) ?? b.detectModel(signal)),
+  });
+  sub(nextEdit);
+
+  const provider: FimProvider = new FimProvider({
     getSettings: () => settings,
     getBackend: (id) => backends.get(id),
     isLocal,
@@ -90,11 +115,8 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     log,
     snoozedUntil,
     capabilities,
-    backoff: (id) => {
-      let b = backoffs.get(id);
-      if (!b) backoffs.set(id, (b = new ErrorBackoff()));
-      return b;
-    },
+    backoff,
+    nextEdit,
     debouncer: (id) => {
       let d = debouncers.get(id);
       if (!d) {
@@ -108,7 +130,18 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
       return d;
     },
   });
-  sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
+  // Registering with metadata needs VS Code's proposed API (inlineCompletionsAdditions) and throws without it:
+  // the same proposal shows inline edits, so the probe tells whether Next Edit may return them.
+  let native: boolean;
+  try {
+    sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider, { displayName: 'AI Autocomplete' }));
+    native = true;
+  } catch {
+    sub(vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider));
+    native = false;
+  }
+  nextEdit.native = native;
+  log.info(native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)");
 
   const panelDeps: BackendsPanelDeps = {
     context,
@@ -145,6 +178,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     channel,
     log,
     manageBackends,
+    nextEditAccepted: () => nextEdit.accepted(),
     retry: () => {
       for (const b of backoffs.values()) b.reset();
       for (const id of backends.keys()) capabilities.forgetLearned(id);
@@ -168,6 +202,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
+    nextEdit.reset();
     // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
     provider.clearError();
     provider.forgetLogged();
@@ -185,7 +220,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
-  return { status, secrets, backendsPanel: () => BackendsPanel.current() };
+  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native };
 }
 
 export function deactivate(): void {}

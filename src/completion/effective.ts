@@ -5,6 +5,9 @@ import type { BackendConfig, FimTemplateId, Multiline, ThinkingStrategy } from '
 export const DEFAULT_CONTEXT_TOKENS = 4700;
 export const CHARS_PER_TOKEN = 3.5;
 export const DEFAULT_TIMEOUT_MS = 5000;
+export const DEFAULT_NEXT_EDIT_TIMEOUT_MS = 10_000;
+/** Sampling for the Next Edit chat prompt. */
+export const NEXT_EDIT_SAMPLING = { temperature: 0.2, topP: 0.8, topK: 20 };
 
 export type ValueSource = 'backend' | 'modelOverride' | 'settings' | 'preset' | 'builtin';
 export type FimField = 'template' | 'temperature' | 'topP' | 'topK' | 'maxTokens' | 'multiline' | 'prefixLines' | 'suffixLines'
@@ -116,4 +119,22 @@ export function templateMismatch(backend: BackendConfig, model: string | undefin
   if (template === undefined) return undefined;
   const own = resolveFim({ ...backend, fim: undefined }, model, s).values.fimTemplate;
   return own !== undefined && own !== template ? { template, own } : undefined;
+}
+
+/** The model Next Edit requests use: the backend's `nextEditModel`, else its `fimModel`, else the detected one. */
+export function nextEditModel(backend: BackendConfig, detected: string | undefined): string | undefined {
+  return backend.nextEditModel ?? backend.fimModel ?? detected;
+}
+
+/**
+ * The values one Next Edit request uses. The backend's `fim` block belongs to the FIM model, so a separate Next Edit model
+ * keeps only what belongs to the backend: its `extraBody` and its `extraContext` restriction. Sampling and the deadline are Next Edit's own.
+ */
+export function resolveNextEdit(backend: BackendConfig, model: string | undefined, s: Settings): FimValues {
+  const own = backend.nextEditModel !== undefined && backend.nextEditModel !== backend.fimModel;
+  const b = backend.fim;
+  const kept = { ...(b?.extraBody ? { extraBody: b.extraBody } : {}), ...(b?.extraContext !== undefined ? { extraContext: b.extraContext } : {}) };
+  const target: BackendConfig = own ? { ...backend, fim: Object.keys(kept).length > 0 ? kept : undefined } : backend;
+  const { values } = resolveFim(target, model, s);
+  return { ...values, sampling: values.samplingParams === 'omit' ? values.sampling : { ...NEXT_EDIT_SAMPLING }, timeoutMs: s.nextEdit.timeoutMs };
 }

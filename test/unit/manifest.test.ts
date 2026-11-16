@@ -5,8 +5,8 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 test('identity', () => {
   expect(pkg.publisher).toBe('raboo'); expect(pkg.name).toBe('ai-autocomplete');
   expect(pkg.license).toBe('Apache-2.0'); expect(pkg.author.name).toBe('Elias Abacioglu');
-  expect(pkg.enabledApiProposals).toBeUndefined();
-  expect(Object.keys(pkg.dependencies ?? {})).toEqual([]);
+  expect(pkg.enabledApiProposals).toEqual(['inlineCompletionsAdditions']);
+  expect(Object.keys(pkg.dependencies ?? {})).toEqual(['diff', 'jsonc-parser']);
 });
 test('NOTICE credits the original author', () => {
   expect(readFileSync('NOTICE', 'utf8')).toContain('Originally created by Elias Abacioglu');
@@ -17,11 +17,12 @@ test('webview bundle is built and packaged', () => {
   expect(existsSync('dist/webview/backends.css')).toBe(true);
   expect(readFileSync('.vscodeignore', 'utf8').split(/\r?\n/).map((l) => l.trim())).toContain('!dist/webview/**');
 });
-test('commands are categorised and accepted is hidden from the palette', () => {
+test('commands are categorised and the accepted commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
-  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'manageBackends', 'menu', 'retry', 'selectBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
+  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
   expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
   expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
+  expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.nextEditAccepted', when: 'false' });
 });
 test('the backends setting links to the Backends page', () => {
   const backends = pkg.contributes.configuration.properties['aiAutocomplete.backends'];

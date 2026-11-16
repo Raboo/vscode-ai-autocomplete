@@ -9,19 +9,19 @@ const settings = (extraContext?: boolean): Settings => {
   const s = parseSettings(none).settings;
   return extraContext === undefined ? s : { ...s, fim: { ...s.fim, extraContext } };
 };
-const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {}, ...over });
+const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
 const view = (vs: ReturnType<typeof fieldViews>, f: string) => vs.find((v) => v.field === f)!;
 
 describe('form model', () => {
   test('newForm prefills from the type', () => {
-    expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {} });
+    expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} });
     expect(newForm('mistral', [])).toMatchObject({ id: 'codestral', model: 'codestral-latest' });
   });
 
   test('retypeForm replaces the URL, id and model only while they are empty or the old type\'s defaults', () => {
     const fresh = newForm('llamacpp', ['lmstudio']);
     expect(retypeForm(fresh, { ...fresh, type: 'lmstudio' }, ['lmstudio'], true))
-      .toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', changed: {} });
+      .toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} });
     expect(retypeForm(fresh, { ...fresh, type: 'mistral' }, [], true)).toMatchObject({ id: 'codestral', baseUrl: 'https://codestral.mistral.ai', model: 'codestral-latest' });
     const mistral = newForm('mistral', []);
     expect(retypeForm(mistral, { ...mistral, type: 'other' }, [], true)).toMatchObject({ id: 'openai', baseUrl: '', model: '' });
@@ -38,6 +38,16 @@ describe('form model', () => {
     expect(retypeForm(saved, next, [], false)).toBe(next);
   });
 
+  test('form maps nextEditModel both ways', () => {
+    const entry = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'zeta', nextEditModel: 'edit-1' };
+    const f = entryToForm(entry);
+    expect(f.nextEditModel).toBe('edit-1');
+    expect(formToEntry(f, entry)).toEqual(entry);
+    expect(formToEntry(form({ nextEditModel: ' mercury ' }))).toMatchObject({ nextEditModel: 'mercury' });
+    expect(formToEntry({ ...f, nextEditModel: '  ' }, entry)).not.toHaveProperty('nextEditModel');
+    expect(entryToForm({ id: 'x', baseUrl: 'http://h' }).nextEditModel).toBe('');
+  });
+
   test('entryToForm → formToEntry round-trips a full entry', () => {
     const entry = {
       id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'zeta', fimMode: 'template', headers: { 'X-A': 'b' },
@@ -52,9 +62,9 @@ describe('form model', () => {
   });
 
   test('formToEntry keeps unknown fields of the original', () => {
-    const original = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://x/v1', nextEditModel: 'zeta', custom: 1, fim: { temperature: 0.1, future: true } };
+    const original = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://x/v1', futureKey: 'zeta', custom: 1, fim: { temperature: 0.1, future: true } };
     const out = formToEntry(form({ baseUrl: 'http://x/v1', originalId: 'lm', changed: { temperature: '0.05' } }), original);
-    expect(out).toMatchObject({ nextEditModel: 'zeta', custom: 1, fim: { temperature: 0.05, future: true } });
+    expect(out).toMatchObject({ futureKey: 'zeta', custom: 1, fim: { temperature: 0.05, future: true } });
   });
 
   test('formToEntry drops a reset field but keeps unknown fim keys', () => {
@@ -123,7 +133,7 @@ describe('form model', () => {
     expect(view(vs, 'fimMode').options).toEqual(['auto', 'native', 'template', 'chat']);
   });
 
-  const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', changed: { fimMode: 'chat' }, ...o });
+  const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', nextEditModel: '', changed: { fimMode: 'chat' }, ...o });
 
   test('thinking round-trips through fim.thinking and validates', () => {
     const f = form({ changed: { thinking: 'reasoningEffortNone' } });

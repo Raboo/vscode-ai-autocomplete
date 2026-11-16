@@ -123,9 +123,28 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 
 **Other autocomplete extensions** (for example Predicte, Kilo Code or Continue) can show their own ghost text or take the `Tab` key, so `Tab` may indent or insert their suggestion instead. Turn their autocomplete off while you use this one.
 
+## Next Edit
+
+Next Edit suggests the edit you are likely to make next. After you change code, for example rename a parameter, the extension asks a chat model to rewrite a small region around the cursor (5 lines above, 10 below) and shows the result. It is off until you choose a backend, so completion-only users send no extra requests.
+
+**Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend. It needs a backend that serves chat (for example Strata or OpenRouter); other backends send nothing. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); otherwise the backend's completion model is used. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. `aiAutocomplete.nextEdit.enabled` switches it off again. **AI Autocomplete: Snooze Completions** pauses Next Edit too; **AI Autocomplete: Toggle Completions** turns off completions only.
+
+**What shows without the opt-in:** only an edit that is a pure insertion at the cursor, as ghost text. Any other edit (a change on another line, a replacement) needs VS Code's native inline-edit display, which is a proposed API. The extension shows a notice once that offers it.
+
+**Native inline edits:** run **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code (not just reload the window). The command adds this extension to `enable-proposed-api` in VS Code's `argv.json`. It keeps the comments in that file; if the file is malformed it is left alone and VS Code's runtime-arguments file opens with instructions to paste. Until you opt in, VS Code logs an error that the extension declares a proposed API it may not use. That is expected.
+
+With the opt-in, an edit away from the cursor shows as an inline edit. `Tab` jumps to it and `Tab` again accepts it. `Esc` dismisses it, and nothing shows again for 5 s. After you accept, the next suggestion is requested at once, so repeated `Tab` walks through a refactor.
+
+**When it asks:** 400 ms after you stop typing, when completions had nothing to show for that version of the file; and when you move the cursor within 10 s of an edit (not twice on the same line within 5 s). Completions win while you type. With VS Code's default `editor.quickSuggestions`, the word suggestion list can take the request that follows typing; Next Edit then asks on your next cursor move. It does not ask when the region holds a line starting with ```` ``` ```` (a Markdown code block) or is very long (minified code). Files that completions may not use (`aiAutocomplete.fim.disableInFiles`, `fim.disableInLanguages`, files outside the workspace) never get a Next Edit request.
+
+**What is sent:** the 10-line pages of the current file around the region, the region itself with the cursor marked, and the current file's recent edits as diffs. Those diffs always go to the Next Edit backend. Snippets and diffs of your other files go only while `aiAutocomplete.fim.extraContext` is on.
+
+**Deadline:** `aiAutocomplete.nextEdit.timeoutMs` (default 10000, 500 to 60000). Next Edit runs in the background, so it waits longer than completions. Failures are logged and shown once per backend and kind as a notification with **Show Log**, not in the status bar. A Next Edit failure also pauses completions on the same backend for the usual retry time. The model must be able to turn thinking off, as for chat completions.
+
 ## Privacy
 
 - No telemetry. The extension sends nothing except completion requests to the backend you configure.
+- Next Edit, when you choose a backend for it, sends the region around the cursor, clipped pages of the current file and the current file's recent edits to that backend; see [Next Edit](#next-edit).
 - Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
 - OpenRouter forwards your code to the model's provider. The extension sends no attribution headers to it.
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.

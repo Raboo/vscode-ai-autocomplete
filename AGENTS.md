@@ -5,14 +5,14 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## What this is
 
 - An autocomplete-only VS Code extension: no chat, no agents, no telemetry.
-- Fast FIM (fill-in-the-middle) ghost-text completion now, Next Edit later; self-hosted backends first.
+- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phase 3a: the chatXtab format, ghost text and native inline edits); self-hosted backends first.
 - Design spec: `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`. Phase status: `docs/ROADMAP.md`.
 
 ## Hard rules
 
 - No telemetry, ever. Nothing leaves the machine except requests to the user-configured backend.
 - Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from `globalValue` only; workspace values are ignored.
-- Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`. Everything else is pure and unit-testable.
+- Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`, `src/nextEdit/vscode/*`. Everything else is pure and unit-testable.
 - The Backends page never receives an API key, and server-supplied text (model ids, error bodies) is HTML-escaped before it reaches the page. Error text shown in the page is fixed text.
 - Prompt and completion text, reasoning text and server error bodies are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.
 - The chat prompt (`src/completion/holeFiller.ts`) is our own wording. Never copy Continue's hole-filler prompt (its upstream license is unverified).
@@ -24,7 +24,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - AI-authored commits end with a Co-Authored-By trailer naming the model.
 - Never run upstream code; read it only (for example with `gh api repos/<o>/<r>/contents/<path>?ref=<sha>`).
 - Two versions are pinned on purpose: `typescript ~6.0.x` (typescript-eslint supports TypeScript below 6.1 only) and `@types/vscode ~1.100.0` (tracks `engines.vscode`).
-- Zero runtime dependencies in Phase 0-1 (the spec allows `diff` and `jsonc-parser` later).
+- Runtime dependencies: only `diff` and `jsonc-parser` (`test/unit/manifest.test.ts` pins the list). esbuild bundles both; jsonc-parser through its ES module build (`mainFields: ['module', 'main']`), because its UMD build cannot be bundled.
 - GitHub Actions are pinned by full commit SHA with a `# vX.Y.Z` comment, and every workflow declares top-level least-privilege `permissions:`.
 
 ## Commands
@@ -36,7 +36,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `npm run typecheck`: `tsc --noEmit` for both `tsconfig.json` and `tsconfig.webview.json`.
 - `npm run lint`: ESLint over the repo.
 - `npm test`: unit tests with vitest. Run `npm run build` first: a manifest test reads `dist/extension.js`.
-- `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server; CI runs it under `xvfb-run`. `.vscode-test.mjs` sets `chat.disableAIFeatures` in the test profile: VS Code 1.146 focuses its chat input at startup, and without OS window focus (a locked screen) editor actions like `inlineSuggest.trigger` would hit it.
+- `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server in two launches, `main` (all integration tests) and `proposed` (the nextEdit tests with `--enable-proposed-api raboo.ai-autocomplete`); tests type with the `type` command, because VS Code treats an explicit trigger after `editor.edit` as already answered. CI runs it under `xvfb-run`. `.vscode-test.mjs` sets `chat.disableAIFeatures` in the test profile: VS Code 1.146 focuses its chat input at startup, and without OS window focus (a locked screen) editor actions like `inlineSuggest.trigger` would hit it.
 - `npm run package`: build a `.vsix` with `vsce package --no-dependencies`.
 - `npm run vscode:prepublish`: production (minified) build, run by vsce.
 - `bash scripts/setup-github-repo.sh --dry-run`: print the GitHub repo settings the automation needs (never run it without `--dry-run` unless the user approved; see section 7).
@@ -47,7 +47,16 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - Chat path and thinking control: `src/models/thinking.ts` (request fields per strategy and host flavor, reasoning filter), `src/models/capabilities.ts` (what a server rejected or lacks, learned per session, never persisted), `src/completion/holeFiller.ts` (the chat prompt), `src/completion/stream.ts` (streaming of all routes), `src/backends/chat.ts` (`/v1/chat/completions`) and `src/backends/openrouter.ts` (OpenRouter's model list). Route choice lives in `src/completion/route.ts`.
 - `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
-- `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking and `src/ui/*`.
+- Next Edit (`src/nextEdit/`, all pure except `vscode/`):
+  - `history.ts`: edit-diff history per file (merged per area) and recently viewed snippets;
+  - `region.ts`: the editable region (5 above, 10 below, at most 25 lines) and clipping the file to 10-line pages;
+  - `formats/chatXtab.ts`: the chat prompt (our own wording, Copilot/Mercury tag names) and the answer parser;
+  - `diff.ts`: old region vs new region as one line edit, filters, ghost text or inline edit;
+  - `trigger.ts`: when to ask (edit pause, cursor move after an edit) and the cooldowns;
+  - `request.ts`: one request over the backend's chat stream, failing fast on thinking;
+  - `optIn.ts`: the argv.json path and edit for the native-UI opt-in;
+  - `vscode/controller.ts`: events, history, trigger rules, requests and the latest result; the proposed-API `.d.ts` is `src/types/vscode.proposed.inlineCompletionsAdditions.d.ts` (pinned from `release/1.146`).
+- `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 
 ## How work is done here

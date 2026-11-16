@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { contextCaps, resolveFim, templateMismatch } from '../../src/completion/effective';
+import { contextCaps, nextEditModel, resolveFim, resolveNextEdit, templateMismatch } from '../../src/completion/effective';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
 import type { BackendConfig, BackendFimSettings, ModelOverrideBody } from '../../src/types';
@@ -123,5 +123,41 @@ describe('chat values', () => {
     const r = resolveFim(backend({ timeoutMs: 2000, stop: ['Z'] }), QWEN, settings());
     expect(r.values.timeoutMs).toBe(2000); expect(r.values.backendStop).toEqual(['Z']);
     expect(r.values.stop).toContain('Z');
+  });
+});
+
+describe('Next Edit values', () => {
+  const strata = (extra: Partial<BackendConfig> = {}): BackendConfig => ({ ...backend(), kind: 'openai', ...extra });
+  test('nextEditModel prefers nextEditModel, then fimModel, then the detected model', () => {
+    expect(nextEditModel(strata({ nextEditModel: 'n', fimModel: 'f' }), 'd')).toBe('n');
+    expect(nextEditModel(strata({ fimModel: 'f' }), 'd')).toBe('f');
+    expect(nextEditModel(strata(), 'd')).toBe('d');
+    expect(nextEditModel(strata(), undefined)).toBeUndefined();
+  });
+  test('resolveNextEdit uses the NES chat sampling and the Next Edit deadline', () => {
+    const v = resolveNextEdit(strata(), 'qwen3.8-flash-next-iq3_s', settings());
+    expect(v.sampling).toEqual({ temperature: 0.2, topP: 0.8, topK: 20 });
+    expect(v.timeoutMs).toBe(10000);
+  });
+  test('resolveNextEdit keeps the backend thinking switch only for the FIM model', () => {
+    const fim = { thinking: 'reasoningEffortNone' } as const;
+    expect(resolveNextEdit(strata({ fim }), 'qwen3-8b', settings()).thinking).toBe('reasoningEffortNone');
+    expect(resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).thinking).toBe('templateKwarg:enable_thinking');
+  });
+  test('a separate Next Edit model keeps the backend extraBody and its extra-context restriction, nothing else', () => {
+    const fim = { extraContext: false, extraBody: { cache_prompt: true }, temperature: 0.9, maxTokens: 7 };
+    const v = resolveNextEdit(strata({ fim, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings());
+    expect(v.extraContext).toBe(false);
+    expect(v.extraBody).toMatchObject({ cache_prompt: true });
+    expect(v.maxTokens).not.toBe(7);
+    expect(resolveNextEdit(strata({ fim: { extraContext: false }, nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).extraBody).not.toHaveProperty('cache_prompt');
+    expect(resolveNextEdit(strata({ nextEditModel: 'qwen3-8b' }), 'qwen3-8b', settings()).extraContext).toBe(true);
+  });
+  test('resolveNextEdit keeps omitted sampling omitted', () => {
+    const b = strata({ fim: { temperature: 0.7 } });
+    const v = resolveNextEdit(b, 'kimi-k3', settings());
+    expect(v.samplingParams).toBe('omit');
+    expect(v.sampling).toEqual(resolveFim(b, 'kimi-k3', settings()).values.sampling);
+    expect(v.sampling.temperature).toBe(0.7);
   });
 });

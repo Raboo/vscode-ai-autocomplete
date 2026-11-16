@@ -15,10 +15,12 @@ export interface MenuEntry { label: string; id: string }
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
+const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
 const MENU: MenuEntry[] = [
   { label: 'Toggle completions on/off', id: 'toggle' },
   { label: 'Snooze...', id: 'snooze' },
   { label: 'Select backend...', id: 'selectBackend' },
+  NEXT_EDIT,
   MANAGE,
   { label: 'Set API key...', id: 'setApiKey' },
   RETRY,
@@ -28,10 +30,11 @@ const MENU: MenuEntry[] = [
 
 /**
  * The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed.
- * With no backend configured, "Manage backends..." comes before both.
+ * "Next Edit: <backend>" (or off) follows the backend selection. With no backend configured, "Manage backends..." comes before both.
  */
-export function menuEntries(shown: StatusState, backendCount: number): MenuEntry[] {
-  let list = shown === 'error' ? [RETRY, ...MENU.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...MENU] : [...MENU];
+export function menuEntries(shown: StatusState, backendCount: number, nextEditBackend: string | undefined): MenuEntry[] {
+  const menu = MENU.map((e) => (e === NEXT_EDIT ? { ...e, label: `Next Edit: ${nextEditBackend ?? 'off'}` } : e));
+  let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
   if (backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
   return list;
 }

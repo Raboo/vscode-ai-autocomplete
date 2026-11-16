@@ -219,3 +219,23 @@ describe('thinking and localOnly strings', () => {
     expect(r.problems).toContain('aiAutocomplete.privacy.localOnly: expected true or false; "true" read as true');
   });
 });
+
+describe('nextEdit settings', () => {
+  test('nextEdit defaults: enabled, no backend, 10 s', () => {
+    const { settings } = parseSettings(src({}));
+    expect(settings.nextEdit).toEqual({ enabled: true, timeoutMs: 10000 });
+    expect(settings.nextEdit.backendId).toBeUndefined();
+  });
+  test('nextEdit.backend chooses among configured ids', () => {
+    const backends = { globalValue: [B('a'), B('b')] };
+    expect(parseSettings(src({ backends, 'nextEdit.backend': { workspaceValue: 'b' } })).settings.nextEdit.backendId).toBe('b');
+    const r = parseSettings(src({ backends, 'nextEdit.backend': { workspaceValue: 'c' } }));
+    expect(r.settings.nextEdit.backendId).toBeUndefined();
+    expect(r.problems).toContain('aiAutocomplete.nextEdit.backend: no backend with id "c"; Next Edit is off');
+  });
+  test('nextEdit.timeoutMs out of range is ignored', () => {
+    const r = parseSettings(src({ 'nextEdit.timeoutMs': { globalValue: 100 } }));
+    expect(r.settings.nextEdit.timeoutMs).toBe(10000);
+    expect(r.problems.some((p) => p.includes('aiAutocomplete.nextEdit.timeoutMs'))).toBe(true);
+  });
+});

@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
 import { readSettings } from '../config/vscodeSettings';
@@ -25,12 +28,20 @@ export interface CommandDeps {
   retry(): void;
   /** Opens (or reveals) the Backends page. */
   manageBackends(o: OpenOptions): void;
+  /** A Next Edit item was accepted. */
+  nextEditAccepted(): void;
 }
 
 /** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
 export async function useBackend(id: string): Promise<void> {
   const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
   await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+}
+
+/** Selects the Next Edit backend ("" turns Next Edit off), in the same place `useBackend` writes. */
+async function useNextEditBackend(id: string): Promise<void> {
+  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
 }
 
 /** The command argument as OpenOptions; anything else opens the page as it is. */
@@ -58,7 +69,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length);
+      const entries = menuEntries(d.status.state(), readSettings().settings.backends.length, readSettings().settings.nextEdit.backendId);
       const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
       if (!pick) return;
       if (pick.id === 'resume') await resume();
@@ -91,6 +102,21 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       const id = await pickBackend('Select the completion backend');
       if (id) await useBackend(id);
     }),
+    reg('selectNextEditBackend', async () => {
+      const ids = readSettings().settings.backends.map((b) => b.id);
+      if (ids.length === 0) {
+        void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
+        return;
+      }
+      const OFF = 'Off';
+      const current = readSettings().settings.nextEdit.backendId;
+      const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+        [...ids.map((id) => ({ label: id, ...(id === current ? { description: 'current' } : {}) })), { label: OFF, ...(current === undefined ? { description: 'current' } : {}) }],
+        { placeHolder: 'Select the Next Edit backend' },
+      );
+      if (!pick) return;
+      await useNextEditBackend(pick.label === OFF ? '' : pick.label);
+    }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
     reg('setApiKey', async () => {
       const id = await pickBackend('Set the API key for which backend?');
@@ -117,6 +143,33 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('accepted', () => {
       accepted++;
       d.status.setStats(accepted);
+    }),
+    reg('nextEditAccepted', () => d.nextEditAccepted()),
+    reg('enableNativeNextEdit', async () => {
+      const manual = async () => {
+        await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
+        void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
+      };
+      // Running on the remote side of a remote window, this home is the remote machine's; VS Code reads the local argv.json.
+      const remoteSide = vscode.env.remoteName !== undefined && d.context.extension.extensionKind === vscode.ExtensionKind.Workspace;
+      const path = remoteSide ? undefined : argvPath(vscode.env.appName, homedir(), process.env);
+      if (!path) return manual();
+      try {
+        const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT') return '';
+          throw err;
+        });
+        const next = withProposedApiOptIn(text, EXTENSION_ID);
+        if (next === undefined) {
+          void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI is already enabled. If Next Edit still shows only ghost text, quit and reopen VS Code.');
+          return;
+        }
+        await writeFile(path, next, 'utf8');
+        void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI enabled. Quit and reopen VS Code to finish.');
+      } catch (err) {
+        d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);
+        return manual();
+      }
     }),
   ];
 }

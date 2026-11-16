@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
+import { clearAsked, commit, commitWhen, configure, registerProbe, showAtEnd, sleep, trigger, unconfigure, waitFor } from './helpers';
 import { startMockServer, type MockServer } from './mockServer';
 
 /** The part of the extension's `activate()` result these tests use. */
@@ -15,26 +16,6 @@ const SOURCE = 'function add(a: number, b: number) {\n  return ';
 const BACKEND_ID = 'test';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
 const TOUCHED = ['backends', 'fim.backend', 'fim.disableInLanguages', 'privacy.localOnly'];
-/** Time for the extension's onDidChangeConfiguration handler to rebuild its backends. */
-const SETTLE_MS = 200;
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Polls `cond` every 50 ms; resolves whether it became true within `timeoutMs`. */
-async function waitFor(cond: () => boolean, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (!cond()) {
-    if (Date.now() > deadline) return false;
-    await sleep(50);
-  }
-  return true;
-}
-
-async function configure(values: Record<string, unknown>): Promise<void> {
-  const cfg = vscode.workspace.getConfiguration('aiAutocomplete');
-  for (const [key, value] of Object.entries(values)) await cfg.update(key, value, vscode.ConfigurationTarget.Global);
-  await sleep(SETTLE_MS);
-}
 
 const useStrata = (baseUrl: string, model: string): Promise<void> =>
   configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${baseUrl}/v1`, fimModel: model }], 'fim.backend': BACKEND_ID });
@@ -42,42 +23,7 @@ const useStrata = (baseUrl: string, model: string): Promise<void> =>
 const useLlamaCpp = (baseUrl: string, extra: Record<string, unknown> = {}): Promise<void> =>
   configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl }], 'fim.backend': BACKEND_ID, ...extra });
 
-async function showAtEnd(doc: vscode.TextDocument): Promise<vscode.TextEditor> {
-  const editor = await vscode.window.showTextDocument(doc);
-  const end = doc.lineAt(doc.lineCount - 1).range.end;
-  editor.selection = new vscode.Selection(end, end);
-  return editor;
-}
-
 const openSource = async (content = SOURCE): Promise<vscode.TextEditor> => showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content }));
-
-/** URIs of the documents VS Code asked for inline completions, recorded by a probe provider the suite registers. */
-const asked = new Set<string>();
-
-/**
- * Triggers inline suggestions and fails unless VS Code asked for them in `editor`. Editor commands run on the editor
- * with text focus, which need not be the active one: while the window has no OS focus, an editor focused earlier keeps it.
- */
-async function trigger(editor: vscode.TextEditor): Promise<void> {
-  // VS Code does not ask again for an unchanged document it already has an answer for: an edit and its undo bump the version.
-  await vscode.commands.executeCommand('editor.action.inlineSuggest.hide');
-  const end = editor.selection.active;
-  await editor.edit((b) => b.insert(end, ' '));
-  await editor.edit((b) => b.delete(new vscode.Range(end, end.translate(0, 1))));
-  asked.delete(editor.document.uri.toString());
-  await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
-  const uri = editor.document.uri.toString();
-  assert.ok(await waitFor(() => asked.has(uri), 2000), `the trigger did not reach ${uri}; VS Code asked for ${JSON.stringify([...asked])}`);
-}
-const commit = (): Thenable<unknown> => vscode.commands.executeCommand('editor.action.inlineSuggest.commit');
-
-/** Commits the ghost text every 50 ms until `cond` holds for the document text or 5 s pass (a commit with no ghost text does nothing). */
-async function commitWhen(editor: vscode.TextEditor, cond: (text: string) => boolean): Promise<void> {
-  await waitFor(() => {
-    void commit();
-    return cond(editor.document.getText());
-  }, 5000);
-}
 
 suite('FIM inline completion', () => {
   let mock: MockServer;
@@ -91,13 +37,7 @@ suite('FIM inline completion', () => {
     mock = await startMockServer();
     const ext = vscode.extensions.getExtension<Api>('raboo.ai-autocomplete')!;
     api = await ext.activate();
-    // Registered once: adding or removing a provider while a request runs could disturb the extension's request.
-    probe = vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, {
-      provideInlineCompletionItems: (doc) => {
-        asked.add(doc.uri.toString());
-        return [];
-      },
-    });
+    probe = registerProbe();
   });
 
   suiteTeardown(async () => {
@@ -107,16 +47,14 @@ suite('FIM inline completion', () => {
 
   setup(() => {
     mock.reset();
-    asked.clear();
+    clearAsked();
     // The status bar keeps its last state; start each test from idle so an error must come from this test.
     api.status.set('idle');
   });
 
   teardown(async () => {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
-    const cfg = vscode.workspace.getConfiguration('aiAutocomplete');
-    for (const key of TOUCHED) await cfg.update(key, undefined, vscode.ConfigurationTarget.Global);
-    await sleep(SETTLE_MS);
+    await unconfigure(TOUCHED);
     if (tempDir) rmSync(tempDir, { recursive: true, force: true });
     tempDir = undefined;
   });

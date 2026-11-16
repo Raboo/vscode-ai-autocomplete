@@ -68,18 +68,31 @@ So on Strata, Next Edit is **borderline** and ghost-text FIM is **not viable**. 
 
 Proposed-API mechanics:
 - `package.json`: `"enabledApiProposals": ["inlineCompletionsAdditions"]`. The proposal file has no `// version:` header (checked on `main`), so no `@N` suffix is needed.
-- Packaging: `vsce package --allow-proposed-apis inlineCompletionsAdditions`; plain `vsce package` refuses.
+- Packaging: plain `vsce package` builds the `.vsix` (it does not check `enabledApiProposals`); `vsce publish` needs `--allow-proposed-apis inlineCompletionsAdditions`.
 - Pin the `.d.ts` from the **git tag matching `engines.vscode`** (e.g. `release/1.146` or tag `1.146.0`), not from `main`, which can declare fields the Stable runtime lacks. Latest Stable is 1.146.0. A CI job against Insiders catches proposal drift.
 - **Opt-in command**:
   - edits `argv.json`, which is JSONC, with `jsonc-parser` (MIT, Microsoft) so comments are preserved;
   - the path depends on `vscode.env.appName`: `~/.vscode/argv.json`, `~/.vscode-insiders/argv.json`, or `~/.vscode-oss/argv.json` (VSCodium);
   - if the edit fails, it opens `workbench.action.configureRuntimeArguments` with paste instructions;
-  - it then offers a restart.
+  - it then says to quit and reopen VS Code (a message without a button; a window reload is not enough).
 
 Key API facts (verified in VS Code `main`, 2026-11):
 - Stable `InlineCompletionItem.range` must stay on one line. Multi-line insertion at the cursor works.
 - Replacing earlier lines, or showing an edit away from the cursor, needs `isInlineEdit`, which is proposed.
-- Defining `handleDidShowCompletionItem`, or passing registration `metadata`, **throws** without the proposal. This is used as a runtime probe: try the proposed registration in a `try/catch` and fall back to stable registration.
+- Without the proposal, `registerInlineCompletionItemProvider` throws synchronously when `metadata` is passed, or when the provider defines `handleDidShowCompletionItem` or `handleDidPartiallyAcceptCompletionItem`. This is used as a runtime probe: try the proposed registration in a `try/catch` and fall back to stable registration. Everything else is silently ignored; `isInlineEdit` becomes false and the item turns into ghost text.
+
+Further API facts (research, verified 2026-11-15 in VS Code `release/1.146` (`69047191fc427f2f92828279aae1d90d8eeda7ab`) and `release/1.100` (`258e40fedc6cb8edf399a463ce3a9d32e7e1f6f3`)):
+- Stable 1.146 has no inline-edit API. A stable item's `range` "Must begin and end on the same line". A multi-line range does not throw; it is simply never shown.
+- An extension that declares `enabledApiProposals` without being allowed still activates; VS Code logs an ERROR.
+- argv.json `"enable-proposed-api": [ids]` works for any extension id on Stable and needs a full restart. Extension development mode on Stable does not enable proposals.
+- `isInlineEdit: true` alone makes an inline edit, with any range. Only one edit is kept, and a visible ghost-text item hides it.
+- Tab jumps to an edit more than one line from the cursor; a second Tab accepts. `showRange` is not used by the 1.146 editor.
+- Providers are asked again only on typing, explicit triggers and the provider's (proposed) `onDidChange`, never on cursor moves alone.
+- After an explicit trigger at a document version and cursor, VS Code treats that state as answered and never shows a later Next Edit result for it (found in the Phase 3a integration tests).
+- Plain `vsce package` does not check `enabledApiProposals`; only `vsce publish` does.
+- `@vscode/test-cli` configs take `launchArgs` and a `label`.
+- `isInlineEdit`, `handleEndOfLifetime` (with `InlineCompletionEndOfLifeReasonKind` Accepted 0, Rejected 1, Ignored 2) and `metadata.displayName` exist in both 1.100 and 1.146, so no VS Code version gate is needed.
+- The pinned proposal file is `release/1.146` (`69047191...`). esbuild bundles jsonc-parser's ES module build (`mainFields: ['module', 'main']`) because its UMD build cannot be bundled.
 
 ## Architecture
 
@@ -292,10 +305,21 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 - **Diff and classify**:
   - trim identical leading and trailing lines;
   - if the change is a pure insertion at the cursor, show it as ghost text;
-  - otherwise it is an inline edit, shown with the native renderer when the proposal is available and with decorations if not.
-  - Before applying, check that the original text hasn't drifted.
+  - otherwise it is an inline edit, shown with the native renderer when the proposal is available. Phase 3a drops it without the proposal; the decoration fallback is Phase 3b.
+  - Before applying, check that the original text hasn't drifted. Not possible in Phase 3a: VS Code applies a native inline edit itself, with no hook before it; the decoration fallback (3b) can check.
   - After an accept, chain the next prediction (re-trigger after ~60 ms) so repeated Tabs walk through a refactor.
 - **Arbitration with FIM**: one registered provider returns a fresh NES result for the current document version if there is one, otherwise the FIM result. While the user is typing mid-line, FIM wins.
+- **Phase 3a decisions** (2026-11-15, plan `docs/superpowers/plans/2026-11-15-phase3a-next-edit.md`, rulings 2, 3, 5, 6 and 9 to 13):
+  - Next Edit is off until `aiAutocomplete.nextEdit.backend` is set; it has no default, unlike `fim.backend`, so FIM-only users send no extra requests.
+  - FIM wins: after typing, Next Edit asks only when FIM's result for that document version was empty or FIM is not active for the document. A cursor move within 10 s of an edit asks Next Edit directly.
+  - The Next Edit model is the backend's `nextEditModel`, else its `fimModel`, else the detected model. A separate Next Edit model keeps the backend-level values of the backend's `fim` block, `extraBody` and the `extraContext` restriction; its thinking switch and other model values come from the model's preset and `modelOverrides`.
+  - The deadline is `aiAutocomplete.nextEdit.timeoutMs`, default 10 000 ms (500 to 60 000), because Next Edit runs in the background and a late answer for an old version is dropped anyway.
+  - A fresh result is shown by running `editor.action.inlineSuggest.trigger` in both modes, not the proposed `onDidChange`, so there is one code path.
+  - The edit-pause delay is 400 ms after the last change; selection triggers are not debounced, and the same-line cooldown limits them.
+  - Display classification: ghost text only for a pure insertion at the cursor, including lines inserted right after the cursor line when the cursor is at its end. Copilot's "rebase as replace-to-end-of-line" is not done.
+  - The history merges per area: a new diff whose first hunk starts on the same line as the newest entry's first hunk, in the same file, replaces that entry with one diff from the older snapshot (Copilot's "SameStartLine"). Hunks use 1-based unified-diff numbering.
+  - Final-review rulings (2026-11-16): snapshots, history and idle timers exist only while Next Edit is on (`enabled` and a backend), and a history diff stops at 500 edits or 50 ms and then records no entry. A region with a line starting with ```` ``` ```` (a Markdown code block), or longer than twice the file budget, is not sent, and the answer's closing fence counts only as a whole line. Files are named as `asRelativePath` names them by default (with the folder name in a multi-root workspace), for Next Edit and for FIM's extra context, and are eligible when untitled or inside a workspace folder in any scheme (remote windows included). A ghost result is kept only while the cursor stays where it was computed; snooze stops Next Edit too.
+  - Implementation facts: a cursor report counts as a move only when the document version is unchanged since the last selection event and it arrives more than 100 ms (`EDIT_ECHO_MS`) after the last edit to that document. There is one request per document version and cursor line. Error notifications are one per backend and error kind (http, network, timeout); a model that keeps thinking gets its own one-time notice; a missing API key records no backoff. The backoff is shared with FIM, so a Next Edit failure or timeout also pauses FIM on that backend.
 
 ### Settings and security
 
@@ -305,7 +329,7 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 | `aiAutocomplete.fim.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
 | `aiAutocomplete.privacy.localOnly` | Workspace-settable (it can only restrict). Refuses non-loopback, non-private backends, and shows a lock icon in the status bar. |
 | `aiAutocomplete.fim.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
-| `aiAutocomplete.nextEdit.*` | `enabled`, `format` (`auto`, `chatXtab`, `zeta21`, `sweep`, `instinct`), region size, history size, `display` (`auto`, `native`, `decorations`) |
+| `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b: `format` (`auto`, `chatXtab`, `zeta21`, `sweep`, `instinct`), region size, history size, `display` (`auto`, `native`, `decorations`), `contextBudget`. |
 | `aiAutocomplete.modelOverrides` | machine scope: regex → `{fimTemplate, stop, sampling, extraBody, thinking}` |
 
 - **Status bar**: idle, loading, error, snoozed, local-lock, and a "thinking" warning. Clicking it opens a quick pick to toggle, snooze, switch backend, show the log, or set up a local model.
@@ -382,7 +406,10 @@ After this plan is approved, the next step is a detailed implementation plan (su
    - **AI-session handoff** (added 2026-11-13 at the user's request): `AGENTS.md` holds the rules and workflow for any AI agent, `CLAUDE.md` imports it, and `docs/ROADMAP.md` tracks phase status, so a fresh session can continue the work from the repo alone.
 1. **FIM core** (v0.1): llama.cpp `/infill`, openaiCompat (completions with template or `suffix`), Mistral/Codestral; coder-family presets; the full FIM pipeline; status bar; backend settings with SecretStorage keys; `localOnly`.
 2. **Chat path and thinking control** (v0.2): hole-filler; `thinking.ts` and capability learning; OpenRouter backend; presets for Qwen3/3.5/3.8, DeepSeek, GLM, Kimi, MiniMax, Gemma, Granite, Nemotron, gpt-oss, Mistral; Strata host flavor.
-3. **Next Edit** (v0.3):
+3. **Next Edit** (v0.3), split on 2026-11-15 into two plans:
+   - **3a. Next Edit core, chatXtab, native display** (implemented): history, region, trigger, the chatXtab format, ghost text for insertions, native inline edits with the opt-in command.
+   - **3b. Sweep and Zeta formats, decoration fallback** (plan not written yet): the `sweep` and `zeta21` formats need their own research into prompt layouts and licenses; the settings `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget` move here (they are constants in 3a).
+   Original scope:
    - history, region, trigger;
    - the **chatXtab** format (tested with Qwen3.8-Flash-Next on Strata, measuring latency);
    - the native renderer with the proposed-API probe and an "Enable native Next Edit UI" command that edits argv.json;
@@ -431,7 +458,7 @@ After this plan is approved, the next step is a detailed implementation plan (su
 - Granite 4.1 FIM token order, and llama.cpp support for Mellum2.
 - Whether llama.cpp's `--spm-infill` lets Mellum (suffix-first) use `/infill` with `input_extra`, which would be cheaper than a hand-built `/completion` prompt.
 - Whether `llama serve` and `llama-server` are aliases in the user's installed llama.cpp build.
-- Strata time to first token for the chatXtab prompt at 2K and 4K tokens: partly answered on the user's Strata endpoint (hardware not recorded; verified 2026-11-15, Strata `13eedf5`). A 152-token prompt took about 2.5 s cold and 0.23 s with its start cached. The 2K and 4K measurements are still open.
+- Strata time to first token for the chatXtab prompt at 2K and 4K tokens: answered for small prompts on the user's Strata endpoint (hardware not recorded; verified 2026-11-15, Strata `13eedf5`). A 152-token prompt took about 2.5 s cold and 0.23 s with its start cached. The Phase 3a live probe (Qwen3.8, thinking off, the final prompt wording) took 2.6 to 3.0 s cold for both an 8-line and a 15-line region (472 to 489 prompt tokens, 40 to 57 completion tokens), so reading the prompt dominates and the region size stays. Large prompts (2K and 4K tokens) are still open; the Phase 3a smoke test notes the latency on a large file.
 - Kimi K3.1-Pro: how to turn thinking off.
 - The `chat_template_kwargs` key servers expect for DeepSeek V3.2.
 - Magistral without its system prompt.

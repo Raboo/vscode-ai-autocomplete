@@ -475,6 +475,16 @@
         "command": "aiAutocomplete.enableNativeNextEdit",
         "title": "Enable Native Next Edit UI",
         "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditTab",
+        "title": "Next Edit: Jump or Apply (internal)",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.nextEditDismiss",
+        "title": "Next Edit: Dismiss (internal)",
+        "category": "AI Autocomplete"
       }
     ],
     "menus": {
@@ -486,9 +496,29 @@
         {
           "command": "aiAutocomplete.nextEditAccepted",
           "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditTab",
+          "when": "false"
+        },
+        {
+          "command": "aiAutocomplete.nextEditDismiss",
+          "when": "false"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "aiAutocomplete.nextEditTab",
+        "key": "tab",
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !inlineSuggestionVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly"
+      },
+      {
+        "command": "aiAutocomplete.nextEditDismiss",
+        "key": "escape",
+        "when": "editorTextFocus && aiAutocomplete.nextEditPending && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

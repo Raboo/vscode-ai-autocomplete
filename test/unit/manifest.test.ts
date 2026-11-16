@@ -17,12 +17,31 @@ test('webview bundle is built and packaged', () => {
   expect(existsSync('dist/webview/backends.css')).toBe(true);
   expect(readFileSync('.vscodeignore', 'utf8').split(/\r?\n/).map((l) => l.trim())).toContain('!dist/webview/**');
 });
-test('commands are categorised and the accepted commands are hidden from the palette', () => {
+test('commands are categorised and the internal commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
-  expect(cmds.map((c) => c.command).sort()).toEqual(['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle'].map((c) => `aiAutocomplete.${c}`).sort());
+  expect(cmds.map((c) => c.command).sort()).toEqual(
+    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle']
+      .map((c) => `aiAutocomplete.${c}`)
+      .sort(),
+  );
   expect(cmds.every((c) => c.category === 'AI Autocomplete')).toBe(true);
-  expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.accepted', when: 'false' });
-  expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: 'aiAutocomplete.nextEditAccepted', when: 'false' });
+  for (const id of ['accepted', 'nextEditAccepted', 'nextEditTab', 'nextEditDismiss']) {
+    expect(pkg.contributes.menus.commandPalette).toContainEqual({ command: `aiAutocomplete.${id}`, when: 'false' });
+  }
+});
+test('Tab and Esc act on a pending Next Edit decoration only, never over a suggestion, snippet or selection', () => {
+  expect(pkg.contributes.keybindings).toEqual([
+    {
+      command: 'aiAutocomplete.nextEditTab',
+      key: 'tab',
+      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !editorHasSelection && !inlineSuggestionVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && !editorReadonly',
+    },
+    {
+      command: 'aiAutocomplete.nextEditDismiss',
+      key: 'escape',
+      when: 'editorTextFocus && aiAutocomplete.nextEditPending && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible',
+    },
+  ]);
 });
 test('the backends setting links to the Backends page', () => {
   const backends = pkg.contributes.configuration.properties['aiAutocomplete.backends'];

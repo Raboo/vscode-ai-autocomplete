@@ -6,6 +6,8 @@ import { NEXT_EDIT_TAG, SWEEP_TAG, ZETA_TAG, startMockServer, userMessage, type 
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
   nativeNextEdit: boolean;
+  /** The inline edit shown as decorations, if any. */
+  nextEditPending(): { uri: string; version: number; edit: { startLine: number; endLine: number; newLines: string[] } } | undefined;
 }
 
 type Launch = 'main' | 'proposed';
@@ -23,7 +25,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format'];
+const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -54,6 +56,13 @@ const RENAMED = CIRCLE.map((l, i) => (i === 7 ? 'def circle_circumference(radius
 
 /** A chatXtab answer: the rewritten region in one fenced block. The documents here are short, so the region is the whole file. */
 const fence = (lines: string[]): string[] => ['```\n', `${lines.join('\n')}\n`, '```\n'];
+
+/** The model's edit of CIRCLE: lines 7 and 8 replaced. */
+const RENAME_EDIT = { startLine: 7, endLine: 9, newLines: [RENAMED[7], RENAMED[8]] };
+/** How long a decoration takes to appear once the mock has the request. */
+const PENDING_WAIT_MS = 2000;
+/** Past the rejection cooldown (REJECTION_COOLDOWN_MS is 5000) that Esc starts, during which nothing is asked. */
+const REJECTION_COOLDOWN_WAIT_MS = 5200;
 
 const isChat = (r: RecordedRequest): boolean => r.method === 'POST' && r.path === '/v1/chat/completions';
 const isNextEdit = (r: RecordedRequest): boolean => isChat(r) && userMessage(r.body).includes(NEXT_EDIT_TAG);
@@ -210,7 +219,7 @@ suite('Next Edit', () => {
     });
   });
 
-  testIn('main', 'without the proposed API an edit elsewhere is not applied', async () => {
+  testIn('main', 'display native drops an edit elsewhere without the proposed API', async () => {
     await withNextEdit({ content: fence(RENAMED) }, async (m) => {
       const editor = await openAndRename();
 
@@ -219,6 +228,86 @@ suite('Next Edit', () => {
       await commit();
 
       assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
+    }, { 'nextEdit.display': 'native' });
+  });
+
+  testIn('main', 'without the proposed API, auto shows an edit elsewhere as decorations', async () => {
+    await withNextEdit({ content: fence(RENAMED) }, async (m) => {
+      const editor = await openAndRename();
+
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+      assert.equal(api.nextEditPending()?.uri, editor.document.uri.toString());
+    }, { 'nextEdit.display': 'auto' });
+  });
+
+  /** CIRCLE renamed by the user, with the model's rename of the functions below shown as decorations. */
+  async function withPendingRename(fn: (editor: vscode.TextEditor, m: MockServer) => Promise<void>): Promise<void> {
+    await withNextEdit({ content: fence(RENAMED) }, async (m) => {
+      const editor = await openAndRename();
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+      await fn(editor, m);
+    }, { 'nextEdit.display': 'decorations' });
+  }
+
+  test('the edit is pending and Tab jumps, then applies', async () => {
+    await withPendingRename(async (editor) => {
+      assert.equal(editor.selection.active.line, 4);
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      // The first Tab only moves the cursor to the edit.
+      assert.equal(editor.selection.active.line, 7);
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), RENAMED.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
+      // The cursor ends after the last new line.
+      assert.equal(editor.selection.active.line, 8);
+      assert.equal(editor.selection.active.character, RENAMED[8].length);
+    });
+  });
+
+  test('Esc dismisses a pending edit', async () => {
+    await withPendingRename(async (editor) => {
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditDismiss');
+      assert.equal(api.nextEditPending(), undefined);
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      // Esc is a rejection: the cooldown it starts would keep the next tests' requests from being sent.
+      await sleep(REJECTION_COOLDOWN_WAIT_MS);
+    });
+  });
+
+  test('typing clears a pending edit', async () => {
+    await withPendingRename(async (editor, m) => {
+      // Otherwise the request for the typed version would show the rename again.
+      m.setNextEdit({ content: ['NO_CHANGE'] });
+      editor.selection = new vscode.Selection(0, CIRCLE[0].length, 0, CIRCLE[0].length);
+      await typeKeys(editor, ' ');
+      const typed = CIRCLE.map((l, i) => (i === 0 ? `${l} ` : l)).join('\n');
+      assert.equal(editor.document.getText(), typed);
+      assert.equal(api.nextEditPending(), undefined);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), typed);
+    });
+  });
+
+  testIn('proposed', 'display decorations wins over native', async () => {
+    await withPendingRename(async (editor) => {
+      // The commit command would accept a visible inline edit wherever it is: none is shown.
+      for (let i = 0; i < 20; i++) {
+        await commit();
+        await sleep(50);
+      }
+      assert.equal(editor.document.getText(), CIRCLE.join('\n'));
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
     });
   });
 

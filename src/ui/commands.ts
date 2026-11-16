@@ -30,6 +30,10 @@ export interface CommandDeps {
   manageBackends(o: OpenOptions): void;
   /** A Next Edit item was accepted. */
   nextEditAccepted(): void;
+  /** Tab on a Next Edit shown as decorations: jump to it, or apply it. */
+  nextEditTab(): Promise<void>;
+  /** Esc on a Next Edit shown as decorations. */
+  nextEditDismiss(): void;
 }
 
 /** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. */
@@ -145,6 +149,8 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       d.status.setStats(accepted);
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),
+    reg('nextEditTab', () => d.nextEditTab()),
+    reg('nextEditDismiss', () => d.nextEditDismiss()),
     reg('enableNativeNextEdit', async () => {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');

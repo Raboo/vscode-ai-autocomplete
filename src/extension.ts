@@ -25,7 +25,7 @@ const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean } {
+export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean; nextEditPending: () => ReturnType<NextEditController['pendingEdit']> } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -179,6 +179,8 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     log,
     manageBackends,
     nextEditAccepted: () => nextEdit.accepted(),
+    nextEditTab: () => nextEdit.nextEditTab(),
+    nextEditDismiss: () => nextEdit.nextEditDismiss(),
     retry: () => {
       for (const b of backoffs.values()) b.reset();
       for (const id of backends.keys()) capabilities.forgetLearned(id);
@@ -220,7 +222,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
-  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native };
+  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native, nextEditPending: () => nextEdit.pendingEdit() };
 }
 
 export function deactivate(): void {}

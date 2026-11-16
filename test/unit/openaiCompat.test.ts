@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { OpenAiCompatBackend } from '../../src/backends/openaiCompat';
 import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
@@ -130,6 +130,34 @@ describe('OpenAiCompatBackend', () => {
     m = await startMockHttp(() => ({ json: { data: [{ id: 's', meta: { n_ctx: 262144 } }] } }));
     const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'strata' }), key());
     expect(await b.listModels(new AbortController().signal)).toMatchObject({ models: ['s'], contextWindows: { s: 262144 } });
+  });
+
+  test('OpenAI-compatible reports finish_reason length', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"a"}]}', '{"choices":[{"text":"","finish_reason":"length"}]}', '[DONE]'] }));
+    const onTruncated = vi.fn();
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
+    expect(await collect(b.streamFim(req({ onTruncated })))).toEqual(['a']);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  test('finish_reason length is reported once, and text in the same event still arrives', async () => {
+    m = await startMockHttp(() => ({
+      sse: ['{"choices":[{"text":"a","finish_reason":"length"}]}', '{"choices":[{"text":"","finish_reason":"length"}]}', '[DONE]'],
+    }));
+    const onTruncated = vi.fn();
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`), key());
+    expect(await collect(b.streamFim(req({ onTruncated })))).toEqual(['a']);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  test('a normal stop is not a truncation', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"a"}]}', '{"choices":[{"text":"","finish_reason":"stop"}]}', '[DONE]'] }));
+    const onTruncated = vi.fn();
+    await collect(new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).streamFim(req({ onTruncated })));
+    await m.close();
+    m = await startMockHttp(() => ({ sse: SSE }));
+    await collect(new OpenAiCompatBackend(cfg(`${m.url}/v1`), key()).streamFim(req({ onTruncated })));
+    expect(onTruncated).not.toHaveBeenCalled();
   });
 
   test('tolerates events without choices and empty data; malformed JSON throws', async () => {

@@ -20,6 +20,8 @@ export interface FimRequest {
   extraBody: Record<string, unknown>;
   signal: AbortSignal;
   timeoutMs: number;
+  /** Called at most once per stream when the server stopped at the token limit, so the answer is cut off. */
+  onTruncated?(): void;
 }
 
 /** nativeChatModels: the native route also serves chat-family models (only DeepSeek's API). */

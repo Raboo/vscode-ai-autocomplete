@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import type { ChatEvent, ChatRequest, FimBackend } from '../../../src/backends/types';
+import type { ChatEvent, ChatRequest, FimBackend, FimRequest } from '../../../src/backends/types';
 import { resolveNextEdit } from '../../../src/completion/effective';
 import { ThinkingError } from '../../../src/completion/stream';
 import { parseSettings, type RawSettingsSource } from '../../../src/config/settings';
-import { CHAT_XTAB_SYSTEM, chatXtabMessages, type NextEditInput } from '../../../src/nextEdit/formats/chatXtab';
-import { editableRegion } from '../../../src/nextEdit/region';
+import { pickFormat } from '../../../src/nextEdit/formats';
+import { CHAT_XTAB_SYSTEM, chatXtabMessages } from '../../../src/nextEdit/formats/chatXtab';
+import type { CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from '../../../src/nextEdit/formats/format';
+import { editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
 import { nextEditMaxTokens, runNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
 import type { BackendConfig, HostFlavor } from '../../../src/types';
 
@@ -19,7 +21,7 @@ const CIRCLE = [
 const snapshot = (lines = CIRCLE, line = 4): NextEditSnapshot => {
   const input: NextEditInput = {
     path: 'circle.py', lines, cursor: { line, character: lines[line].length },
-    region: editableRegion(line, lines.length), history: [], snippets: [],
+    region: editableRegion(line, lines.length), history: [], snippets: [], budgets: nextEditBudgets(3500),
   };
   return { uri: 'file:///circle.py', version: 3, input };
 };
@@ -30,8 +32,11 @@ const regionOf = (s: NextEditSnapshot, answer: string[]): string => fence(answer
 const content = (text: string): ChatEvent => ({ type: 'content', text });
 class TimeoutError extends Error { override name = 'TimeoutError'; }
 
-function run(events: ChatEvent[], o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error } = {}) {
-  const captured: { req?: ChatRequest; pulled: number } = { pulled: 0 };
+function run(
+  events: ChatEvent[],
+  o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error; format?: NextEditFormat; chunks?: string[]; truncate?: boolean } = {},
+) {
+  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[] } = { pulled: 0, prompts: [] };
   const backend = {
     streamChat: async function* (req: ChatRequest) {
       captured.req = req;
@@ -41,11 +46,40 @@ function run(events: ChatEvent[], o: { snap?: NextEditSnapshot; flavor?: HostFla
       }
       if (o.fail) throw o.fail;
     },
+    streamFim: async function* (req: FimRequest) {
+      captured.fim = req;
+      for (const c of o.chunks ?? []) {
+        captured.pulled++;
+        yield c;
+      }
+      if (o.truncate) req.onTruncated?.();
+      if (o.fail) throw o.fail;
+    },
   } as unknown as FimBackend;
   const ctl = new AbortController();
   const snap = o.snap ?? snapshot();
-  const result = runNextEdit({ backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', snapshot: snap, rejected: new Set(), signal: ctl.signal, onRejected: undefined });
+  const result = runNextEdit({
+    backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', format: o.format ?? pickFormat('chatXtab', 'm'), snapshot: snap,
+    rejected: new Set(), signal: ctl.signal, onRejected: undefined, onPrompt: (p) => captured.prompts.push(p),
+  });
   return { result, captured, ctl, snap };
+}
+
+/** A completion format that records what it parses and answers with `answer`. */
+function stubFormat(answer: (text: string) => FormatAnswer = () => ({ kind: 'noChange' })): CompletionFormat & { parsed: string[] } {
+  const parsed: string[] = [];
+  return {
+    id: 'sweep',
+    transport: 'completion',
+    parsed,
+    region: (c, n) => editableRegion(c, n),
+    problem: () => undefined,
+    prompt: () => ({ prompt: 'P', prefill: 'pre\n', stop: ['<|x|>'], maxTokens: 99 }),
+    parse: (text) => {
+      parsed.push(text);
+      return answer(text);
+    },
+  };
 }
 
 describe('nextEditMaxTokens', () => {
@@ -141,5 +175,55 @@ describe('runNextEdit', () => {
 
   test('a timeout propagates', async () => {
     await expect(run([content('```\nx')], { fail: new TimeoutError('t') }).result).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+});
+
+describe('runNextEdit with a completion format', () => {
+  test('a completion format sends a template prompt with temperature 0', async () => {
+    const format = stubFormat();
+    const r = run([], { format, chunks: ['a', 'b\n'] });
+    await expect(r.result).resolves.toBeUndefined();
+    const req = r.captured.fim!;
+    expect(r.captured.req).toBeUndefined();
+    expect(req.payload).toEqual({ route: 'template', prompt: 'P' });
+    expect(req.sampling).toEqual({ temperature: 0, maxTokens: 99 });
+    expect(req.stop).toEqual(['<|x|>']);
+    expect(req.model).toBe('m');
+    expect(req.timeoutMs).toBe(values.timeoutMs);
+    expect(req.extraBody).toBe(values.extraBody);
+    expect(req.timeMaxPredictMs).toBeUndefined();
+    expect(typeof req.onTruncated).toBe('function');
+    expect(format.parsed).toEqual(['pre\nab\n']);
+    expect(r.captured.prompts).toEqual(['P']);
+  });
+
+  test('a stop string echoed at the end is removed before parsing', async () => {
+    const format = stubFormat();
+    await run([], { format, chunks: ['ab', '<|x|>'] }).result;
+    expect(format.parsed).toEqual(['pre\nab']);
+  });
+
+  test('a rewrite becomes an edit, as on the chat route', async () => {
+    const snap = snapshot();
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
+    const res = await run([], { format, snap, chunks: ['x'] }).result;
+    expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
+  });
+
+  test('a truncated completion gives no result', async () => {
+    const snap = snapshot();
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
+    await expect(run([], { format, snap, chunks: ['x'], truncate: true }).result).resolves.toBeUndefined();
+  });
+
+  test('an empty rewrite of a non-blank region gives no result', async () => {
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: [] }));
+    await expect(run([], { format, chunks: ['x'] }).result).resolves.toBeUndefined();
+  });
+
+  test('a timeout propagates and aborts the request', async () => {
+    const r = run([], { format: stubFormat(), chunks: ['x'], fail: new TimeoutError('t') });
+    await expect(r.result).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(r.captured.fim!.signal.aborted).toBe(true);
   });
 });

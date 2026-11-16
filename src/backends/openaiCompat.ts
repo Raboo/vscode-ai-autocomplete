@@ -111,12 +111,17 @@ export class OpenAiCompatBackend implements FimBackend {
     if (!res.body) {
       return;
     }
+    let truncated = false;
     for await (const data of parseSse(res.body)) {
       if (data === '') {
         continue;
       }
-      const ev = JSON.parse(data) as { choices?: { text?: unknown }[] };
+      const ev = JSON.parse(data) as { choices?: { text?: unknown; finish_reason?: unknown }[] };
       throwIfStreamError(ev);
+      if (!truncated && ev.choices?.[0]?.finish_reason === 'length') {
+        truncated = true;
+        req.onTruncated?.();
+      }
       const text = ev.choices?.[0]?.text;
       if (typeof text === 'string' && text !== '') {
         yield text;

@@ -12,9 +12,10 @@ import { ThinkingError } from '../../completion/stream';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
-import { SNIPPETS_BUDGET_CHARS, regionProblem, type NextEditInput } from '../formats/chatXtab';
+import { pickFormat } from '../formats';
+import type { NextEditInput } from '../formats/format';
 import { EditHistory, type RecentSnippets } from '../history';
-import { editableRegion } from '../region';
+import { editableRegion, nextEditBudgets } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
 
@@ -332,8 +333,19 @@ export class NextEditController implements vscode.Disposable {
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
       const lines = doc.getText().split(/\r?\n/);
-      const region = editableRegion(at.line, lines.length);
-      const problem = regionProblem(lines, region);
+      const format = pickFormat('chatXtab', model);
+      const path = this.path(doc);
+      const budgets = nextEditBudgets(s.nextEdit.contextBudget);
+      const base: NextEditInput = {
+        path,
+        lines,
+        cursor: { line: at.line, character: at.character },
+        region: editableRegion(at.line, lines.length),
+        history: [],
+        snippets: [],
+        budgets,
+      };
+      const problem = format.problem(base);
       if (problem) {
         if (this.skipped.get(uri) !== version) {
           this.skipped.set(uri, version);
@@ -344,16 +356,12 @@ export class NextEditController implements vscode.Disposable {
 
       for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
       this.flush(doc);
-      const path = this.path(doc);
       // Other files' diffs and snippets go out only with extra context, as for FIM.
       const extra = values.extraContext;
       const input: NextEditInput = {
-        path,
-        lines,
-        cursor: { line: at.line, character: at.character },
-        region,
+        ...base,
         history: this.history.entries(extra ? undefined : (p) => p === path),
-        snippets: extra ? this.d.snippets.pick(path, SNIPPETS_BUDGET_CHARS) : [],
+        snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
       };
       const started = Date.now();
       this.policy.requested(uri, at.line, started);
@@ -364,12 +372,13 @@ export class NextEditController implements vscode.Disposable {
         values,
         flavor,
         model,
+        format,
         snapshot: { uri, version, input },
         rejected: learned.rejected,
         signal: ctl.signal,
         onRejected: (fields) => this.rejectedFields(id, model, fields),
         ...(s.debug.logPrompts
-          ? { onPrompt: (m: ChatMessage[]) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
+          ? { onPrompt: (m: ChatMessage[] | string) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
           : {}),
       });
       backoff.recordSuccess();

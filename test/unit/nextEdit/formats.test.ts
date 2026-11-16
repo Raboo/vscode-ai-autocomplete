@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest';
+import { formatIdFor, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
+import { tooLong, type NextEditInput } from '../../../src/nextEdit/formats/format';
+import { nextEditBudgets } from '../../../src/nextEdit/region';
+
+describe('pickFormat', () => {
+  it('auto picks chatXtab for other or unknown models', () => {
+    expect(pickFormat('auto', 'qwen3.8-flash-next-iq3_s').id).toBe('chatXtab');
+    expect(pickFormat('auto', undefined).id).toBe('chatXtab');
+  });
+
+  it('an explicit setting wins over the model id', () => {
+    expect(pickFormat('chatXtab', 'zeta-2.1').id).toBe('chatXtab');
+  });
+
+  it('chatXtab runs on the chat route', () => {
+    expect(pickFormat('chatXtab', undefined).transport).toBe('chat');
+  });
+});
+
+describe('formatIdFor (Ruling 1)', () => {
+  it('auto detects Zeta and Sweep model ids', () => {
+    expect(formatIdFor('auto', 'randmaru/zeta-2.1-mlx')).toBe('zeta21');
+    expect(formatIdFor('auto', 'sweep-next-edit-1.5b')).toBe('sweep');
+    expect(formatIdFor('auto', 'qwen3.8-flash-next-iq3_s')).toBe('chatXtab');
+    expect(formatIdFor('auto', undefined)).toBe('chatXtab');
+  });
+
+  it('an explicit setting is taken as given', () => {
+    expect(formatIdFor('chatXtab', 'zeta-2.1')).toBe('chatXtab');
+    expect(formatIdFor('sweep', 'qwen')).toBe('sweep');
+    expect(formatIdFor('zeta21', undefined)).toBe('zeta21');
+  });
+
+  it('Sweep v2 for ids with v2 or 7b, else v1', () => {
+    expect(sweepVariant('sweep-next-edit-1.5b')).toBe('v1');
+    expect(sweepVariant('sweep-next-edit-v2-7B')).toBe('v2');
+    expect(sweepVariant('sweep-7b')).toBe('v2');
+    expect(sweepVariant(undefined)).toBe('v1');
+  });
+});
+
+describe('tooLong', () => {
+  const input = (lines: string[]): NextEditInput => ({
+    path: 'a.ts',
+    lines,
+    cursor: { line: 0, character: 0 },
+    region: { start: 0, end: lines.length - 1 },
+    history: [],
+    snippets: [],
+    budgets: nextEditBudgets(1000),
+  });
+
+  it('is true when the region text is longer than twice the file budget', () => {
+    const max = 2 * nextEditBudgets(1000).fileChars;
+    expect(tooLong(input(['x'.repeat(max)]))).toBe(false);
+    expect(tooLong(input(['x'.repeat(max + 1)]))).toBe(true);
+    expect(tooLong(input(['x'.repeat(max / 2), 'x'.repeat(max / 2)]))).toBe(true);
+  });
+});

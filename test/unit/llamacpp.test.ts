@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
 import { HttpError, StreamError } from '../../src/backends/http';
 import type { FimRequest } from '../../src/backends/types';
@@ -109,6 +109,26 @@ describe('LlamaCppBackend', () => {
     const err = await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req())).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StreamError);
     expect((err as StreamError).message).toBe('context shift is disabled');
+  });
+
+  test('llama.cpp reports a length stop', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"content":"a"}', '{"content":"","stop":true,"stop_type":"limit"}'] }));
+    const onTruncated = vi.fn();
+    const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+    expect(await collect(b.streamFim(req({ onTruncated })))).toEqual(['a']);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  test('a normal stop is not a truncation', async () => {
+    const onTruncated = vi.fn();
+    for (const type of ['eos', 'word']) {
+      m = await startMockHttp(() => ({ sse: ['{"content":"a"}', `{"content":"","stop":true,"stop_type":"${type}"}`] }));
+      await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req({ onTruncated })));
+      await m.close();
+    }
+    m = await startMockHttp(() => ({ sse: SSE }));
+    await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req({ onTruncated })));
+    expect(onTruncated).not.toHaveBeenCalled();
   });
 
   test('skips empty data events and throws on malformed JSON', async () => {

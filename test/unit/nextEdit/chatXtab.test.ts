@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CHAT_XTAB_SYSTEM,
-  FILE_BUDGET_CHARS,
-  HISTORY_BUDGET_CHARS,
-  SNIPPETS_BUDGET_CHARS,
-  chatXtabDone,
-  chatXtabMessages,
-  parseChatXtab,
-  regionProblem,
-  type NextEditInput
-} from '../../../src/nextEdit/formats/chatXtab';
+import { CHAT_XTAB_SYSTEM, chatXtabDone, chatXtabFormat, chatXtabMessages, parseChatXtab } from '../../../src/nextEdit/formats/chatXtab';
+import type { NextEditInput } from '../../../src/nextEdit/formats/format';
+import { nextEditBudgets, type LineSpan } from '../../../src/nextEdit/region';
 
 const fileLines = Array.from({ length: 30 }, (_, i) => `line ${i}`);
 
@@ -21,6 +13,7 @@ function input(over: Partial<NextEditInput> = {}): NextEditInput {
     region: { start: 8, end: 14 },
     history: [{ path: 'src/a.ts', text: '--- src/a.ts\n+++ src/a.ts\n-x\n+y', hunks: [] }],
     snippets: [{ path: 'src/b.ts', text: 'export const b = 1;' }],
+    budgets: nextEditBudgets(3500),
     ...over
   };
 }
@@ -28,10 +21,6 @@ function input(over: Partial<NextEditInput> = {}): NextEditInput {
 const userOf = (i: NextEditInput): string => chatXtabMessages(i).messages[1].content;
 
 describe('chatXtabMessages', () => {
-  it('has the budgets in chars', () => {
-    expect([FILE_BUDGET_CHARS, HISTORY_BUDGET_CHARS, SNIPPETS_BUDGET_CHARS]).toEqual([5250, 3500, 3500]);
-  });
-
   it('the user message has the blocks in order', () => {
     const user = userOf(input());
     const a = user.indexOf('<|recently_viewed_code_snippets|>');
@@ -99,6 +88,26 @@ describe('chatXtabMessages', () => {
   it('stableChars is 0 when fewer than 4 file lines precede the region', () => {
     const i = input({ region: { start: 2, end: 6 }, history: [], snippets: [] });
     expect(chatXtabMessages(i).stableChars).toBe(0);
+  });
+
+  it('a smaller budget clips more', () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`);
+    const fileSection = (contextTokens: number): string => {
+      const user = userOf(input({ lines, cursor: { line: 100, character: 0 }, region: { start: 95, end: 110 }, budgets: nextEditBudgets(contextTokens) }));
+      return user.slice(user.indexOf('<|current_file_content|>'), user.indexOf('<|/current_file_content|>'));
+    };
+    const small = fileSection(1000);
+    const large = fileSection(3500);
+    expect(small.length).toBeLessThan(large.length);
+    expect(small).toContain('line 100');
+    expect(small).not.toContain('line 0\n');
+  });
+
+  it('a smaller history budget keeps fewer entries', () => {
+    const entry = (n: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(998), hunks: [] });
+    const user = userOf(input({ history: [entry(1), entry(2), entry(3)], budgets: nextEditBudgets(1000) }));
+    expect(user).toContain('E3');
+    expect(user).not.toContain('E2');
   });
 
   it('stableChars counts code points', () => {
@@ -170,8 +179,22 @@ describe('chatXtabDone', () => {
   });
 });
 
-describe('regionProblem', () => {
+describe('chatXtabFormat', () => {
   const lines = ['# Install', '', '```bash', 'npm install', '```', '', 'Then run the tes'];
+  const regionProblem = (ls: string[], region: LineSpan) => chatXtabFormat.problem(input({ lines: ls, region }));
+
+  it('is a chat format whose region takes the configured sizes', () => {
+    expect(chatXtabFormat.id).toBe('chatXtab');
+    expect(chatXtabFormat.transport).toBe('chat');
+    expect(chatXtabFormat.region(10, 100, { above: 2, below: 3 })).toEqual({ start: 8, end: 13 });
+    expect(chatXtabFormat.region(10, 100, { above: 5, below: 10 })).toEqual({ start: 5, end: 20 });
+  });
+
+  it('wraps the prompt, the done check and the parser', () => {
+    expect(chatXtabFormat.messages(input(), '/no_think')).toEqual(chatXtabMessages(input(), '/no_think'));
+    expect(chatXtabFormat.done('NO_CHANGE')).toBe(true);
+    expect(chatXtabFormat.parse('```\na\n```', true)).toEqual({ kind: 'rewrite', lines: ['a'] });
+  });
 
   it('a region with a fence line cannot be sent: its closing line would end the answer', () => {
     expect(regionProblem(lines, { start: 0, end: 6 })).toBe('fence');
@@ -184,8 +207,9 @@ describe('regionProblem', () => {
   });
 
   it('a region longer than twice the file budget cannot be sent', () => {
-    const long = ['x'.repeat(2 * FILE_BUDGET_CHARS + 1)];
+    const fileChars = nextEditBudgets(3500).fileChars;
+    const long = ['x'.repeat(2 * fileChars + 1)];
     expect(regionProblem(long, { start: 0, end: 0 })).toBe('tooLong');
-    expect(regionProblem(['x'.repeat(2 * FILE_BUDGET_CHARS)], { start: 0, end: 0 })).toBeUndefined();
+    expect(regionProblem(['x'.repeat(2 * fileChars)], { start: 0, end: 0 })).toBeUndefined();
   });
 });

@@ -94,9 +94,13 @@ export class LlamaCppBackend implements FimBackend {
       if (data === '') {
         continue;
       }
-      const ev = JSON.parse(data) as { content?: unknown; stop?: unknown };
+      const ev = JSON.parse(data) as { content?: unknown; stop?: unknown; stop_type?: unknown };
       throwIfStreamError(ev);
       if (ev.stop === true) {
+        // "limit": n_predict was reached ("eos" and "word" are normal stops).
+        if (ev.stop_type === 'limit') {
+          req.onTruncated?.();
+        }
         return;
       }
       if (typeof ev.content === 'string' && ev.content !== '') {

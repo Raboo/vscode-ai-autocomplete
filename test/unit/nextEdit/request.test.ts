@@ -98,6 +98,20 @@ describe('runNextEdit', () => {
     expect(r.captured.pulled).toBe(3);
   });
 
+  test('a closing fence still being typed does not end the stream', async () => {
+    const snap = snapshot();
+    const r = run([content('```\n'), content('x\n```'), content('bash\n'), content('y\n```\n'), content('chatter that never ends')], { snap });
+    await r.result;
+    expect(r.captured.pulled).toBe(4);
+  });
+
+  test('a finished stream whose closing fence has no line break is a rewrite', async () => {
+    const snap = snapshot();
+    const answer = regionOf(snap, renamed).replace(/\n$/, '');
+    const r = run([content(answer), { type: 'finish', reason: 'stop' }], { snap });
+    expect((await r.result)?.edit).toMatchObject({ startLine: 7, endLine: 9 });
+  });
+
   test('a reasoning event fails fast with ThinkingError', async () => {
     const r = run([{ type: 'reasoning', text: 'hm' }, content('NO_CHANGE')]);
     await expect(r.result).rejects.toBeInstanceOf(ThinkingError);

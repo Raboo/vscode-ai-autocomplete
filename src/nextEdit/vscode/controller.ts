@@ -11,7 +11,7 @@ import { ThinkingError } from '../../completion/stream';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
-import { SNIPPETS_BUDGET_CHARS, type NextEditInput } from '../formats/chatXtab';
+import { SNIPPETS_BUDGET_CHARS, regionProblem, type NextEditInput } from '../formats/chatXtab';
 import { EditHistory, type RecentSnippets } from '../history';
 import { editableRegion } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
@@ -52,6 +52,8 @@ export class NextEditController implements vscode.Disposable {
   /** The version and time of each document's last edit (not undo/redo) in the active editor. */
   private readonly lastChange = new Map<string, { version: number; at: number }>();
   private readonly selectionVersions = new Map<string, number>();
+  /** The document version whose region was last logged as not sendable, so the log line comes once per version. */
+  private readonly skipped = new Map<string, number>();
   private readonly pauseTimers = new Map<string, Timer>();
   private readonly chainTimers = new Map<string, Timer>();
   private readonly idleTimers = new Map<string, { timer: Timer; doc: vscode.TextDocument }>();
@@ -139,6 +141,7 @@ export class NextEditController implements vscode.Disposable {
     this.idleTimers.clear();
     this.asked.clear();
     this.lastChange.clear();
+    this.skipped.clear();
     this.history.clear();
     this.d.snippets.clear();
   }
@@ -182,6 +185,7 @@ export class NextEditController implements vscode.Disposable {
     this.asked.delete(uri);
     this.lastChange.delete(uri);
     this.selectionVersions.delete(uri);
+    this.skipped.delete(uri);
     this.history.close(this.path(doc));
   }
 
@@ -321,18 +325,27 @@ export class NextEditController implements vscode.Disposable {
       // The cursor may have moved while the checks above awaited.
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
+      const lines = doc.getText().split(/\r?\n/);
+      const region = editableRegion(at.line, lines.length);
+      const problem = regionProblem(lines, region);
+      if (problem) {
+        if (this.skipped.get(uri) !== version) {
+          this.skipped.set(uri, version);
+          this.d.log.debug(`next edit: not asked, ${problem === 'fence' ? 'the region has a ``` line' : 'the region is too long'}`);
+        }
+        return;
+      }
 
       for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
       this.flush(doc);
       const path = this.path(doc);
-      const lines = doc.getText().split(/\r?\n/);
       // Other files' diffs and snippets go out only with extra context, as for FIM.
       const extra = values.extraContext;
       const input: NextEditInput = {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region: editableRegion(at.line, lines.length),
+        region,
         history: this.history.entries(extra ? undefined : (p) => p === path),
         snippets: extra ? this.d.snippets.pick(path, SNIPPETS_BUDGET_CHARS) : [],
       };

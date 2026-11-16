@@ -208,6 +208,23 @@ suite('Next Edit', () => {
     }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
   });
 
+  test('a region with a Markdown code block sends no Next Edit request', async () => {
+    // A ``` line in the region would end the answer's fence early. With FIM off the controller asks after the edit pause
+    // on its own, so only the region check can stop the request.
+    await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+      const markdown = async (lines: string[]) => showAtEnd(await vscode.workspace.openTextDocument({ language: 'markdown', content: lines.join('\n') }));
+      const fenced = await markdown(['# Install', '', '```bash', 'npm install', '```', '', 'Then run the tes']);
+      await typeKeys(fenced, 't');
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(nextEdits(m).length, 0, `mock saw ${seen(m)}`);
+
+      // The same without the code block asks.
+      const plain = await markdown(['# Install', '', 'Then run the tes']);
+      await typeKeys(plain, 't');
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+    }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
+  });
+
   test('typing fast sends one Next Edit request', async () => {
     await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
       const editor = await open(['total = 1']);

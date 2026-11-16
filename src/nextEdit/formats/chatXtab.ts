@@ -99,20 +99,34 @@ const isNoChange = (text: string): boolean => {
   return t === 'NO_CHANGE' || t === '<NO_CHANGE>';
 };
 
-/** Line indexes of the opening and closing fence (-1 when missing) and the split lines. */
-function findFences(text: string): { lines: string[]; open: number; close: number } {
+/**
+ * Line indexes of the opening and closing fence (-1 when missing) and the split lines. The closing fence must be a whole
+ * line: while the stream runs (`complete` false) the last line may still grow, and a "```" there may become "```bash".
+ */
+function findFences(text: string, complete: boolean): { lines: string[]; open: number; close: number } {
   const lines = text.split(/\r?\n/);
+  const whole = complete ? lines.length : lines.length - 1;
   const open = lines.findIndex((l) => l.startsWith('```'));
   let close = -1;
-  if (open >= 0) close = lines.findIndex((l, n) => n > open && l.trim() === '```');
+  if (open >= 0) close = lines.findIndex((l, n) => n > open && n < whole && l.trim() === '```');
   return { lines, open, close };
 }
 
+/**
+ * Why a region cannot be sent in this format, or undefined. A line starting with ``` (a Markdown code block) would close
+ * the answer's fence early, so the rest of the region would read as deleted; a very long region (minified code) would make
+ * a prompt far over the budget.
+ */
+export function regionProblem(lines: string[], region: LineSpan): 'fence' | 'tooLong' | undefined {
+  const text = lines.slice(region.start, region.end + 1);
+  if (text.some((l) => l.trimStart().startsWith('```'))) return 'fence';
+  return text.join('\n').length > 2 * FILE_BUDGET_CHARS ? 'tooLong' : undefined;
+}
+
+/** `complete`: the stream has ended, so its last line is whole. */
 export function parseChatXtab(text: string, complete: boolean): ChatXtabAnswer {
-  // A rewrite needs its closing fence, so a finished and an unfinished stream parse alike.
-  void complete;
   if (isNoChange(text)) return { kind: 'noChange' };
-  const { lines, open, close } = findFences(text);
+  const { lines, open, close } = findFences(text, complete);
   if (open < 0) return { kind: 'invalid', why: 'noFence' };
   // Without a closing fence the answer is cut off, finished stream or not: never accept it as a rewrite.
   if (close < 0) return { kind: 'invalid', why: 'truncated' };
@@ -126,7 +140,8 @@ export function parseChatXtab(text: string, complete: boolean): ChatXtabAnswer {
   return { kind: 'rewrite', lines: body };
 }
 
+/** Whether a streaming answer is over: a no-change answer, or a closing fence on a whole line. */
 export function chatXtabDone(text: string): boolean {
   if (isNoChange(text)) return true;
-  return findFences(text).close >= 0;
+  return findFences(text, false).close >= 0;
 }

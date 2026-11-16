@@ -7,6 +7,7 @@ import {
   chatXtabDone,
   chatXtabMessages,
   parseChatXtab,
+  regionProblem,
   type NextEditInput
 } from '../../../src/nextEdit/formats/chatXtab';
 
@@ -140,16 +141,51 @@ describe('parseChatXtab', () => {
   it('splits on CRLF', () => {
     expect(parseChatXtab('```\r\na\r\nb\r\n```', true)).toEqual({ kind: 'rewrite', lines: ['a', 'b'] });
   });
+
+  it('a closing fence on an unfinished last line does not close until the stream is finished', () => {
+    // "```" may still become "```bash": the echo of a region with a Markdown block.
+    expect(parseChatXtab('```\n# Install\n\n```', false)).toEqual({ kind: 'invalid', why: 'truncated' });
+    expect(parseChatXtab('```\n# Install\n\n```', true)).toEqual({ kind: 'rewrite', lines: ['# Install', ''] });
+    expect(parseChatXtab('```\na\n```\n', false)).toEqual({ kind: 'rewrite', lines: ['a'] });
+  });
 });
 
 describe('chatXtabDone', () => {
   it('is true after the closing fence or a no-change answer, false mid-fence', () => {
-    expect(chatXtabDone('```\na\n```')).toBe(true);
+    expect(chatXtabDone('```\na\n```\n')).toBe(true);
     expect(chatXtabDone('NO_CHANGE')).toBe(true);
     expect(chatXtabDone('<NO_CHANGE>\n')).toBe(true);
     expect(chatXtabDone('```\na\nb')).toBe(false);
     expect(chatXtabDone('```\na\n``')).toBe(false);
     expect(chatXtabDone('Let me think')).toBe(false);
     expect(chatXtabDone('')).toBe(false);
+  });
+
+  it('only a complete line closes: "```bash" arriving in two chunks does not end the stream', () => {
+    expect(chatXtabDone('```\na\n```')).toBe(false);
+    expect(chatXtabDone('```\n# Install\n\n```')).toBe(false);
+    expect(chatXtabDone('```\n# Install\n\n```bash\n')).toBe(false);
+    expect(chatXtabDone('```\r\na\r\n```\r')).toBe(false);
+    expect(chatXtabDone('```\r\na\r\n```\r\n')).toBe(true);
+  });
+});
+
+describe('regionProblem', () => {
+  const lines = ['# Install', '', '```bash', 'npm install', '```', '', 'Then run the tes'];
+
+  it('a region with a fence line cannot be sent: its closing line would end the answer', () => {
+    expect(regionProblem(lines, { start: 0, end: 6 })).toBe('fence');
+    expect(regionProblem(['  ```ts', 'x'], { start: 0, end: 1 })).toBe('fence');
+  });
+
+  it('a fence outside the region does not matter', () => {
+    expect(regionProblem(lines, { start: 5, end: 6 })).toBeUndefined();
+    expect(regionProblem(['a = "```"', 'b'], { start: 0, end: 1 })).toBeUndefined();
+  });
+
+  it('a region longer than twice the file budget cannot be sent', () => {
+    const long = ['x'.repeat(2 * FILE_BUDGET_CHARS + 1)];
+    expect(regionProblem(long, { start: 0, end: 0 })).toBe('tooLong');
+    expect(regionProblem(['x'.repeat(2 * FILE_BUDGET_CHARS)], { start: 0, end: 0 })).toBeUndefined();
   });
 });

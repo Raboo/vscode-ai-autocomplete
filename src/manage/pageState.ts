@@ -102,7 +102,8 @@ export function buildPageState(i: PageInputs): PageState {
       id: cfg.id, typeLabel: typeLabel(serverTypeOf(cfg)), baseUrl: cfg.baseUrl,
       ...(model !== undefined ? { model } : {}), modelDetected: cfg.use.completions && cfg.fimModel === undefined && detected !== undefined,
       ...(nextEditModel !== undefined ? { nextEditModel } : {}), uses: { ...cfg.use },
-      inUse: cfg.id === i.inUseId, nextEditInUse: cfg.id === i.nextEditInUseId, keyStored: i.keysStored.has(cfg.id),
+      // A feature turned off keeps its backend in the settings, but nothing is in use, so the card offers its Use for button again.
+      inUse: i.settings.fim.enabled && cfg.id === i.inUseId, nextEditInUse: i.settings.nextEdit.enabled && cfg.id === i.nextEditInUseId, keyStored: i.keysStored.has(cfg.id),
       ...(warning ? { warning } : {}), dot: dotFor(test, warning !== undefined, locked), ...(test ? { test } : {}),
     };
   });

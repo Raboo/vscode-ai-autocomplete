@@ -167,6 +167,12 @@ describe('uses on the page', () => {
     expect(s.cards[1]!.model).toBeUndefined();
     expect(s.cards[1]!.warning).toBeUndefined();
   });
+  test('a feature turned off has no card in use, so its Use for button shows again', () => {
+    const on = { rawBackends: [lm, neOnly], inUseId: 'lm', nextEditInUseId: 'ne' };
+    const off = buildPageState(inputs({ ...on, settings: { ...base(), fim: { ...base().fim, enabled: false }, nextEdit: { ...base().nextEdit, enabled: false } } }));
+    expect(off.cards.map((c) => [c.inUse, c.nextEditInUse])).toEqual([[false, false], [false, false]]);
+    expect(buildPageState(inputs(on)).cards.map((c) => [c.inUse, c.nextEditInUse])).toEqual([[true, false], [false, true]]);
+  });
   test('a Next Edit-only card has no completion-route warning at all', () => {
     for (const model of ['zeta-2.1', 'sweep-next-edit-v2-7b', 'llama-3']) {
       const s = buildPageState(inputs({ rawBackends: [{ ...neOnly, fimModel: model, nextEditModel: model }] }));

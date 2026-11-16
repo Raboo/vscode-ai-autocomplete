@@ -356,6 +356,11 @@ describe('the Next Edit step', () => {
       expect(stepIds(r)).toContain('nextEdit');
     });
 
+    test('the selected Next Edit backend with Next Edit turned off tests as completions only', async () => {
+      const off = { ...selected, nextEdit: { ...selected.nextEdit, enabled: false } };
+      expect(stepIds(await run(fake({ config: entry() }), { settings: off }))).toEqual(['reach', 'model', 'completion']);
+    });
+
     test('a Next Edit-only backend always runs the step', async () => {
       const r = await run(fake({ ...noNative, config: { ...entry(), use: { completions: false, nextEdit: true } }, chunks: [zetaRewrite], info: { models: ['zeta-2.1'], contextWindows: {} } }));
       expect(stepIds(r)).toEqual(['reach', 'nextEdit']);

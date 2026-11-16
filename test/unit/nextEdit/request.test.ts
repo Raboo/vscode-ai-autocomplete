@@ -36,7 +36,11 @@ function run(
   events: ChatEvent[],
   o: { snap?: NextEditSnapshot; flavor?: HostFlavor; fail?: Error; format?: NextEditFormat; chunks?: string[]; truncate?: boolean } = {},
 ) {
-  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[] } = { pulled: 0, prompts: [] };
+  const captured: { req?: ChatRequest; fim?: FimRequest; pulled: number; prompts: (ChatRequest['messages'] | string)[]; truncated: number } = {
+    pulled: 0,
+    prompts: [],
+    truncated: 0,
+  };
   const backend = {
     streamChat: async function* (req: ChatRequest) {
       captured.req = req;
@@ -61,6 +65,7 @@ function run(
   const result = runNextEdit({
     backend, values, flavor: o.flavor ?? 'llamacpp', model: 'm', format: o.format ?? pickFormat('chatXtab', 'm'), snapshot: snap,
     rejected: new Set(), signal: ctl.signal, onRejected: undefined, onPrompt: (p) => captured.prompts.push(p),
+    onTruncated: () => captured.truncated++,
   });
   return { result, captured, ctl, snap };
 }
@@ -214,6 +219,15 @@ describe('runNextEdit with a completion format', () => {
     const snap = snapshot();
     const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
     await expect(run([], { format, snap, chunks: ['x'], truncate: true }).result).resolves.toBeUndefined();
+  });
+
+  test('a truncated completion is reported through onTruncated, a complete one is not', async () => {
+    const cut = run([], { format: stubFormat(), chunks: ['x'], truncate: true });
+    await cut.result;
+    expect(cut.captured.truncated).toBe(1);
+    const whole = run([], { format: stubFormat(), chunks: ['x'] });
+    await whole.result;
+    expect(whole.captured.truncated).toBe(0);
   });
 
   test('an empty rewrite of a non-blank region gives no result', async () => {

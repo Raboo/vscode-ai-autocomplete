@@ -39,6 +39,8 @@ interface RunOptions {
   /** Chat messages, or a completion format's prompt. */
   onPrompt?(prompt: ChatMessage[] | string): void;
   onAnswer?(visible: string): void;
+  /** A completion format's answer was cut at max_tokens and is dropped. */
+  onTruncated?(): void;
 }
 
 /**
@@ -148,7 +150,11 @@ async function completionAnswer(o: RunOptions, format: CompletionFormat): Promis
   const echoed = p.stop.find((s) => s !== '' && answer.endsWith(s));
   if (echoed) answer = answer.slice(0, answer.length - echoed.length);
   o.onAnswer?.(answer);
-  return truncated ? undefined : format.parse(answer, input);
+  if (truncated) {
+    o.onTruncated?.();
+    return undefined;
+  }
+  return format.parse(answer, input);
 }
 
 function resultOf(snapshot: NextEditSnapshot, answer: FormatAnswer): NextEditResult | undefined {

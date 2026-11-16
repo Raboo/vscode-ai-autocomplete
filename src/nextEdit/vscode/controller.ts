@@ -13,9 +13,9 @@ import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
 import { pickFormat } from '../formats';
-import type { NextEditInput } from '../formats/format';
+import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, type RecentSnippets } from '../history';
-import { editableRegion, nextEditBudgets } from '../region';
+import { nextEditBudgets } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
 
@@ -250,7 +250,10 @@ export class NextEditController implements vscode.Disposable {
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
-    if (this.tracking()) this.history.commit(this.path(doc), doc.getText());
+    if (!this.tracking()) return;
+    // The size applies from the next commit; 0 keeps no history.
+    this.history.maxEntries = this.d.getSettings().nextEdit.historySize;
+    this.history.commit(this.path(doc), doc.getText());
   }
 
   private schedulePause(uri: string, version: number, delayMs: number): void {
@@ -296,10 +299,6 @@ export class NextEditController implements vscode.Disposable {
     const backend = this.d.getBackend(s.nextEdit.backendId);
     if (!backend) return;
     const id = backend.config.id;
-    if (!backend.routes().chat) {
-      this.once(`route:${id}`, () => this.d.log.info(`next edit: backend "${id}" has no chat completions route; Next Edit needs one`));
-      return;
-    }
     const backoff = this.d.backoff(id);
     if (!backoff.canRequest()) return;
 
@@ -321,9 +320,12 @@ export class NextEditController implements vscode.Disposable {
         this.once(`model:${id}`, () => this.d.log.warn(`next edit: backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
         return;
       }
+      const format = pickFormat(s.nextEdit.format, model);
+      if (!this.routeFor(backend, format)) return;
       const values = resolveNextEdit(backend.config, model, s);
       const learned = this.d.capabilities.get(id, model);
-      const blocked = thinkingBlocked(values.thinking, flavor, learned);
+      // Thinking is a chat-route matter: a raw completion has no reasoning channel.
+      const blocked = format.transport === 'chat' ? thinkingBlocked(values.thinking, flavor, learned) : undefined;
       if (blocked) {
         const why = blocked === 'cannotDisable' ? 'cannot turn thinking off' : 'keeps thinking';
         this.once(`thinking:${blocked}:${id}:${model ?? ''}`, () => this.d.log.info(`next edit: backend "${id}": ${model ?? 'the model'} ${why}; no Next Edit requests to it`));
@@ -333,36 +335,33 @@ export class NextEditController implements vscode.Disposable {
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
       const lines = doc.getText().split(/\r?\n/);
-      const format = pickFormat('chatXtab', model);
       const path = this.path(doc);
       const budgets = nextEditBudgets(s.nextEdit.contextBudget);
       const base: NextEditInput = {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region: editableRegion(at.line, lines.length),
+        region: format.region(at.line, lines.length, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
         history: [],
         snippets: [],
         budgets,
       };
-      const problem = format.problem(base);
-      if (problem) {
-        if (this.skipped.get(uri) !== version) {
-          this.skipped.set(uri, version);
-          this.d.log.debug(`next edit: not asked, ${problem === 'fence' ? 'the region has a ``` line' : 'the region is too long'}`);
-        }
-        return;
-      }
+      // Checked before the history is flushed, so a region that cannot be sent leaves the pending edits uncommitted.
+      if (this.notSendable(format, base, uri, version)) return;
 
       for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
       this.flush(doc);
-      // Other files' diffs and snippets go out only with extra context, as for FIM.
+      // Other files' diffs and snippets go out only with extra context, as for FIM. `previous` is always the current file's.
       const extra = values.extraContext;
+      const previous = this.history.previous(path);
       const input: NextEditInput = {
         ...base,
         history: this.history.entries(extra ? undefined : (p) => p === path),
         snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
+        ...(previous ? { previous } : {}),
       };
+      // Again on what is sent: `previous` (Sweep's original window) is known only after the flush.
+      if (this.notSendable(format, input, uri, version)) return;
       const started = Date.now();
       this.policy.requested(uri, at.line, started);
       this.asked.set(uri, { version, line: at.line });
@@ -377,13 +376,14 @@ export class NextEditController implements vscode.Disposable {
         rejected: learned.rejected,
         signal: ctl.signal,
         onRejected: (fields) => this.rejectedFields(id, model, fields),
+        onTruncated: () => log.debug('next edit: answer cut at max_tokens'),
         ...(s.debug.logPrompts
           ? { onPrompt: (m: ChatMessage[] | string) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
           : {}),
       });
       backoff.recordSuccess();
       log.debug(
-        `next edit ${id} model=${model ?? '?'} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
+        `next edit ${id} model=${model ?? '?'} format=${format.id} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
           `→ ${result ? result.show.kind : 'no edit'} in ${Date.now() - started} ms`,
       );
       if (!result || ctl.signal.aborted) return;
@@ -415,6 +415,27 @@ export class NextEditController implements vscode.Disposable {
     } finally {
       if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
     }
+  }
+
+  /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */
+  private routeFor(backend: FimBackend, format: NextEditFormat): boolean {
+    const routes = backend.routes();
+    if (format.transport === 'chat' ? routes.chat : routes.template) return true;
+    const id = backend.config.id;
+    const route = format.transport === 'chat' ? 'chat completions' : 'raw completions';
+    this.once(`route:${id}:${format.id}`, () => this.d.log.info(`next edit: backend "${id}" has no ${route} route; the ${format.id} format needs one`));
+    return false;
+  }
+
+  /** Whether the format cannot send this input; logged once per document version. */
+  private notSendable(format: NextEditFormat, input: NextEditInput, uri: string, version: number): boolean {
+    const problem = format.problem(input);
+    if (!problem) return false;
+    if (this.skipped.get(uri) !== version) {
+      this.skipped.set(uri, version);
+      this.d.log.debug(`next edit: not asked, ${problem}`);
+    }
+    return true;
   }
 
   private offeredNative = false;

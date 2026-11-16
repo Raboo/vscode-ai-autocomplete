@@ -53,7 +53,17 @@ export interface MockOptions {
    * instead of the `chat` answer. `delayMs` delays only these answers (the request is recorded when it arrives).
    */
   nextEdit?: { content: string[]; delayMs?: number };
+  /**
+   * A raw Next Edit answer, ending with a normal stop: `POST /completion` streams it as llama.cpp events when the prompt
+   * contains `<|file_sep|>updated/` (Sweep), `POST /v1/completions` as OpenAI events when it contains `<[fim-middle]>` (Zeta).
+   */
+  nextEditRaw?: { content: string[] };
 }
+
+/** What only a Sweep Next Edit prompt contains. */
+export const SWEEP_TAG = '<|file_sep|>updated/';
+/** What only a Zeta Next Edit prompt contains. */
+export const ZETA_TAG = '<[fim-middle]>';
 
 /** A stand-in llama.cpp server on 127.0.0.1 with an ephemeral port. It also answers `GET /v1/models` like an OpenAI-compatible server. */
 export async function startMockServer(o: MockOptions = {}): Promise<MockServer> {
@@ -84,6 +94,16 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
           res.writeHead(404, { 'content-type': 'application/json' }).end(o.infill404Body);
         } else if (path === '/infill' && o.infill501) {
           res.writeHead(501, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Infill is not supported by this model' } }));
+        } else if (path === '/completion' && o.nextEditRaw !== undefined && typeof body?.prompt === 'string' && body.prompt.includes(SWEEP_TAG)) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          for (const c of o.nextEditRaw.content) res.write(`data: ${JSON.stringify({ content: c })}\n\n`);
+          res.end(`data: ${JSON.stringify({ content: '', stop: true, stop_type: 'eos' })}\n\n`);
+        } else if (path === '/v1/completions' && req.method === 'POST' && o.nextEditRaw !== undefined && typeof body?.prompt === 'string' && body.prompt.includes(ZETA_TAG)) {
+          const text = (t: string, finish: string | null = null): string => `data: ${JSON.stringify({ choices: [{ text: t, finish_reason: finish }] })}\n\n`;
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          for (const c of o.nextEditRaw.content) res.write(text(c));
+          res.write(text('', 'stop'));
+          res.end('data: [DONE]\n\n');
         } else if (path === '/completion' && o.infill501) {
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);

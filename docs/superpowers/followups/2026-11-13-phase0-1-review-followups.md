@@ -208,3 +208,7 @@ Left open by the Phase 3a plan, its task reviews and its final review.
 - The shared backoff means a Next Edit timeout pauses FIM on the same backend: decide whether Next Edit should have its own backoff.
 - Requests already asked for a version and line are not retried after a dropped result or a failure until the document changes (R16 trade-off).
 - The extra-context ring (FIM) has the same "file reopened in a disabled language" gap that Next Edit's history now handles with `forget()`.
+- During a backoff caused by a Next Edit failure, FIM goes silent with the status bar idle: FIM's own failure detail is what shows the countdown, and Next Edit records none (final review M3).
+- Two workspace folders with the same name still collide: paths carry the folder name (R24), not a unique folder id, so their same-named files share one history snapshot and one snippet.
+- A region with a line starting with ```` ``` ```` (a Markdown code block) is not sent (R22): the answer's own fence would close on it. Supporting it needs a longer outer fence, which is a prompt change.
+- Pull the controller's eligibility and store-or-drop decisions (version, editor, snooze, cursor, native UI) into pure functions with unit tests; today only the integration tests cover them.

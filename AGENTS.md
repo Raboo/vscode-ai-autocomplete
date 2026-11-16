@@ -5,7 +5,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## What this is
 
 - An autocomplete-only VS Code extension: no chat, no agents, no telemetry.
-- Fast FIM (fill-in-the-middle) ghost-text completion now, Next Edit later; self-hosted backends first.
+- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phase 3a: the chatXtab format, ghost text and native inline edits); self-hosted backends first.
 - Design spec: `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`. Phase status: `docs/ROADMAP.md`.
 
 ## Hard rules
@@ -56,7 +56,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
   - `request.ts`: one request over the backend's chat stream, failing fast on thinking;
   - `optIn.ts`: the argv.json path and edit for the native-UI opt-in;
   - `vscode/controller.ts`: events, history, trigger rules, requests and the latest result; the proposed-API `.d.ts` is `src/types/vscode.proposed.inlineCompletionsAdditions.d.ts` (pinned from `release/1.146`).
-- `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking and `src/ui/*`.
+- `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 
 ## How work is done here

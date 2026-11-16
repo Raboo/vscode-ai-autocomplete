@@ -45,7 +45,7 @@ Results on 2026-11-15:
 - LM Studio 0.4.28 with an MLX Qwen3.5-4B from Hugging Face: thinking cannot be turned off per request, and the extension fails it clearly; turning it off in the model's prompt template works (README, spec "To verify"). With Predicte also installed, `Tab` indented instead of accepting; disabling Predicte fixed it.
 - llama.cpp: not run yet; still deferred.
 
-Phase 3a (Publish step 4 of the [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md), run on the PR's CI `.vsix` against Strata; select it with **Select Next Edit Backend**):
+Phase 3a (Publish step 4 of the [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md), run on the PR's CI `.vsix` against Strata; select it with **Select Next Edit Backend**). Run it on default editor settings (`editor.quickSuggestions` as shipped; the integration tests turn it off):
 
 - Without the opt-in:
   - rename a parameter in one function, then move the cursor down: nothing shows except, once, the notice offering the native UI;
@@ -60,3 +60,6 @@ Phase 3a (Publish step 4 of the [Phase 3a plan](superpowers/plans/2026-11-15-pha
 - A `.env` file gets no Next Edit request.
 - After a Next Edit timeout, FIM pauses too (shared backoff).
 - Alt+\ then waiting: no Next Edit at that spot (known gap).
+- A Markdown file with a fenced code block: editing next to the block offers no deletion (no Next Edit request near a ```` ``` ```` line).
+- A multi-root workspace with the same relative path in two folders (for example `src/index.ts` in both): edits in one never show up as the other's diff, and the prompt names the folder.
+- With Next Edit off, format a large file (thousands of lines, all re-indented): no stall; with Next Edit on, the same change records no history entry and nothing stalls.

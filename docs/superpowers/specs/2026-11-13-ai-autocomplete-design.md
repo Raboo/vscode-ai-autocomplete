@@ -68,13 +68,13 @@ So on Strata, Next Edit is **borderline** and ghost-text FIM is **not viable**. 
 
 Proposed-API mechanics:
 - `package.json`: `"enabledApiProposals": ["inlineCompletionsAdditions"]`. The proposal file has no `// version:` header (checked on `main`), so no `@N` suffix is needed.
-- Packaging: `vsce package --allow-proposed-apis inlineCompletionsAdditions`; plain `vsce package` refuses.
+- Packaging: plain `vsce package` builds the `.vsix` (it does not check `enabledApiProposals`); `vsce publish` needs `--allow-proposed-apis inlineCompletionsAdditions`.
 - Pin the `.d.ts` from the **git tag matching `engines.vscode`** (e.g. `release/1.146` or tag `1.146.0`), not from `main`, which can declare fields the Stable runtime lacks. Latest Stable is 1.146.0. A CI job against Insiders catches proposal drift.
 - **Opt-in command**:
   - edits `argv.json`, which is JSONC, with `jsonc-parser` (MIT, Microsoft) so comments are preserved;
   - the path depends on `vscode.env.appName`: `~/.vscode/argv.json`, `~/.vscode-insiders/argv.json`, or `~/.vscode-oss/argv.json` (VSCodium);
   - if the edit fails, it opens `workbench.action.configureRuntimeArguments` with paste instructions;
-  - it then offers a restart.
+  - it then says to quit and reopen VS Code (a message without a button; a window reload is not enough).
 
 Key API facts (verified in VS Code `main`, 2026-11):
 - Stable `InlineCompletionItem.range` must stay on one line. Multi-line insertion at the cursor works.
@@ -305,18 +305,20 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 - **Diff and classify**:
   - trim identical leading and trailing lines;
   - if the change is a pure insertion at the cursor, show it as ghost text;
-  - otherwise it is an inline edit, shown with the native renderer when the proposal is available and with decorations if not.
-  - Before applying, check that the original text hasn't drifted.
+  - otherwise it is an inline edit, shown with the native renderer when the proposal is available. Phase 3a drops it without the proposal; the decoration fallback is Phase 3b.
+  - Before applying, check that the original text hasn't drifted. Not possible in Phase 3a: VS Code applies a native inline edit itself, with no hook before it; the decoration fallback (3b) can check.
   - After an accept, chain the next prediction (re-trigger after ~60 ms) so repeated Tabs walk through a refactor.
 - **Arbitration with FIM**: one registered provider returns a fresh NES result for the current document version if there is one, otherwise the FIM result. While the user is typing mid-line, FIM wins.
-- **Phase 3a decisions** (2026-11-15, plan `docs/superpowers/plans/2026-11-15-phase3a-next-edit.md`, rulings 2, 3, 6 and 9 to 13):
+- **Phase 3a decisions** (2026-11-15, plan `docs/superpowers/plans/2026-11-15-phase3a-next-edit.md`, rulings 2, 3, 5, 6 and 9 to 13):
   - Next Edit is off until `aiAutocomplete.nextEdit.backend` is set; it has no default, unlike `fim.backend`, so FIM-only users send no extra requests.
   - FIM wins: after typing, Next Edit asks only when FIM's result for that document version was empty or FIM is not active for the document. A cursor move within 10 s of an edit asks Next Edit directly.
+  - The Next Edit model is the backend's `nextEditModel`, else its `fimModel`, else the detected model. A separate Next Edit model keeps the backend-level values of the backend's `fim` block, `extraBody` and the `extraContext` restriction; its thinking switch and other model values come from the model's preset and `modelOverrides`.
   - The deadline is `aiAutocomplete.nextEdit.timeoutMs`, default 10 000 ms (500 to 60 000), because Next Edit runs in the background and a late answer for an old version is dropped anyway.
   - A fresh result is shown by running `editor.action.inlineSuggest.trigger` in both modes, not the proposed `onDidChange`, so there is one code path.
   - The edit-pause delay is 400 ms after the last change; selection triggers are not debounced, and the same-line cooldown limits them.
   - Display classification: ghost text only for a pure insertion at the cursor, including lines inserted right after the cursor line when the cursor is at its end. Copilot's "rebase as replace-to-end-of-line" is not done.
   - The history merges per area: a new diff whose first hunk starts on the same line as the newest entry's first hunk, in the same file, replaces that entry with one diff from the older snapshot (Copilot's "SameStartLine"). Hunks use 1-based unified-diff numbering.
+  - Final-review rulings (2026-11-16): snapshots, history and idle timers exist only while Next Edit is on (`enabled` and a backend), and a history diff stops at 500 edits or 50 ms and then records no entry. A region with a line starting with ```` ``` ```` (a Markdown code block), or longer than twice the file budget, is not sent, and the answer's closing fence counts only as a whole line. Files are named as `asRelativePath` names them by default (with the folder name in a multi-root workspace), for Next Edit and for FIM's extra context, and are eligible when untitled or inside a workspace folder in any scheme (remote windows included). A ghost result is kept only while the cursor stays where it was computed; snooze stops Next Edit too.
   - Implementation facts: a cursor report counts as a move only when the document version is unchanged since the last selection event and it arrives more than 100 ms (`EDIT_ECHO_MS`) after the last edit to that document. There is one request per document version and cursor line. Error notifications are one per backend and error kind (http, network, timeout); a model that keeps thinking gets its own one-time notice; a missing API key records no backoff. The backoff is shared with FIM, so a Next Edit failure or timeout also pauses FIM on that backend.
 
 ### Settings and security
@@ -327,7 +329,7 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 | `aiAutocomplete.fim.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
 | `aiAutocomplete.privacy.localOnly` | Workspace-settable (it can only restrict). Refuses non-loopback, non-private backends, and shows a lock icon in the status bar. |
 | `aiAutocomplete.fim.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
-| `aiAutocomplete.nextEdit.*` | `enabled`, `format` (`auto`, `chatXtab`, `zeta21`, `sweep`, `instinct`), region size, history size, `display` (`auto`, `native`, `decorations`) |
+| `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b: `format` (`auto`, `chatXtab`, `zeta21`, `sweep`, `instinct`), region size, history size, `display` (`auto`, `native`, `decorations`), `contextBudget`. |
 | `aiAutocomplete.modelOverrides` | machine scope: regex → `{fimTemplate, stop, sampling, extraBody, thinking}` |
 
 - **Status bar**: idle, loading, error, snoozed, local-lock, and a "thinking" warning. Clicking it opens a quick pick to toggle, snooze, switch backend, show the log, or set up a local model.

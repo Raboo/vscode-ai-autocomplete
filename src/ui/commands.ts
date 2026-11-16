@@ -37,8 +37,8 @@ export interface CommandDeps {
   nextEditTab(): Promise<void>;
   /** Esc on a Next Edit shown as decorations. */
   nextEditDismiss(): void;
-  /** The llama-servers the extension started. */
-  localServers: { running(): string[]; stopAll(): Promise<void> };
+  /** The llama-servers the extension started; `active` lists the ready ones and the ones still loading. */
+  localServers: { active(): string[]; stopAll(): Promise<void> };
 }
 
 /** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
@@ -187,7 +187,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('nextEditTab', () => d.nextEditTab()),
     reg('nextEditDismiss', () => d.nextEditDismiss()),
     reg('stopLocalModels', async () => {
-      const ids = d.localServers.running();
+      const ids = d.localServers.active();
       if (ids.length === 0) {
         void vscode.window.showInformationMessage('No local models are running.');
         return;

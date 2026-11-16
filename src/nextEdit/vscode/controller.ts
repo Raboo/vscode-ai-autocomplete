@@ -251,7 +251,7 @@ export class NextEditController implements vscode.Disposable {
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
     if (!this.tracking()) return;
-    // The size applies from the next commit; 0 keeps no history.
+    // The current size, set just before this commit so it applies to it; 0 keeps no history.
     this.history.maxEntries = this.d.getSettings().nextEdit.historySize;
     this.history.commit(this.path(doc), doc.getText());
   }

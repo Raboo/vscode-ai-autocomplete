@@ -392,6 +392,8 @@ suite('Next Edit', () => {
       assert.ok(typeof body.prompt === 'string' && body.prompt.includes(ZETA_TAG) && body.prompt.includes('<|marker_1|>'), JSON.stringify(body.prompt));
       assert.equal(body.temperature, 0);
       assert.equal(body.model, ZETA_MODEL);
+      assert.ok(Array.isArray(body.stop) && body.stop.includes('<[end▁of▁sentence]>'), JSON.stringify(body.stop));
+      assert.ok(!('top_p' in body) && !('top_k' in body), JSON.stringify(body));
       assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${seen(m)}`);
     });
   });

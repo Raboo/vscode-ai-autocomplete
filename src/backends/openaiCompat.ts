@@ -2,6 +2,7 @@ import type { BackendConfig, HostFlavor } from '../types';
 import { inferHostFlavor, isHostedFlavor } from './hostFlavor';
 import { authHeaders, getJson, joinUrl, postJson, throwIfStreamError } from './http';
 import { streamOpenAiChat } from './chat';
+import { repairFirstSpace } from './firstSpace';
 import { parseSse } from './sse';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type FimBackend, type FimRequest, type RouteCaps, type ServerInfo } from './types';
 
@@ -89,8 +90,24 @@ export class OpenAiCompatBackend implements FimBackend {
   }
 
   async *streamFim(req: FimRequest): AsyncGenerator<string> {
+    const text = this.streamFimText(req);
+    yield* req.firstSpace ? repairFirstSpace(text, req.firstSpace.held, req.onUnrepaired) : text;
+  }
+
+  /**
+   * The stops sent to the server. Hosted APIs accept only 4. LM Studio errors ("StopIteration") instead of answering when
+   * generation ends at the token limit inside a partial match of a stop with whitespace, such as `\n\n\n`, so it gets only the
+   * others; the client applies every stop anyway.
+   */
+  private serverStops(stop: string[]): string[] {
+    if (this.flavor === 'lmstudio') return stop.filter((s) => !/\s/.test(s));
+    return isHostedFlavor(this.flavor) ? stop.slice(0, HOSTED_MAX_STOPS) : stop;
+  }
+
+  private async *streamFimText(req: FimRequest): AsyncGenerator<string> {
     const { payload, sampling } = req;
     const hosted = isHostedFlavor(this.flavor);
+    const stop = this.serverStops(req.stop);
     const body = {
       ...(req.model ? { model: req.model } : {}),
       ...(payload.route === 'native' ? { prompt: payload.prefix, suffix: payload.suffix } : { prompt: payload.prompt }),
@@ -98,7 +115,7 @@ export class OpenAiCompatBackend implements FimBackend {
       ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
       ...(sampling.topP !== undefined ? { top_p: sampling.topP } : {}),
       ...(!hosted && sampling.topK !== undefined ? { top_k: sampling.topK } : {}),
-      ...(req.stop.length > 0 ? { stop: hosted ? req.stop.slice(0, HOSTED_MAX_STOPS) : req.stop } : {}),
+      ...(stop.length > 0 ? { stop } : {}),
       stream: true,
       ...req.extraBody,
     };

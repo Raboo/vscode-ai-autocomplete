@@ -111,6 +111,27 @@ describe('buildFimRequest', () => {
     expect(req.signal).toBe(signal);
   });
 
+  test('LM Studio template requests hold back the end of the cursor line and record it for the repair', () => {
+    const mid = { ...input, prefix: 'def add(a, b):\n    return' };
+    const req = buildFimRequest({ route: 'template', fim: P('qwen'), model: 'sweep-next-edit-v2-7b', multiline: true, input: mid, signal, flavor: 'lmstudio' });
+    expect(req.payload).toEqual({ route: 'template', prompt: TEMPLATES.qwen.render({ ...mid, prefix: 'def add(a, b):\n    retur' }) });
+    expect(req.firstSpace).toEqual({ held: 'n' });
+    // An indentation-only line holds nothing back; the repair still runs (the line-start rule).
+    const start = buildFimRequest({ route: 'template', fim: P('qwen'), model: 'm', multiline: true, input, signal, flavor: 'lmstudio' });
+    expect(start.payload).toEqual({ route: 'template', prompt: TEMPLATES.qwen.render(input) });
+    expect(start.firstSpace).toEqual({ held: '' });
+  });
+
+  test('other flavors and the native route are not repaired', () => {
+    const mid = { ...input, prefix: 'x = 1\ny =' };
+    for (const flavor of ['vllm', 'generic', undefined] as const) {
+      const req = buildFimRequest({ route: 'template', fim: P('qwen'), model: 'm', multiline: true, input: mid, signal, ...(flavor ? { flavor } : {}) });
+      expect(req.payload).toEqual({ route: 'template', prompt: TEMPLATES.qwen.render(mid) });
+      expect(req.firstSpace).toBeUndefined();
+    }
+    expect(buildFimRequest({ route: 'native', fim: P('qwen'), model: 'm', multiline: true, input: mid, signal, flavor: 'lmstudio' }).firstSpace).toBeUndefined();
+  });
+
   test('template payload renders the preset template', () => {
     const req = buildFimRequest({ route: 'template', fim: P('mellum'), model: 'Mellum-4b-base', multiline: true, input, signal });
     expect(req.payload).toEqual({ route: 'template', prompt: TEMPLATES.mellum.render(input) });

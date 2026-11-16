@@ -85,6 +85,23 @@ describe('OpenAiCompatBackend', () => {
     expect(body).not.toHaveProperty('top_k');
   });
 
+  test('LM Studio gets only stops without whitespace; the others keep the full list', async () => {
+    const stop = ['\n\n\n', '<|endoftext|>', '\n+++++ ', '<|file_sep|>'];
+    expect((await hosted('lmstudio', { stop })).stop).toEqual(['<|endoftext|>', '<|file_sep|>']);
+    expect('stop' in (await hosted('lmstudio', { stop: ['\n\n\n'] }))).toBe(false);
+    expect((await hosted('vllm', { stop })).stop).toEqual(stop);
+  });
+
+  test('a request with firstSpace repairs its stream; a miss is reported', async () => {
+    m = await startMockHttp(() => ({ sse: ['{"choices":[{"text":"n a"}]}', '{"choices":[{"text":" + b"}]}', '[DONE]'] }));
+    const b = new OpenAiCompatBackend(cfg(`${m.url}/v1`, { hostFlavor: 'lmstudio' }), key());
+    expect((await collect(b.streamFim(req({ firstSpace: { held: 'n' } })))).join('')).toBe(' a + b');
+    const onUnrepaired = vi.fn();
+    expect((await collect(b.streamFim(req({ firstSpace: { held: 'x' }, onUnrepaired })))).join('')).toBe('');
+    expect(onUnrepaired).toHaveBeenCalledTimes(1);
+    expect((await collect(b.streamFim(req()))).join('')).toBe('n a + b');
+  });
+
   test('hosted flavors cap stop list at 4, self-hosted do not', async () => {
     const stop = ['1', '2', '3', '4', '5', '6'];
     expect((await hosted('deepseek', { stop })).stop).toEqual(['1', '2', '3', '4']);

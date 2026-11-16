@@ -247,8 +247,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const input = { prefix: win.prefix, suffix: win.suffix, filePath, repoName: vscode.workspace.getWorkspaceFolder(doc.uri)?.name ?? '', extra };
     let planned: PlannedRequest;
     let stop = fim.stop;
+    const flavor = inferHostFlavor(backend.config);
     if (route === 'chat') {
-      const flavor = inferHostFlavor(backend.config);
       const blocked = thinkingBlocked(fim.thinking, flavor, learned);
       if (blocked) {
         this.requests.report(this.reportThinking(id, model, blocked, fim.thinking));
@@ -273,7 +273,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       planned = { route: 'chat', req, linePrefix, lineSuffix };
       stop = req.stop;
     } else {
-      planned = { route, req: buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input }) };
+      const req = buildFimRequest({ route, fim, model, multiline, signal: ctl.signal, input, flavor });
+      planned = { route, req: { ...req, onUnrepaired: () => this.d.log.debug(`fim ${id}: the answer did not continue the cursor line (LM Studio first-space repair); no suggestion`) } };
     }
     const hasFallback = planRoute(kind, usableRoutes(backend.routes(), new Set<FimRoute>([...learned.failedRoutes, route])), fim, fimMode) !== 'unsupported';
     const post: PostCtx = { linePrefix, lineSuffix, prevLine: pos.line > 0 ? doc.lineAt(pos.line - 1).text : '', suffix: win.suffix, chat: route === 'chat' };

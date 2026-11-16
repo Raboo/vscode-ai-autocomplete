@@ -245,7 +245,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         limit = req.timeoutMs;
         maxTokens = req.maxTokens; // with the chat overhead
       } else {
-        planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal }), timeoutMs: TEST_TIMEOUT_MS } };
+        planned = { route, req: { ...buildFimRequest({ route, fim: values, model, multiline: false, input: SAMPLE, signal: ctl.signal, flavor: inferHostFlavor(cfg) }), timeoutMs: TEST_TIMEOUT_MS } };
       }
       let collected: Collected;
       try {

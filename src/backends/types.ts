@@ -22,6 +22,10 @@ export interface FimRequest {
   timeoutMs: number;
   /** Called at most once per stream when the server stopped at the token limit, so the answer is cut off. */
   onTruncated?(): void;
+  /** LM Studio's dropped first space: the text the prompt held back from the cursor line (see firstSpace.ts); '' for the line-start rule. */
+  firstSpace?: { held: string };
+  /** Called when the answer did not start with the held text, so there is no suggestion. */
+  onUnrepaired?(): void;
 }
 
 /** nativeChatModels: the native route also serves chat-family models (only DeepSeek's API). */

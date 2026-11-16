@@ -94,6 +94,9 @@ Phase 4 (check before merging the `feat/local-models` branch; [plan](superpowers
 - Setup with llama-server: Sweep 1.5B, ghost text and Next Edit work.
 - Setup with LM Studio: the model is loaded under the identifier `sweep-next-edit-1.5b`.
 - Restart VS Code with the backend selected: the server comes back.
-- Stop Local Models.
+- Two windows open on the same local backend: one llama-server process. Close the window that started it: the other takes it over within about 15 s.
+- Select the local backend on the Backends page (or with the picker): its server starts without a reload; select another backend: it stops.
+- After an LM Studio restart, the `-lmstudio` backend still answers, or note here that it needs Set Up again.
+- Stop Local Models (with two windows open: both lose the server, and neither starts it again).
 - Remove Downloaded Models.
 - A cancelled download resumes.

@@ -9,6 +9,7 @@ import { buildChatRequest, buildFimRequest, EFFORT_NONE_REJECTED, noRouteFix, no
 import { collectCompletion, ThinkingError, type Collected, type PlannedRequest } from '../completion/stream';
 import { inferHostFlavor } from '../backends/hostFlavor';
 import type { Log } from '../log';
+import { nextEditOnlyNote } from '../nextEdit/formats';
 import type { TemplateInput } from '../models/templates';
 import { THINKING_LABELS, thinkingFields } from '../models/thinking';
 import type { ThinkingStrategy } from '../types';
@@ -134,6 +135,12 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       return result;
     }
     result.model = model;
+    // A Zeta or Sweep model cannot do completions: say so before any completion request.
+    const nextEditOnly = cfg.use.completions ? nextEditOnlyNote(model) : undefined;
+    if (nextEditOnly) {
+      emit({ id: 'model', state: 'warn', text: nextEditOnly.text, hint: nextEditOnly.hint }, stageStart);
+      return result;
+    }
     const values = resolveFim(cfg, model, settings).values;
     // A fresh probe: routes learned as missing during completions are ignored.
     const caps = backend.routes();
@@ -144,7 +151,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
         const mistral = cfg.kind === 'mistral';
         emit({
           id: 'model', state: 'warn', text: mistral ? `${model} cannot complete through Mistral's FIM endpoint` : `${model} has no completion template`,
-          hint: `${noRouteFix(caps.chat, cfg.kind)}${!mistral && /zeta/i.test(model) ? '; seed-coder fits Zeta 2.x' : ''}`,
+          hint: noRouteFix(caps.chat, cfg.kind),
         }, stageStart);
       }
       else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);

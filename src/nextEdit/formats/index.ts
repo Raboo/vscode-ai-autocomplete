@@ -12,6 +12,25 @@ export function formatIdFor(setting: NextEditFormatSetting, model: string | unde
   return 'chatXtab';
 }
 
+/** The Next Edit format a model id belongs to when only Next Edit can use it: Zeta and Sweep models, which cannot do ghost-text completions. */
+export function nextEditOnlyModel(model: string | undefined): 'Zeta 2.1' | 'Sweep' | undefined {
+  switch (formatIdFor('auto', model)) {
+    case 'zeta21':
+      return 'Zeta 2.1';
+    case 'sweep':
+      return 'Sweep';
+    case 'chatXtab':
+      return undefined;
+  }
+}
+
+/** The warning for a Next Edit-only model used for completions: `text` names the model, `hint` says what to change. */
+export function nextEditOnlyNote(model: string | undefined): { text: string; hint: string } | undefined {
+  const name = nextEditOnlyModel(model);
+  if (name === undefined || model === undefined) return undefined;
+  return { text: `${model} is a ${name} Next Edit model; it cannot do completions`, hint: 'untick Completions, or choose a completion model' };
+}
+
 /** Sweep's prompt layout: v2 for v2 and 7B models, else v1. */
 export function sweepVariant(model: string | undefined): 'v1' | 'v2' {
   return model !== undefined && /v2|7b/i.test(model) ? 'v2' : 'v1';

@@ -98,11 +98,21 @@ describe('runConnectionTest', () => {
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
-  test('zeta model without template → warn naming seed-coder, no completion request', async () => {
-    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b' } });
+  test('a Next Edit-only model → warn naming Zeta 2.1, no completion request', async () => {
+    for (const config of [{ kind: 'openai' as const, fimModel: 'zeta-2.1' }, { kind: 'llamacpp' as const, fimModel: 'zeta-2.1' }]) {
+      const f = fake({ native: config.kind === 'llamacpp', config });
+      const { res } = await run(f);
+      expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn']]);
+      expect(res.steps[1]).toMatchObject({ text: 'zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions', hint: 'untick Completions, or choose a completion model' });
+      expect(f.streamFim).not.toHaveBeenCalled();
+      expect(f.streamChat).not.toHaveBeenCalled();
+    }
+  });
+
+  test('a Next Edit-only model on a Next Edit-only backend passes the model step', async () => {
+    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b', use: { completions: false, nextEdit: true } } });
     const { res } = await run(f);
-    expect(res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'zeta-2-7b has no completion template', hint: 'pick a coder model, choose a template for it, or set the prompt mode to chat; seed-coder fits Zeta 2.x' });
-    expect(f.streamFim).not.toHaveBeenCalled();
+    expect(res.steps[1]).toMatchObject({ id: 'model', text: 'zeta-2-7b has no completion template' });
   });
 
   test('a non-zeta model without template gets the plain hint', async () => {
@@ -128,10 +138,10 @@ describe('runConnectionTest', () => {
     expect(m.res.steps[1]).toMatchObject({ text: 'prompt mode "template" does not work with this server', hint });
   });
 
-  test('backend template seed-coder makes zeta pass', async () => {
-    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'zeta-2-7b', fim: { template: 'seed-coder' } } });
+  test('backend template seed-coder makes a template-less model pass', async () => {
+    const f = fake({ native: false, config: { kind: 'openai', fimModel: 'llama-3', fim: { template: 'seed-coder' } } });
     const { res } = await run(f);
-    expect(res.steps[1]).toMatchObject({ state: 'ok', text: 'Model zeta-2-7b with the seed-coder template' });
+    expect(res.steps[1]).toMatchObject({ state: 'ok', text: 'Model llama-3 with the seed-coder template' });
     expect(f.requests[0].payload.route).toBe('template');
   });
 

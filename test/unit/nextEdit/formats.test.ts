@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { formatIdFor, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
+import { formatIdFor, nextEditOnlyModel, pickFormat, sweepVariant } from '../../../src/nextEdit/formats';
 import { tooLong, type NextEditInput } from '../../../src/nextEdit/formats/format';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
+
+describe('nextEditOnlyModel', () => {
+  it('names Zeta and Sweep models only', () => {
+    expect(nextEditOnlyModel('randmaru/zeta-2.1-mlx')).toBe('Zeta 2.1');
+    expect(nextEditOnlyModel('sweep-next-edit-v2-7b')).toBe('Sweep');
+    expect(nextEditOnlyModel('qwen2.5-coder-3b')).toBeUndefined();
+    expect(nextEditOnlyModel(undefined)).toBeUndefined();
+  });
+});
 
 describe('pickFormat', () => {
   it('auto picks chatXtab for other or unknown models', () => {

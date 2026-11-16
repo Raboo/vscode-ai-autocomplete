@@ -12,6 +12,14 @@ const settings = (extraContext?: boolean): Settings => {
 const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
 const view = (vs: ReturnType<typeof fieldViews>, f: string) => vs.find((v) => v.field === f)!;
 
+describe('Next Edit-only models', () => {
+  test('a Next Edit-only model for completions is a warning', () => {
+    expect(formWarnings(form({ model: 'zeta-2.1' }), 'zeta-2.1', settings()).join()).toMatch(/zeta-2\.1 is a Zeta 2\.1 Next Edit model; it cannot do completions/);
+    expect(formWarnings(form({ model: 'zeta-2.1' }), 'zeta-2.1', settings()).join()).toMatch(/untick Completions, or choose a completion model/);
+    expect(formWarnings(form({ model: 'qwen2.5-coder-3b' }), 'qwen2.5-coder-3b', settings()).join()).not.toMatch(/Next Edit model/);
+  });
+});
+
 describe('form model', () => {
   test('newForm prefills from the type', () => {
     expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} });
@@ -232,7 +240,7 @@ describe('form model', () => {
     const f = form({ changed: { template: 'seed-coder' } });
     expect(formWarnings(f, 'mellum-4b-dpo-all-mlx', settings()))
       .toEqual(['mellum-4b-dpo-all-mlx\'s own template is mellum; reset Template unless you mean to override it']);
-    expect(formWarnings(f, 'zeta-2.1', settings())).toEqual([]);
+    expect(formWarnings(f, 'seed-coder-8b', settings())).toEqual([]);
     expect(formWarnings(form({ changed: { template: 'mellum' } }), 'mellum-4b', settings())).toEqual([]);
     // The server builds the prompt on the native route, so the template is not used there.
     expect(formWarnings(form({ type: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', changed: { template: 'starcoder' } }), 'qwen2.5-coder-1.5b', settings())).toEqual([]);

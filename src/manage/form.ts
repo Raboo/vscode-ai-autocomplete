@@ -4,6 +4,7 @@ import { resolveFim, templateMismatch, type ValueSource } from '../completion/ef
 import { chatStops, planRoute } from '../completion/route';
 import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
 import { TEMPLATES } from '../models/templates';
+import { nextEditOnlyNote } from '../nextEdit/formats';
 import { THINKING_LABELS } from '../models/thinking';
 import type { BackendConfig, BackendKind, FimTemplateId, HostFlavor } from '../types';
 import type { BackendForm, ErrorField, FieldView, FormField, ServerTypeId } from './protocol';
@@ -279,6 +280,9 @@ export function formWarnings(f: BackendForm, model: string | undefined, s: Setti
   const cfg = formToConfig(f);
   if (!cfg) return [];
   const out: string[] = [];
+  const nextEditOnly = cfg.use.completions ? nextEditOnlyNote(model) : undefined;
+  // Nothing else about completions matters for a model that cannot do them.
+  if (nextEditOnly) return [`${nextEditOnly.text}; ${nextEditOnly.hint}`];
   const values = resolveFim(cfg, model, s).values;
   const route = planRoute(cfg.kind, createBackend(cfg, async () => undefined).routes(), values, cfg.fimMode);
   const stops = route === 'chat' ? chatStops(values) : values.stop;

@@ -2,6 +2,7 @@ import { createBackend } from '../backends';
 import { resolveFim } from '../completion/effective';
 import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoRoute } from '../completion/route';
 import { parseBackendEntry, type Settings } from '../config/settings';
+import { nextEditOnlyNote } from '../nextEdit/formats';
 import type { BackendConfig } from '../types';
 import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
 import type { BackendForm, CardView, Dot, EditView, PageState, TestStep } from './protocol';
@@ -49,6 +50,8 @@ export function modelTag(cfg: BackendConfig, model: string, s: Settings, thinkin
 }
 
 function routeWarning(cfg: BackendConfig, model: string | undefined, s: Settings): string | undefined {
+  const nextEditOnly = cfg.use.completions ? nextEditOnlyNote(model) : undefined;
+  if (nextEditOnly) return `${nextEditOnly.text}; ${nextEditOnly.hint}`;
   const p = model ? planFor(cfg, model, s) : undefined;
   if (p === undefined) return undefined;
   if ('why' in p) {

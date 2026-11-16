@@ -9,7 +9,7 @@ const base = (localOnly = false): Settings => {
   const s = parseSettings(none).settings;
   return { ...s, privacy: { localOnly } };
 };
-const lm = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'randmaru/zeta-2.1-mlx' };
+const lm = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'llama-3' };
 const cpp = { id: 'cpp', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' };
 const inputs = (over: Partial<PageInputs> = {}): PageInputs => ({
   settings: base(), rawBackends: [lm, cpp], keysStored: new Set(), local: new Map([['lm', true], ['cpp', true]]), detected: new Map(), tests: new Map(), ...over,
@@ -20,12 +20,12 @@ const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudi
 describe('page state', () => {
   test('cards: in use, key stored, detected model, lock and template warning', () => {
     const s = buildPageState(inputs({ inUseId: 'lm', keysStored: new Set(['cpp']), detected: new Map([['cpp', 'qwen2.5-coder']]) }));
-    expect(s.cards[0]).toMatchObject({ id: 'lm', typeLabel: 'LM Studio', inUse: true, keyStored: false, model: 'randmaru/zeta-2.1-mlx', modelDetected: false,
+    expect(s.cards[0]).toMatchObject({ id: 'lm', typeLabel: 'LM Studio', inUse: true, keyStored: false, model: 'llama-3', modelDetected: false,
       warning: 'No completion template for this model', dot: 'yellow' });
     expect(s.cards[1]).toMatchObject({ id: 'cpp', inUse: false, keyStored: true, model: 'qwen2.5-coder', modelDetected: true, dot: 'grey' });
     expect(s.cards[1]!.warning).toBeUndefined();
     // the same template-less model on llama.cpp routes native: no warning
-    const n = buildPageState(inputs({ rawBackends: [{ ...cpp, fimModel: 'randmaru/zeta-2.1-mlx' }] }));
+    const n = buildPageState(inputs({ rawBackends: [{ ...cpp, fimModel: 'llama-3' }] }));
     expect(n.cards[0]!.warning).toBeUndefined();
     // locked, and an id missing from `local` counts as not local
     const l = buildPageState(inputs({ settings: base(true), local: new Map([['lm', true]]) }));
@@ -40,6 +40,15 @@ describe('page state', () => {
     expect(native.cards[0]).toMatchObject({ warning: 'prompt mode "native" does not work with this server', dot: 'yellow' });
     const mistral = buildPageState(inputs({ rawBackends: [{ id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimModel: 'codestral-latest', fimMode: 'template' }] }));
     expect(mistral.cards[0]!.warning).toBe('prompt mode "template" does not work with this server');
+  });
+
+  test('a card whose completion model is a Next Edit-only model has a warning naming it', () => {
+    const sweep = { ...lm, fimModel: 'sweep-next-edit-v2-7b' };
+    const s = buildPageState(inputs({ rawBackends: [sweep, { ...sweep, id: 'ne', use: ['nextEdit'] }] }));
+    expect(s.cards[0]!.warning).toBe('sweep-next-edit-v2-7b is a Sweep Next Edit model; it cannot do completions; untick Completions, or choose a completion model');
+    expect(s.cards[0]!.dot).toBe('yellow');
+    // not used for completions: the Next Edit-only warning does not apply
+    expect(s.cards[1]!.warning ?? '').not.toContain('Next Edit model');
   });
 
   test('modelTag: ready, chat prompt, cannot turn thinking off, or no route', () => {

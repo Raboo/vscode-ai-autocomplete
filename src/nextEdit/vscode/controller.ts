@@ -34,6 +34,8 @@ export interface NextEditDeps {
 
 type Timer = ReturnType<typeof setTimeout>;
 
+const samePos = (a: { line: number; character: number }, b: { line: number; character: number }): boolean => a.line === b.line && a.character === b.character;
+
 /**
  * Decides when to ask for a Next Edit, sends at most one request per document version and holds the latest result
  * for the inline completion provider. Also records the edit history of the documents Next Edit may read.
@@ -73,11 +75,11 @@ export class NextEditController implements vscode.Disposable {
     );
   }
 
-  /** The result to show at `pos`: a ghost text only at the cursor it was computed for, an inline edit only with the native UI. */
+  /** The result to show at `pos`: a ghost text only at the cursor it was computed for, an inline edit only with the native UI; nothing while snoozed. */
   itemFor(doc: vscode.TextDocument, pos: vscode.Position): NextEditResult | undefined {
     const r = this.result;
-    if (!r || r.uri !== doc.uri.toString() || r.version !== doc.version) return undefined;
-    if (r.show.kind === 'ghost') return pos.line === r.cursor.line && pos.character === r.cursor.character ? r : undefined;
+    if (!r || r.uri !== doc.uri.toString() || r.version !== doc.version || this.d.snoozedUntil() > Date.now()) return undefined;
+    if (r.show.kind === 'ghost') return samePos(pos, r.cursor) ? r : undefined;
     return this.native ? r : undefined;
   }
 
@@ -211,6 +213,9 @@ export class NextEditController implements vscode.Disposable {
     const doc = e.textEditor.document;
     if (!this.tracking() || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
+    // A ghost text belongs to the cursor it was computed for; kept after a move, it would block a request at the new one.
+    const r = this.result;
+    if (r?.uri === uri && r.show.kind === 'ghost' && !samePos(e.selections[0].active, r.cursor)) this.result = undefined;
     const seen = this.selectionVersions.get(uri);
     this.selectionVersions.set(uri, doc.version);
     // Typing moves the cursor too: a selection event in a new version was caused by an edit.
@@ -280,9 +285,11 @@ export class NextEditController implements vscode.Disposable {
     const s = this.d.getSettings();
     const uri = doc.uri.toString();
     const version = doc.version;
-    if (this.inflight.get(uri)?.version === version || (this.result?.uri === uri && this.result.version === version)) return;
+    if (this.inflight.get(uri)?.version === version) return;
     const editor = this.editorFor(doc);
     if (!editor) return;
+    // A result that can still be shown here stays; one for another cursor is replaced.
+    if (this.itemFor(doc, editor.selection.active)) return;
     const asked = this.asked.get(uri);
     if (asked?.version === version && asked.line === editor.selection.active.line) return;
     if (!s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
@@ -374,6 +381,16 @@ export class NextEditController implements vscode.Disposable {
       if (!result || ctl.signal.aborted) return;
       if (doc.version !== version || vscode.window.activeTextEditor?.document !== doc) {
         log.debug('next edit: result dropped, the document or editor changed');
+        return;
+      }
+      if (this.d.snoozedUntil() > Date.now()) {
+        log.debug('next edit: result dropped, snoozed');
+        return;
+      }
+      // Stored for another cursor, it would show nothing and the trigger below would make FIM answer at the new cursor.
+      const cursor = this.editorFor(doc)?.selection.active;
+      if (result.show.kind === 'ghost' && !(cursor && samePos(cursor, result.cursor))) {
+        log.debug('next edit: result dropped, the cursor moved');
         return;
       }
       if (result.show.kind === 'edit' && !this.native) {

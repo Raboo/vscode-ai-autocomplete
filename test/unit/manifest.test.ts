@@ -20,7 +20,7 @@ test('webview bundle is built and packaged', () => {
 test('commands are categorised and the internal commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
   expect(cmds.map((c) => c.command).sort()).toEqual(
-    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggle', 'toggleEnabled']
+    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'showLog', 'snooze', 'toggleEnabled']
       .map((c) => `aiAutocomplete.${c}`)
       .sort(),
   );

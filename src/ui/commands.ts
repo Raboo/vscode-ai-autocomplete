@@ -119,10 +119,6 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),
     reg('retry', () => d.retry()),
-    reg('toggle', async () => {
-      await setSwitch('fim.enabled', !readSettings().settings.fim.enabled);
-      d.status.refresh();
-    }),
     reg('toggleEnabled', async () => {
       await setSwitch('enabled', !readSettings().settings.enabled);
       d.status.refresh();

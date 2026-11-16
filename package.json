@@ -449,11 +449,6 @@
         "category": "AI Autocomplete"
       },
       {
-        "command": "aiAutocomplete.toggle",
-        "title": "Toggle Completions",
-        "category": "AI Autocomplete"
-      },
-      {
         "command": "aiAutocomplete.snooze",
         "title": "Snooze",
         "category": "AI Autocomplete"

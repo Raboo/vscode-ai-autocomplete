@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.4.0...v0.5.0) (2026-11-16)
+
+
+### Features
+
+* backend roles (Use for) and status bar menu switch ([#13](https://github.com/Raboo/vscode-ai-autocomplete/issues/13)) ([9e331c6](https://github.com/Raboo/vscode-ai-autocomplete/commit/9e331c64b1c35170156870778a87f8c9628f8f67))
+
 ## [0.4.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.3.0...v0.4.0) (2026-11-16)
 
 

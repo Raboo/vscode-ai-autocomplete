@@ -255,6 +255,35 @@ describe('sweep v2 prompt', () => {
     const whole = v2.parse(prefill + WINDOW.slice(10).join('\n') + '\n', i);
     expect(whole).toEqual({ kind: 'noChange' });
   });
+
+  it('an empty generation is invalid, not a deletion of the window below the cursor', () => {
+    const i = input();
+    const prefill = completion(v2, i).prefill;
+    expect(v2.parse(prefill, i)).toEqual({ kind: 'invalid', why: 'empty' });
+    expect(v2.parse(`${prefill}\n`, i)).toEqual({ kind: 'invalid', why: 'empty' });
+  });
+
+  it('a generation of blank lines only is invalid too', () => {
+    const i = input();
+    const prefill = completion(v2, i).prefill;
+    expect(v2.parse(`${prefill}\n\n\n`, i)).toEqual({ kind: 'invalid', why: 'empty' });
+    expect(v1.parse('\n\n\n', i)).toEqual({ kind: 'invalid', why: 'empty' });
+  });
+
+  it('an empty generation is fine when the window from the cursor line down is blank', () => {
+    const i = input({ lines: ['a', 'b', '', ''], region: { start: 0, end: 3 }, cursor: { line: 2, character: 0 }, previous: undefined, history: [], snippets: [] });
+    expect(v2.parse(completion(v2, i).prefill, i)).toEqual({ kind: 'noChange' });
+  });
+
+  it('a window whose first line starts with <| is not read as a special answer', () => {
+    const lines = ['<| x', 'b', 'c', ''];
+    const i = input({ lines, region: { start: 0, end: 3 }, cursor: { line: 1, character: 0 }, previous: undefined, history: [], snippets: [] });
+    const prefill = completion(v2, i).prefill;
+    expect(prefill.startsWith('<|')).toBe(true);
+    expect(v2.parse(`${prefill}b\nc\n`, i)).toEqual({ kind: 'noChange' });
+    expect(v2.parse(`${prefill}B\nc\n`, i)).toEqual({ kind: 'rewrite', lines: ['<| x', 'B', 'c', ''] });
+    expect(v2.parse(`${prefill}<|endoftext|>`, i).kind).toBe('invalid');
+  });
 });
 
 describe('sweep budgets', () => {

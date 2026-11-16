@@ -5,6 +5,7 @@ import { ThinkingError } from '../../../src/completion/stream';
 import { parseSettings, type RawSettingsSource } from '../../../src/config/settings';
 import { pickFormat } from '../../../src/nextEdit/formats';
 import { CHAT_XTAB_SYSTEM, chatXtabMessages } from '../../../src/nextEdit/formats/chatXtab';
+import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
 import type { CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from '../../../src/nextEdit/formats/format';
 import { editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
 import { nextEditMaxTokens, runNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
@@ -233,6 +234,18 @@ describe('runNextEdit with a completion format', () => {
   test('an empty rewrite of a non-blank region gives no result', async () => {
     const format = stubFormat(() => ({ kind: 'rewrite', lines: [] }));
     await expect(run([], { format, chunks: ['x'] }).result).resolves.toBeUndefined();
+  });
+
+  test('a Sweep v2 generation that stops at once gives no result, not a deletion below the cursor', async () => {
+    const lines = Array.from({ length: 30 }, (_, n) => `line ${n}`);
+    const format = sweepFormat('v2');
+    const input: NextEditInput = {
+      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines.length, { above: 5, below: 10 }),
+      history: [], snippets: [], budgets: nextEditBudgets(3500),
+    };
+    const snap = { uri: 'file:///a.py', version: 1, input };
+    await expect(run([], { format, snap, chunks: ['<|file_sep|>'] }).result).resolves.toBeUndefined();
+    await expect(run([], { format, snap, chunks: [] }).result).resolves.toBeUndefined();
   });
 
   test('a timeout propagates and aborts the request', async () => {

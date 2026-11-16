@@ -78,17 +78,23 @@ function promptV1(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   return { prompt: `${parts.join('\n')}\n`, prefill: '', stop: [FILE_SEP, END_OF_TEXT, '</s>'], maxTokens: 512 };
 }
 
+/** v2 prefills the window's lines above the cursor line; v1 has no prefill. */
+const prefilledLines = (variant: Variant, i: NextEditInput, window: string[]): number =>
+  variant === 'v2' ? Math.max(0, Math.min(window.length, i.cursor.line - i.region.start)) : 0;
+
+const prefillOf = (variant: Variant, i: NextEditInput, window: string[]): string =>
+  window
+    .slice(0, prefilledLines(variant, i, window))
+    .map((l) => `${l}\n`)
+    .join('');
+
 function promptV2(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   const window = take(i.lines, i.region);
   const range = `${i.region.start + 1}:${i.region.end + 1}`;
   const snippets = pickSnippets(i.snippets, i.budgets.snippetsChars, reservedFor('v2'))
     .map((s) => `${FILE_SEP}${s.path}\n${s.text}\n`)
     .join('');
-  const above = Math.max(0, Math.min(window.length, i.cursor.line - i.region.start));
-  const prefill = window
-    .slice(0, above)
-    .map((l) => `${l}\n`)
-    .join('');
+  const prefill = prefillOf('v2', i, window);
   const prompt =
     `${snippets}${FILE_SEP}${i.path}\n${fileSection(i).join('\n')}\n\n` +
     `${changeBlocks(i, 'v2').join('\n')}\n` +
@@ -98,13 +104,17 @@ function promptV2(i: NextEditInput): ReturnType<CompletionFormat['prompt']> {
   return { prompt, prefill, stop: [FILE_SEP, END_OF_TEXT], maxTokens: 1024 };
 }
 
-/** The same parse for both layouts: the answer is the window's new lines. */
-function parse(answer: string, i: NextEditInput): FormatAnswer {
-  if (answer.startsWith('<|')) return { kind: 'invalid', why: 'special' };
+/** The same parse for both layouts: the answer (v2: the prefill plus the generated text) is the window's new lines. */
+function parse(variant: Variant, answer: string, i: NextEditInput): FormatAnswer {
   const window = take(i.lines, i.region);
+  const prefill = prefillOf(variant, i, window);
+  const generated = answer.startsWith(prefill) ? answer.slice(prefill.length) : answer;
+  if (generated.startsWith('<|')) return { kind: 'invalid', why: 'special' };
+  // Nothing (or only blank lines) generated would delete the window's non-blank lines from the cursor line down (v1: the whole window).
+  const below = window.slice(prefilledLines(variant, i, window));
+  if (generated.split(CURSOR).join('').trim() === '' && below.some((l) => !isBlank(l))) return { kind: 'invalid', why: 'empty' };
   let text = answer.endsWith('\n') ? answer.slice(0, -1) : answer;
   text = text.split(CURSOR).join('');
-  if (text === '' && window.some((l) => !isBlank(l))) return { kind: 'invalid', why: 'empty' };
 
   const lines = text.split('\n');
   // The trailing newline cut above and the model's stop may have dropped the window's last blank lines: restore them.
@@ -127,6 +137,6 @@ export function sweepFormat(variant: Variant): CompletionFormat {
     region: (cursorLine, lineCount) => editableRegion(cursorLine, lineCount, WINDOW_ABOVE, WINDOW_BELOW),
     problem: (i) => problem(variant, i),
     prompt: variant === 'v2' ? promptV2 : promptV1,
-    parse,
+    parse: (answer, i) => parse(variant, answer, i),
   };
 }

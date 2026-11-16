@@ -44,7 +44,7 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
   - With Next Edit ticked, a Next Edit step follows. It uses a built-in sample (a rename with a second use of the old name, no format special strings), `pickFormat`, the same route check as the editor, and `runNextEdit`.
   - Results: an edit is ok; "answered, no edit suggested" is a warning; an unreadable answer is a failure naming the parse reason; an answer cut at max tokens is a warning; a thinking model fails as on the completion path.
   - The answer text is logged only with `debug.logPrompts`.
-- **Next Edit-only models:** a model id matching `/zeta/i` or `/sweep/i` (the same rules `pickFormat` uses) chosen for Completions gives a form warning and a card warning. Ghost text cuts an answer at the first Next Edit special token (`<|marker_N|>`, `<|user_cursor|>`, `<|file_sep|>`, `<|endoftext|>`, `<|cursor|>`), whatever the model, so an answer that starts with one shows nothing.
+- **Next Edit-only models:** a model id matching `/zeta/i` (the rule `pickFormat` uses) chosen for Completions gives a form warning and a card warning. Sweep was on this list until a live check (2026-11-16, LM Studio, sweep-next-edit-v2-7b) showed it fills in the middle with the qwen template: both Sweep models are Qwen2.5-Coder fine-tunes, so a Sweep id gets the qwen FIM template and no warning. Ghost text cuts an answer at the first Next Edit special token (`<|marker_N|>`, `<|user_cursor|>`, `<|file_sep|>`, `<|endoftext|>`, `<|cursor|>`), whatever the model, so an answer that starts with one shows nothing.
 - **Names:** the page says "Completions" and "Next Edit" (not FIM, NES or NEP).
 
 ## Left to the builder

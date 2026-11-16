@@ -8,6 +8,7 @@ test.each([
   ['starcoder2-7b', 'starcoder', 'starcoder'], ['codellama-7b', 'codellama', 'codellama'], ['codegemma-2b', 'codegemma', 'codegemma'],
   ['granite-8b-code-base', 'granite-code', 'granite-code'], ['granite-4.1-3b', 'granite4', 'granite4'],
   ['Seed-Coder-8B-Base', 'seed-coder', 'seed-coder'], ['Mellum-4b-base', 'mellum', 'mellum'],
+  ['sweep-next-edit-v2-7b-oq4e', 'sweep', 'qwen'], ['sweepai/sweep-next-edit-1.5B', 'sweep', 'qwen'],
 ])('%s → %s', (model, id, tpl) => { const p = resolvePreset(model, {}); expect(p.id).toBe(id); expect(p.fimTemplate).toBe(tpl); });
 test.each([
   ['Qwen3.8-Flash-Next', 'qwen3', 'templateKwarg:enable_thinking', true], ['qwen3.8-flash-next-iq3_s', 'qwen3', 'templateKwarg:enable_thinking', true],

@@ -4,9 +4,10 @@ import { tooLong, type NextEditInput } from '../../../src/nextEdit/formats/forma
 import { nextEditBudgets } from '../../../src/nextEdit/region';
 
 describe('nextEditOnlyModel', () => {
-  it('names Zeta and Sweep models only', () => {
+  it('names Zeta models only; Sweep models can do completions too', () => {
     expect(nextEditOnlyModel('randmaru/zeta-2.1-mlx')).toBe('Zeta 2.1');
-    expect(nextEditOnlyModel('sweep-next-edit-v2-7b')).toBe('Sweep');
+    expect(nextEditOnlyModel('sweep-next-edit-v2-7b')).toBeUndefined();
+    expect(nextEditOnlyModel('sweep-next-edit-1.5b')).toBeUndefined();
     expect(nextEditOnlyModel('qwen2.5-coder-3b')).toBeUndefined();
     expect(nextEditOnlyModel(undefined)).toBeUndefined();
   });

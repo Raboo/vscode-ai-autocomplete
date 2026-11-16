@@ -19,13 +19,15 @@ describe('Next Edit-only models', () => {
     expect(formWarnings(form({ model: 'qwen2.5-coder-3b' }), 'qwen2.5-coder-3b', settings()).join()).not.toMatch(/Next Edit model/);
   });
 
-  test('the warning follows the Completions checkbox: Zeta and Sweep models warn only with Completions ticked', () => {
+  test('the warning follows the Completions checkbox: Zeta models warn only with Completions ticked', () => {
     const only = { completions: false, nextEdit: true };
-    for (const m of ['zeta-2.1', 'sweep-next-edit-1.5b']) {
-      expect(formWarnings(form({ model: m }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
-      expect(formWarnings(form({ model: m, use: { completions: true, nextEdit: false } }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
-      expect(formWarnings(form({ model: m, use: only }), m, settings())).toEqual([]);
-    }
+    const m = 'zeta-2.1';
+    expect(formWarnings(form({ model: m }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
+    expect(formWarnings(form({ model: m, use: { completions: true, nextEdit: false } }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
+    expect(formWarnings(form({ model: m, use: only }), m, settings())).toEqual([]);
+  });
+  test('a Sweep model is fine for completions: no warning', () => {
+    for (const m of ['sweep-next-edit-1.5b', 'sweep-next-edit-v2-7b-oq4e']) expect(formWarnings(form({ model: m }), m, settings())).toEqual([]);
   });
 });
 

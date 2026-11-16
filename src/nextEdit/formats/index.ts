@@ -13,16 +13,12 @@ export function formatIdFor(setting: NextEditFormatSetting, model: string | unde
   return 'chatXtab';
 }
 
-/** The Next Edit format a model id belongs to when only Next Edit can use it: Zeta and Sweep models, which cannot do ghost-text completions. */
-export function nextEditOnlyModel(model: string | undefined): 'Zeta 2.1' | 'Sweep' | undefined {
-  switch (formatIdFor('auto', model)) {
-    case 'zeta21':
-      return 'Zeta 2.1';
-    case 'sweep':
-      return 'Sweep';
-    case 'chatXtab':
-      return undefined;
-  }
+/**
+ * The Next Edit format a model id belongs to when only Next Edit can use it: Zeta, which cannot do ghost-text completions.
+ * Sweep models are Qwen2.5-Coder fine-tunes that still fill in the middle with the qwen template, so they can do both.
+ */
+export function nextEditOnlyModel(model: string | undefined): 'Zeta 2.1' | undefined {
+  return formatIdFor('auto', model) === 'zeta21' ? 'Zeta 2.1' : undefined;
 }
 
 /** The warning for a Next Edit-only model used for completions: `text` names the model, `hint` says what to change. */

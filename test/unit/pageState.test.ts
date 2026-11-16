@@ -48,12 +48,18 @@ describe('page state', () => {
   });
 
   test('a card whose completion model is a Next Edit-only model has a warning naming it', () => {
-    const sweep = { ...lm, fimModel: 'sweep-next-edit-v2-7b' };
-    const s = buildPageState(inputs({ rawBackends: [sweep, { ...sweep, id: 'ne', use: ['nextEdit'] }] }));
-    expect(s.cards[0]!.warning).toBe('sweep-next-edit-v2-7b is a Sweep Next Edit model; it cannot do completions; untick Completions, or choose a completion model');
+    const zeta = { ...lm, fimModel: 'zeta-2.1' };
+    const s = buildPageState(inputs({ rawBackends: [zeta, { ...zeta, id: 'ne', use: ['nextEdit'] }] }));
+    expect(s.cards[0]!.warning).toBe('zeta-2.1 is a Zeta 2.1 Next Edit model; it cannot do completions; untick Completions, or choose a completion model');
     expect(s.cards[0]!.dot).toBe('yellow');
     // not used for completions: the Next Edit-only warning does not apply
     expect(s.cards[1]!.warning ?? '').not.toContain('Next Edit model');
+  });
+
+  test('a Sweep model used for completions gets the qwen template and no warning', () => {
+    const s = buildPageState(inputs({ rawBackends: [{ ...lm, fimModel: 'sweep-next-edit-v2-7b-oq4e' }] }));
+    expect(s.cards[0]!.warning).toBeUndefined();
+    expect(modelTag({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } }, 'sweep-next-edit-v2-7b-oq4e', base())).toBe('ready');
   });
 
   test('modelTag: ready, chat prompt, cannot turn thinking off, or no route', () => {

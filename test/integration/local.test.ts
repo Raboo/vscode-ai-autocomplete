@@ -1,6 +1,8 @@
 import * as assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
@@ -23,8 +25,9 @@ const BYTES = Buffer.from(Array.from({ length: 64 * 1024 }, (_, i) => (i * 31 + 
 const BACKEND_ID = 'local-test';
 const EXIT_ENV = 'FAKE_LLAMA_SERVER_EXIT';
 const EXIT_ONCE_ENV = 'FAKE_LLAMA_SERVER_EXIT_ONCE';
+const STARTS_ENV = 'FAKE_LLAMA_SERVER_STARTS';
 /** Every setting a test may write; teardown resets them. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
+const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.debounceMs', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
 
 const userBackends = (): Record<string, unknown>[] => {
   const list = vscode.workspace.getConfiguration('aiAutocomplete').inspect('backends')?.globalValue;
@@ -36,6 +39,10 @@ const setUp = (replace = false): Thenable<SetupOutcome> =>
   vscode.commands.executeCommand<SetupOutcome>('aiAutocomplete.setUpLocalModel', { recipe: 'test', runtime: 'llamaServer', ...(replace ? { replace } : {}) });
 const health = async (port: number): Promise<number> => (await fetch(`http://127.0.0.1:${port}/health`)).status;
 const healthy = async (port: number): Promise<boolean> => (await health(port).catch(() => 0)) === 200;
+async function healthyWithin(port: number, ms: number): Promise<boolean> {
+  for (const deadline = Date.now() + ms; Date.now() < deadline; await sleep(100)) if (await healthy(port)) return true;
+  return false;
+}
 
 suite('Local model helper', () => {
   let mock: MockServer;
@@ -82,6 +89,7 @@ suite('Local model helper', () => {
   suiteTeardown(async () => {
     delete process.env[EXIT_ENV];
     delete process.env[EXIT_ONCE_ENV];
+    delete process.env[STARTS_ENV];
     await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
     local().setRecipes(undefined);
     await unconfigure(TOUCHED);
@@ -141,9 +149,7 @@ suite('Local model helper', () => {
       assert.equal(JSON.stringify(userBackends()), backends);
       assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('fim.backend'), BACKEND_ID);
       // The restart runs the fixture again, which works now that the flag file is gone.
-      let up = false;
-      for (const deadline = Date.now() + 10_000; !up && Date.now() < deadline; await sleep(100)) up = await healthy(portOf(entry()));
-      assert.ok(up, `the previous server did not come back (backend ${JSON.stringify(entry())})`);
+      assert.ok(await healthyWithin(portOf(entry()), 10_000), `the previous server did not come back (backend ${JSON.stringify(entry())})`);
     } finally {
       delete process.env[EXIT_ONCE_ENV];
     }
@@ -153,6 +159,81 @@ suite('Local model helper', () => {
     const port = portOf(entry());
     await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
     await assert.rejects(health(port));
+  });
+
+  test('selecting the backend again starts its server without a reload; an unrelated change does not', async () => {
+    const port = portOf(entry());
+    const starts = join(binDir, 'starts-select');
+    writeFileSync(starts, '');
+    process.env[STARTS_ENV] = starts;
+    try {
+      // Stopped with Stop Local Models: a change that keeps the selection leaves it stopped.
+      await configure({ 'fim.debounceMs': 120 });
+      await sleep(1000);
+      assert.equal(readFileSync(starts, 'utf8'), '', 'an unrelated settings change started the server');
+      await configure({ 'fim.enabled': false });
+      await configure({ 'fim.enabled': true });
+      assert.ok(await healthyWithin(port, 10_000), 'the server did not start when its backend was selected again');
+      assert.equal(readFileSync(starts, 'utf8').trim().split('\n').length, 1);
+      // Deselecting it stops it.
+      await configure({ 'fim.enabled': false });
+      let down = false;
+      for (const deadline = Date.now() + 10_000; !down && Date.now() < deadline; await sleep(100)) down = !(await healthy(port));
+      assert.ok(down, 'the server kept running after its backend was deselected');
+    } finally {
+      delete process.env[STARTS_ENV];
+      await unconfigure(['fim.debounceMs']);
+      await configure({ 'fim.enabled': true });
+    }
+  });
+
+  test('a server another window runs on the port is adopted, not started a second time', async () => {
+    await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
+    const port = portOf(entry());
+    const starts = join(binDir, 'starts-adopt');
+    writeFileSync(starts, '');
+    // The "other window": the fixture started by hand on the backend's port, with the recipe's alias.
+    const other: ChildProcess = spawn(join(binDir, 'llama-server'), ['--port', String(port), '--alias', 'test-coder'], { stdio: 'ignore' });
+    try {
+      assert.ok(await healthyWithin(port, 10_000), 'the hand-started server did not come up');
+      process.env[STARTS_ENV] = starts;
+      await configure({ 'fim.enabled': false });
+      await configure({ 'fim.enabled': true });
+      await sleep(1500);
+      assert.equal(readFileSync(starts, 'utf8'), '', 'the extension started its own server');
+      assert.equal(portOf(entry()), port, 'the backend moved to another port');
+      assert.ok(await healthy(port));
+      // Stop Local Models does not kill it: its record has no pid (cleared by the earlier Stop), so it is not ours to stop.
+      await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
+      assert.ok(await healthy(port), 'Stop Local Models stopped a server it has no record of');
+    } finally {
+      delete process.env[STARTS_ENV];
+      other.kill('SIGTERM');
+      await new Promise((r) => (other.exitCode !== null ? r(undefined) : other.once('exit', r)));
+    }
+  });
+
+  test('a failed re-run on a taken port puts the backend back on its old port', async () => {
+    const backends = JSON.stringify(userBackends());
+    const port = portOf(entry());
+    // Something that is not a llama-server holds the port: the pool takes another one and moves the backend there.
+    const blocker = createServer((_req, res) => res.writeHead(404).end());
+    await new Promise<void>((r) => blocker.listen(port, '127.0.0.1', r));
+    const flag = join(binDir, 'exit-once-moved');
+    writeFileSync(flag, '');
+    process.env[EXIT_ONCE_ENV] = flag;
+    try {
+      // Completions off, so the failed run does not start the previous server again (which would move the backend too).
+      await configure({ 'fim.enabled': false });
+      const out = await setUp(true);
+      assert.ok(out && !out.ok, `setup did not fail: ${JSON.stringify(out)}`);
+      assert.equal(JSON.stringify(userBackends()), backends);
+    } finally {
+      delete process.env[EXIT_ONCE_ENV];
+      blocker.closeAllConnections();
+      await new Promise<void>((r) => blocker.close(() => r()));
+      await configure({ 'fim.enabled': true });
+    }
   });
 
   test('fails cleanly: a server that exits at once shows the error and writes no backend', async () => {

@@ -5,15 +5,17 @@ import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import { upsertBackend } from '../../manage/form';
 import { MANAGED_KEY, type ManagedServer } from '../backendEntry';
-import { freePort, type SpawnLike } from '../llamaServer';
+import { freePort, probePort, type SpawnLike } from '../llamaServer';
 import type { Recipe } from '../recipes';
 import { findRuntime, type RuntimeEnv } from '../runtimes';
-import { ServerPool, launchLlamaServer, type RunningServer } from '../serverPool';
+import { ServerPool, launchLlamaServer, type Started } from '../serverPool';
 
 export interface LocalServersDeps {
   context: vscode.ExtensionContext;
   log: Log;
   settings(): Settings;
+  /** Shows the output channel. */
+  showLog(): void;
   spawnFn?: SpawnLike;
   /** The recipes managed servers may use; RECIPES when unset (tests swap in their own). */
   recipes?(): readonly Recipe[];
@@ -57,7 +59,25 @@ async function moveBackend(backendId: string, port: number): Promise<void> {
   await config.update('backends', upsertBackend(list, { ...entry, baseUrl }, backendId), vscode.ConfigurationTarget.Global);
 }
 
-/** The llama-server processes the extension started, with their records in global state and their backends in user settings. */
+/** Whether a process with this pid exists and this user may signal it (signal 0 sends nothing). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function terminate(pid: number): void {
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // gone already
+  }
+}
+
+/** The llama-server processes of the local backends, with their records in global state and their backends in user settings. */
 export class LocalServers implements vscode.Disposable {
   private readonly pool: ServerPool;
 
@@ -73,11 +93,17 @@ export class LocalServers implements vscode.Disposable {
       moveBackend,
       settings: () => d.settings(),
       log: d.log,
+      probe: (port, alias) => probePort(port, alias),
+      alive,
+      terminate,
+      stoppedUnexpectedly: (id) => {
+        void vscode.window.showErrorMessage(`Local model ${id} stopped unexpectedly.`, 'Show Log').then((c) => c && d.showLog());
+      },
       ...(d.recipes ? { recipes: d.recipes } : {}),
     });
   }
 
-  start(m: ManagedServer): Promise<RunningServer> {
+  start(m: ManagedServer): Promise<Started> {
     return this.pool.start(m);
   }
 
@@ -89,8 +115,16 @@ export class LocalServers implements vscode.Disposable {
     return this.pool.stop(backendId);
   }
 
+  selectionChanged(before: Settings, after: Settings): Promise<void> {
+    return this.pool.selectionChanged(before, after);
+  }
+
   stopAll(): Promise<void> {
     return this.pool.stopAll();
+  }
+
+  stopEverywhere(): Promise<boolean> {
+    return this.pool.stopEverywhere();
   }
 
   record(m: ManagedServer): Promise<void> {

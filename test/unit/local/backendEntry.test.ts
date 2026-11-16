@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseSettings, type Inspected, type RawSettingsSource, type Settings } from '../../../src/config/settings';
-import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, portFor, serversToStart, type ManagedServer } from '../../../src/local/backendEntry';
+import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, portFor, selectionChange, serversToStart, type ManagedServer } from '../../../src/local/backendEntry';
 import { RECIPES, type Recipe } from '../../../src/local/recipes';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
@@ -105,6 +105,14 @@ describe('parseManaged', () => {
   test('anything that is not an array gives an empty list', () => {
     for (const raw of [undefined, null, 'x', 7, {}, { 0: ok }]) expect(parseManaged(raw)).toEqual([]);
   });
+  test('keeps a valid pid; a missing or invalid pid leaves the field out but keeps the entry', () => {
+    expect(parseManaged([{ ...ok, pid: 4242 }])).toEqual([{ ...ok, pid: 4242 }]);
+    for (const pid of [undefined, 0, -1, 1.5, '4242', null]) {
+      const [e] = parseManaged([{ ...ok, pid }]);
+      expect(e).toEqual(ok);
+      expect('pid' in e).toBe(false);
+    }
+  });
 });
 
 describe('serversToStart', () => {
@@ -143,6 +151,48 @@ describe('serversToStart', () => {
   });
   test('the master switch off starts nothing', () => {
     expect(serversToStart([a, b, c], settings({ enabled: false, 'fim.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([]);
+  });
+});
+
+describe('selectionChange', () => {
+  const m = (id: string): ManagedServer => ({ backendId: id, recipeId: id, file: `/m/${id}.gguf`, port: 8012 });
+  const a = m('a');
+  const b = m('b');
+  function settings(map: Record<string, unknown>, ids = ['a', 'b'], port = 8012): Settings {
+    const entries = ids.map((id) => ({ id, kind: 'llamacpp', baseUrl: `http://127.0.0.1:${port}` }));
+    const inspected: Record<string, Inspected<unknown>> = { backends: { globalValue: entries } };
+    for (const [k, v] of Object.entries(map)) inspected[k] = { globalValue: v };
+    return parseSettings(src(inspected)).settings;
+  }
+  const none = { start: [], stop: [] };
+
+  test('a backend that became selected starts', () => {
+    expect(selectionChange([a, b], settings({ 'fim.backend': 'b' }), settings({ 'fim.backend': 'a' }), [])).toEqual({ start: [a], stop: [] });
+  });
+  test('a backend no longer selected, or removed, or with completions switched off, stops when this window runs it', () => {
+    const before = settings({ 'fim.backend': 'a' });
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'b' }), ['a'])).toEqual({ start: [b], stop: ['a'] });
+    // With "a" gone the selection falls back to the remaining backend.
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a' }, ['b']), ['a'])).toEqual({ start: [b], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', 'fim.enabled': false }), ['a'])).toEqual({ start: [], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', enabled: false }), ['a'])).toEqual({ start: [], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'b' }), [])).toEqual({ start: [b], stop: [] });
+  });
+  test('an unrelated change (a moved port, another setting) starts and stops nothing: a server stopped with Stop Local Models stays stopped', () => {
+    const before = settings({ 'fim.backend': 'a' });
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a' }, ['a', 'b'], 9001), [])).toEqual(none);
+    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', 'fim.debounceMs': 100 }), ['a'])).toEqual(none);
+  });
+  test("setup's server: the backends write and the selection write neither stop nor start it again", () => {
+    // Setup starts the server first, then writes the backend (not selected yet), records it, then selects it.
+    const noEntry = settings({ 'fim.backend': 'b' }, ['b']);
+    const written = settings({ 'fim.backend': 'b' });
+    const selected = settings({ 'fim.backend': 'a' });
+    expect(selectionChange([b], noEntry, written, ['a'])).toEqual(none);
+    expect(selectionChange([a, b], written, selected, ['a'])).toEqual(none);
+  });
+  test('a selected backend without a record has nothing to start', () => {
+    expect(selectionChange([b], settings({ 'fim.backend': 'b' }), settings({ 'fim.backend': 'a' }), [])).toEqual(none);
   });
 });
 

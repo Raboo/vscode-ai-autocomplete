@@ -9,6 +9,7 @@ import {
   LlamaServerProcess,
   llamaServerArgs,
   LocalRuntimeError,
+  probePort,
   type ChildLike,
 } from '../../../src/local/llamaServer';
 
@@ -232,5 +233,57 @@ describe('defaultSpawn', () => {
     await expect(
       LlamaServerProcess.start({ binary: '/definitely/not/a/binary', args: [], port, spawnFn: defaultSpawn, log: () => {}, pollMs: 10 }),
     ).rejects.toThrow(/Could not start llama-server: spawn .*ENOENT/);
+  });
+});
+
+describe('LlamaServerProcess exit details', () => {
+  it('exposes the pid, how the process ended and its last output lines', async () => {
+    const server = await listen((_req, res) => res.writeHead(200).end());
+    const port = (server.address() as AddressInfo).port;
+    const child = new FakeChild();
+    const pending = LlamaServerProcess.start(startOpts(child, port));
+    child.stderr.write('loaded\n');
+    const proc = await pending;
+    expect(proc.pid).toBe(4242);
+    expect(proc.exitInfo()).toBe('');
+    child.stderr.write('ggml_abort: out of memory\n');
+    await new Promise((r) => setTimeout(r, 20));
+    child.exit(null, 'SIGABRT');
+    await proc.exited;
+    expect(proc.exitInfo()).toBe('signal SIGABRT');
+    expect(proc.lastOutput()).toEqual(['loaded', 'ggml_abort: out of memory']);
+  });
+});
+
+describe('probePort', () => {
+  async function serve(routes: Record<string, [number, unknown?]>): Promise<number> {
+    const server = await listen((req, res) => {
+      const [status, body] = routes[req.url ?? ''] ?? [404];
+      res.writeHead(status, { 'content-type': 'application/json' }).end(body === undefined ? '' : JSON.stringify(body));
+    });
+    return (server.address() as AddressInfo).port;
+  }
+
+  it('is ours when /health is 200 and /v1/models lists the alias', async () => {
+    const port = await serve({ '/health': [200, { status: 'ok' }], '/v1/models': [200, { data: [{ id: 'sweep' }] }] });
+    expect(await probePort(port, 'sweep')).toBe('ours');
+  });
+  it('falls back to the /props model_alias', async () => {
+    const port = await serve({ '/health': [200], '/v1/models': [404], '/props': [200, { model_alias: 'sweep' }] });
+    expect(await probePort(port, 'sweep')).toBe('ours');
+  });
+  it('is loading while /health answers 503', async () => {
+    const port = await serve({ '/health': [503, { error: { message: 'Loading model' } }] });
+    expect(await probePort(port, 'sweep')).toBe('loading');
+  });
+  it('is none for another model, another server or nothing listening', async () => {
+    const other = await serve({ '/health': [200], '/v1/models': [200, { data: [{ id: 'qwen' }] }], '/props': [200, { model_alias: 'qwen' }] });
+    expect(await probePort(other, 'sweep')).toBe('none');
+    const notLlama = await serve({ '/health': [404] });
+    expect(await probePort(notLlama, 'sweep')).toBe('none');
+    const closed = await listen(() => {});
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise<void>((r) => closed.close(() => r()));
+    expect(await probePort(port, 'sweep')).toBe('none');
   });
 });

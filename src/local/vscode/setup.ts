@@ -15,7 +15,8 @@ import { DownloadError, downloadModel } from '../download';
 import { LmStudio, defaultExec } from '../lmStudio';
 import { downloadUrl, fitsMemory, modelPathSegments, type Recipe } from '../recipes';
 import { INSTALL_HINT, findRuntime, type RuntimeId } from '../runtimes';
-import type { RunningServer } from '../serverPool';
+import type { Started } from '../serverPool';
+import { LOCAL_RUNTIMES, setupArgument } from '../setupArg';
 import { realEnv } from './servers';
 
 export interface SetupDeps {
@@ -25,7 +26,7 @@ export interface SetupDeps {
   /** The recipes to offer (RECIPES, or a test's own). */
   recipes(): readonly Recipe[];
   servers: {
-    start(m: ManagedServer): Promise<RunningServer>;
+    start(m: ManagedServer): Promise<Started>;
     stop(backendId: string): Promise<void>;
     record(m: ManagedServer): Promise<void>;
     forget(backendId: string): Promise<void>;
@@ -33,9 +34,6 @@ export interface SetupDeps {
   /** Opens the Backends page on a backend. */
   openBackend(id: string): void;
 }
-
-/** `replace: true` skips the "Replace the backend?" question (tests only). */
-export interface SetupArg { recipe: string; runtime: LocalRuntime; replace?: boolean }
 
 /** What a setup ended with; the command returns it so tests can check it. */
 export type SetupOutcome =
@@ -46,7 +44,6 @@ export type SetupOutcome =
 const PREFERRED_PORT = 8012;
 const RECOMMENDED = 'sweep-1.5b';
 const PROGRESS_MS = 250;
-const RUNTIMES: readonly LocalRuntime[] = ['llamaServer', 'lmStudio'];
 const RUNTIME_ID: Record<LocalRuntime, RuntimeId> = { llamaServer: 'llamaServer', lmStudio: 'lms' };
 const RUNTIME_LABEL: Record<LocalRuntime, string> = { llamaServer: 'llama-server', lmStudio: 'LM Studio' };
 const RUNTIME_NOTE: Record<LocalRuntime, string> = {
@@ -75,21 +72,9 @@ function runtimePath(runtime: LocalRuntime, s: Settings): string | undefined {
   return findRuntime(RUNTIME_ID[runtime], realEnv(), override);
 }
 
-/** The command argument as a SetupArg; undefined (after an error message) when it names an unknown recipe or runtime. */
-function parseArg(arg: unknown, recipes: readonly Recipe[]): { recipe: Recipe; runtime: LocalRuntime; replace: boolean } | undefined {
-  const o = isEntry(arg) ? arg : {};
-  const recipe = recipes.find((r) => r.id === o.recipe);
-  const runtime = RUNTIMES.find((r) => r === o.runtime);
-  if (!recipe || !runtime) {
-    void vscode.window.showErrorMessage('AI Autocomplete: unknown local model or runtime.');
-    return undefined;
-  }
-  return { recipe, runtime, replace: o.replace === true };
-}
-
 async function pickRuntime(s: Settings): Promise<LocalRuntime | undefined> {
   type Item = vscode.QuickPickItem & { runtime: LocalRuntime; found: boolean };
-  const items: Item[] = RUNTIMES.map((runtime) => {
+  const items: Item[] = LOCAL_RUNTIMES.map((runtime) => {
     const found = runtimePath(runtime, s) !== undefined;
     return found
       ? { label: RUNTIME_LABEL[runtime], description: RUNTIME_NOTE[runtime], runtime, found }
@@ -118,17 +103,25 @@ async function pickRecipe(recipes: readonly Recipe[]): Promise<Recipe | undefine
   return pick?.recipe;
 }
 
+/** The `.part` files of the downloads running in this window, which Remove Downloaded Models leaves out. */
+const downloading = new Set<string>();
+
 /** Downloads the recipe's file with a cancellable progress notification; undefined when the user cancelled. */
 async function download(d: SetupDeps, r: Recipe, dest: string): Promise<'downloaded' | 'present' | undefined> {
   const url = downloadUrl(r);
   const host = new URL(url).host;
+  const part = `${dest}.part`;
   return vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Downloading ${r.label} from ${host}`, cancellable: true },
+    { location: vscode.ProgressLocation.Notification, cancellable: true },
     async (progress, token) => {
       const ctl = new AbortController();
       const sub = token.onCancellationRequested(() => ctl.abort());
       let shownPercent = 0;
       let shownAt = 0;
+      // Until the server answers, setup may be checking the hash of a file already there.
+      let started = false;
+      progress.report({ message: `Checking ${r.label}…` });
+      downloading.add(part);
       try {
         const result = await downloadModel({
           url,
@@ -139,8 +132,10 @@ async function download(d: SetupDeps, r: Recipe, dest: string): Promise<'downloa
           onProgress: (received, total) => {
             const percent = total > 0 ? Math.floor((received / total) * 100) : 0;
             const now = Date.now();
-            if (percent === shownPercent && now - shownAt < PROGRESS_MS) return;
-            progress.report({ increment: Math.max(0, percent - shownPercent), message: `${percent}% (${mb(received)} of ${mb(total)} MB)` });
+            if (started && percent === shownPercent && now - shownAt < PROGRESS_MS) return;
+            started = true;
+            const text = `Downloading ${r.label} from ${host}: ${percent}% (${mb(received)} of ${mb(total)} MB)`;
+            progress.report({ increment: Math.max(0, percent - shownPercent), message: text });
             shownPercent = percent;
             shownAt = now;
           },
@@ -151,14 +146,18 @@ async function download(d: SetupDeps, r: Recipe, dest: string): Promise<'downloa
         if (err instanceof DownloadError && err.kind === 'cancelled') return undefined;
         throw err;
       } finally {
+        downloading.delete(part);
         sub.dispose();
       }
     },
   );
 }
 
-/** Starts the model and returns the port it is served on, plus the record of a llama-server it started. */
-async function startRuntime(d: SetupDeps, r: Recipe, runtime: LocalRuntime, binary: string, file: string): Promise<{ port: number; managed?: ManagedServer }> {
+/**
+ * Starts the model and returns the port it is served on, plus the record of its llama-server (`port`: the one to try
+ * first). A llama-server another window already runs for this backend is used as it is.
+ */
+async function startRuntime(d: SetupDeps, r: Recipe, runtime: LocalRuntime, binary: string, file: string, port: number): Promise<{ port: number; managed?: ManagedServer }> {
   if (runtime === 'lmStudio') {
     // LM Studio is the user's app: a failure here or later leaves its server running and any model it loaded, on purpose.
     const lms = new LmStudio(binary, defaultExec);
@@ -167,10 +166,10 @@ async function startRuntime(d: SetupDeps, r: Recipe, runtime: LocalRuntime, bina
     await lms.load(modelKey, r.contextTokens, r.modelName);
     return { port };
   }
-  // The pool stops a server already running for this backend, then takes the preferred port or a free one.
-  const m: ManagedServer = { backendId: localBackendId(r, runtime), recipeId: r.id, file, port: PREFERRED_PORT };
-  const proc = await d.servers.start(m);
-  return { port: proc.port, managed: { ...m, port: proc.port } };
+  // The pool stops a server this window runs for this backend, then adopts one on the port or takes it (or a free one).
+  const m: ManagedServer = { backendId: localBackendId(r, runtime), recipeId: r.id, file, port };
+  const started = await d.servers.start(m);
+  return { port: started.port, managed: { ...m, port: started.port, ...(started.pid !== undefined ? { pid: started.pid } : {}) } };
 }
 
 type Selection = { key: (typeof SELECTION_KEYS)[number]; global: unknown; workspace: unknown }[];
@@ -243,14 +242,14 @@ async function undo(d: SetupDeps, u: UndoPlan): Promise<void> {
   // Not awaited: the model may take a while to load, and the error should show now.
   void d.servers
     .start(previous)
-    .then((proc) => (proc.port !== previous.port ? d.servers.record({ ...previous, port: proc.port }) : undefined))
+    .then((s) => (s.adopted ? undefined : d.servers.record({ ...previous, port: s.port, ...(s.pid !== undefined ? { pid: s.pid } : {}) })))
     .catch((err: unknown) => d.log.error(`local model "${previous.backendId}" could not start again`, err));
 }
 
 let busy = false;
 
 /**
- * AI Autocomplete: Set Up Local Model. With an argument (`SetupArg`) the pickers are skipped. Downloads the recipe's file,
+ * AI Autocomplete: Set Up Local Model. In tests an argument (`SetupArg`) skips the pickers. Downloads the recipe's file,
  * starts it, writes and selects the backend, then runs the Test. A failure writes no backend and stops the server it started.
  */
 export async function setUpLocalModel(d: SetupDeps, arg?: unknown): Promise<SetupOutcome> {
@@ -274,9 +273,12 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
   let recipe: Recipe;
   let runtime: LocalRuntime;
   let replace = false;
-  if (arg !== undefined) {
-    const parsed = parseArg(arg, d.recipes());
-    if (!parsed) return undefined;
+  const parsed = setupArgument(arg, d.recipes(), d.context.extensionMode === vscode.ExtensionMode.Test);
+  if (parsed === 'invalid') {
+    void vscode.window.showErrorMessage('AI Autocomplete: unknown local model or runtime.');
+    return undefined;
+  }
+  if (parsed !== 'none') {
     ({ recipe, runtime, replace } = parsed);
   } else {
     const rt = await pickRuntime(d.settings());
@@ -322,9 +324,11 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
       return undefined;
     }
     startAttempted = runtime === 'llamaServer';
-    const started = await busyWith(`Starting ${recipe.label}…`, () => startRuntime(d, recipe, runtime, binary, file));
-    managed = started.managed;
+    // Taken before the start: the pool moves the backend's baseUrl when the port is taken, and a failure puts it back.
     before = { backends: userBackends(), selection: selection() };
+    const port = previous?.port ?? PREFERRED_PORT;
+    const started = await busyWith(`Starting ${recipe.label}…`, () => startRuntime(d, recipe, runtime, binary, file, port));
+    managed = started.managed;
     await config().update('backends', upsertBackend(userBackends(), localBackendEntry(recipe, runtime, started.port), id), vscode.ConfigurationTarget.Global);
     if (managed) await d.servers.record(managed);
     if (recipe.uses.includes('completions')) await useBackend(id);
@@ -367,7 +371,8 @@ async function listFiles(dir: string): Promise<{ path: string; bytes: number }[]
 /** AI Autocomplete: Remove Downloaded Models. Stops and forgets the managed servers that use a deleted file. */
 export async function removeLocalModels(d: SetupDeps): Promise<void> {
   const dir = modelsDir(d.context);
-  const files = await listFiles(dir);
+  // A partial download that is running now is not offered: deleting it would break that download.
+  const files = (await listFiles(dir)).filter((f) => !downloading.has(f.path));
   if (files.length === 0) {
     void vscode.window.showInformationMessage('No downloaded models.');
     return;

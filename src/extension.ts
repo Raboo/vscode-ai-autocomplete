@@ -189,7 +189,7 @@ export function activate(context: vscode.ExtensionContext): {
   // Tests swap in their own recipes, for setup and for the servers it records alike.
   let testRecipes: readonly Recipe[] | undefined;
   const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
-  const servers = new LocalServers({ context, log, settings: () => settings, recipes });
+  const servers = new LocalServers({ context, log, settings: () => settings, recipes, showLog: () => channel.show(true) });
   localServers = servers;
   sub(servers);
   const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };
@@ -227,7 +227,10 @@ export function activate(context: vscode.ExtensionContext): {
   const onSettingsChanged = (): void => {
     // Running requests were planned with the old settings (backend, exclusions, localOnly).
     inflight.abortEverything();
+    const before = settings;
     const problems = rebuild();
+    // A local backend that became selected starts its server; one no longer selected (or removed) stops it.
+    void servers.selectionChanged(before, settings);
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
@@ -269,7 +272,7 @@ export function activate(context: vscode.ExtensionContext): {
   };
 }
 
-/** Stops the llama-servers the extension started; VS Code waits briefly for the promise. */
+/** Stops the llama-servers this window started (windows that adopted one start their own); VS Code waits briefly for the promise. */
 export function deactivate(): Promise<void> | undefined {
   const servers = localServers;
   localServers = undefined;

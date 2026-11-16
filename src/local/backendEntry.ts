@@ -9,6 +9,11 @@ export interface ManagedServer {
   recipeId: string;
   file: string;
   port: number;
+  /**
+   * The process serving it, written by the window that started it. Stop Local Models clears it: a record without a pid
+   * means nobody should be serving it, so a window that adopted the server does not start it again.
+   */
+  pid?: number;
 }
 
 /** Key of the managed servers in the extension's global state. */
@@ -38,10 +43,11 @@ export function parseManaged(raw: unknown): ManagedServer[] {
   const out: ManagedServer[] = [];
   for (const e of raw) {
     if (typeof e !== 'object' || e === null) continue;
-    const { backendId, recipeId, file, port } = e as Record<string, unknown>;
+    const { backendId, recipeId, file, port, pid } = e as Record<string, unknown>;
     if (typeof backendId !== 'string' || typeof recipeId !== 'string' || typeof file !== 'string') continue;
     if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) continue;
-    out.push({ backendId, recipeId, file, port });
+    const validPid = typeof pid === 'number' && Number.isInteger(pid) && pid > 0;
+    out.push(validPid ? { backendId, recipeId, file, port, pid } : { backendId, recipeId, file, port });
   }
   return out;
 }
@@ -54,6 +60,23 @@ export function serversToStart(managed: ManagedServer[], s: Settings): ManagedSe
   if (s.nextEdit.enabled && s.nextEdit.backendId) selected.add(s.nextEdit.backendId);
   const existing = new Set(s.backends.map((b) => b.id));
   return managed.filter((m) => existing.has(m.backendId) && selected.has(m.backendId));
+}
+
+/**
+ * What a settings change means for the managed servers. `start`: the ones whose backend became selected (it was not
+ * before) and that have no server in this window yet. `stop`: this window's servers (`active`) whose backend was
+ * selected before and is not now, or no longer exists. A backend selected before and after is left alone, so a server
+ * stopped with Stop Local Models stays stopped, and setup's server (started before its backend is written and
+ * selected) is neither stopped nor started twice.
+ */
+export function selectionChange(managed: ManagedServer[], before: Settings, after: Settings, active: readonly string[]): { start: ManagedServer[]; stop: string[] } {
+  const was = new Set(serversToStart(managed, before).map((m) => m.backendId));
+  const now = serversToStart(managed, after);
+  const isNow = new Set(now.map((m) => m.backendId));
+  return {
+    start: now.filter((m) => !was.has(m.backendId) && !active.includes(m.backendId)),
+    stop: active.filter((id) => was.has(id) && !isNow.has(id)),
+  };
 }
 
 /** The saved port when `free` gives it back, otherwise the one `free` found instead (`changed`: the backend's URL must follow). */

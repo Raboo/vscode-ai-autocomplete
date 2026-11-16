@@ -37,8 +37,8 @@ export interface CommandDeps {
   nextEditTab(): Promise<void>;
   /** Esc on a Next Edit shown as decorations. */
   nextEditDismiss(): void;
-  /** The llama-servers the extension started; `active` lists the ready ones and the ones still loading. */
-  localServers: { active(): string[]; stopAll(): Promise<void> };
+  /** The local llama-servers; `stopEverywhere` stops them in every window and says whether any was running. */
+  localServers: { stopEverywhere(): Promise<boolean> };
   /** Set Up Local Model (the argument skips the pickers) and Remove Downloaded Models. */
   localModels: { setUp(arg: unknown): Promise<unknown>; remove(): Promise<void> };
 }
@@ -189,13 +189,8 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('nextEditTab', () => d.nextEditTab()),
     reg('nextEditDismiss', () => d.nextEditDismiss()),
     reg('stopLocalModels', async () => {
-      const ids = d.localServers.active();
-      if (ids.length === 0) {
-        void vscode.window.showInformationMessage('No local models are running.');
-        return;
-      }
-      await d.localServers.stopAll();
-      void vscode.window.showInformationMessage(`Stopped local models: ${ids.join(', ')}.`);
+      const stopped = await d.localServers.stopEverywhere();
+      void vscode.window.showInformationMessage(stopped ? 'Stopped local models in all windows.' : 'No local models are running.');
     }),
     reg('setUpLocalModel', (arg) => d.localModels.setUp(arg)),
     reg('removeLocalModels', () => d.localModels.remove()),

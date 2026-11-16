@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.2.0...v0.3.0) (2026-11-16)
+
+
+### Features
+
+* Next Edit suggestions with chatXtab and the native inline-edit UI ([#9](https://github.com/Raboo/vscode-ai-autocomplete/issues/9)) ([aa1e463](https://github.com/Raboo/vscode-ai-autocomplete/commit/aa1e463853393cfad0dec06bf1434bb22a61b068))
+
 ## [0.2.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.1.0...v0.2.0) (2026-11-15)
 
 

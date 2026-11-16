@@ -43,7 +43,7 @@ describe('page state', () => {
   });
 
   test('modelTag: ready, chat prompt, cannot turn thinking off, or no route', () => {
-    const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, ...o });
+    const cfg = (o: Partial<BackendConfig> = {}): BackendConfig => ({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...o });
     expect(modelTag(cfg(), 'qwen2.5-coder-7b', base())).toBe('ready');
     expect(modelTag(cfg(), 'zeta-2.1', base())).toBe('no completion template');
     expect(modelTag(cfg({ fim: { template: 'seed-coder' } }), 'zeta-2.1', base())).toBe('ready');
@@ -55,7 +55,7 @@ describe('page state', () => {
   });
 
   test('a Mistral chat-family model on kind mistral: the tag and the card say to choose a Codestral model', () => {
-    const cs = { id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {} } as const;
+    const cs = { id: 'cs', kind: 'mistral', baseUrl: 'https://codestral.mistral.ai', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } } as const;
     expect(modelTag(cs, 'devstral-small-2507', base())).toBe('choose a Codestral model');
     expect(modelTag(cs, 'codestral-latest', base())).toBe('ready');
     const card = buildPageState(inputs({ rawBackends: [{ ...cs, fimModel: 'devstral-small-2507' }] })).cards[0]!;

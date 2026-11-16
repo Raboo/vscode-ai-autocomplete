@@ -213,7 +213,7 @@ const ADAPTIVE = 'adaptive, starts at 75 ms (local) or 250 ms (hosted)';
 function baseConfig(f: BackendForm): BackendConfig {
   const base: BackendForm = { ...f, id: ID_RE.test(f.id) ? f.id : 'backend', baseUrl: f.baseUrl.trim() || typeInfo(f.type).defaultUrl || 'http://127.0.0.1',
     changed: { ...(typed(f, 'fimMode') && FIM_MODES.includes(typed(f, 'fimMode')!) ? { fimMode: typed(f, 'fimMode')! } : {}) } };
-  return formToConfig(base) ?? { id: 'backend', kind: typeInfo(f.type).kind, baseUrl: 'http://127.0.0.1', fimMode: 'auto', headers: {} };
+  return formToConfig(base) ?? { id: 'backend', kind: typeInfo(f.type).kind, baseUrl: 'http://127.0.0.1', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } };
 }
 
 export function fieldViews(f: BackendForm, model: string | undefined, s: Settings, errors: FieldError[]): FieldView[] {

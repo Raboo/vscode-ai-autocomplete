@@ -9,7 +9,7 @@ const settings = (patch: { overrides?: Record<string, ModelOverrideBody>; extraC
   const s = parseSettings(none).settings;
   return { ...s, modelOverrides: patch.overrides ?? {}, fim: { ...s.fim, ...(patch.extraContext !== undefined ? { extraContext: patch.extraContext } : {}) } };
 };
-const backend = (fim?: BackendFimSettings): BackendConfig => ({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {}, ...(fim ? { fim } : {}) });
+const backend = (fim?: BackendFimSettings): BackendConfig => ({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...(fim ? { fim } : {}) });
 const QWEN = 'qwen2.5-coder-1.5b';
 
 describe('resolveFim', () => {
@@ -133,6 +133,11 @@ describe('Next Edit values', () => {
     expect(nextEditModel(strata({ fimModel: 'f' }), 'd')).toBe('f');
     expect(nextEditModel(strata(), 'd')).toBe('d');
     expect(nextEditModel(strata(), undefined)).toBeUndefined();
+  });
+  test('a Next Edit-only backend never uses its completion model for Next Edit', () => {
+    const cfg = { ...strata(), fimModel: 'coder', use: { completions: false, nextEdit: true } };
+    expect(nextEditModel(cfg, 'detected')).toBe('detected');
+    expect(nextEditModel({ ...cfg, use: { completions: true, nextEdit: true } }, 'detected')).toBe('coder');
   });
   test('resolveNextEdit uses the NES chat sampling and the Next Edit deadline', () => {
     const v = resolveNextEdit(strata(), 'qwen3.8-flash-next-iq3_s', settings());

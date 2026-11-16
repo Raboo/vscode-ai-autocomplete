@@ -91,6 +91,18 @@
                 "type": "string",
                 "description": "Model name for next-edit suggestions."
               },
+              "use": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "completions",
+                    "nextEdit"
+                  ]
+                },
+                "uniqueItems": true,
+                "description": "What the backend is used for. Missing means both."
+              },
               "fimMode": {
                 "type": "string",
                 "enum": [

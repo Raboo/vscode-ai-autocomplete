@@ -575,7 +575,7 @@ export class NextEditController implements vscode.Disposable {
   /** The configured Next Edit model, else the detected one (remembered per backend instance once found). */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     const cfg = backend.config;
-    if (cfg.nextEditModel !== undefined || cfg.fimModel !== undefined) return nextEditModel(cfg, undefined);
+    if (cfg.nextEditModel !== undefined || (cfg.use.completions && cfg.fimModel !== undefined)) return nextEditModel(cfg, undefined);
     let detected = this.models.get(backend);
     if (detected === undefined) {
       detected = await this.d.detectedModel(backend, signal);

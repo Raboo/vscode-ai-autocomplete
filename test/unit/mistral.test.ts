@@ -24,6 +24,7 @@ const cfg = (baseUrl: string, o: Partial<BackendConfig> = {}): BackendConfig => 
   kind: 'mistral',
   baseUrl,
   fimMode: 'auto',
+  use: { completions: true, nextEdit: true },
   headers: {},
   ...o,
 });

@@ -71,3 +71,7 @@ test('nextEdit format and display enums match the code', () => {
   expect(props['aiAutocomplete.nextEdit.format'].enum).toEqual([...NEXT_EDIT_FORMATS]);
   expect(props['aiAutocomplete.nextEdit.display'].enum).toEqual([...NEXT_EDIT_DISPLAYS]);
 });
+test('backends entries declare use', () => {
+  const use = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.use;
+  expect(use.items.enum).toEqual(['completions', 'nextEdit']);
+});

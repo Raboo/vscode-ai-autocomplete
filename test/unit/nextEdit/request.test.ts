@@ -12,7 +12,7 @@ import { nextEditMaxTokens, runNextEdit, type NextEditSnapshot } from '../../../
 import type { BackendConfig, HostFlavor } from '../../../src/types';
 
 const none: RawSettingsSource = { inspect: () => undefined };
-const backendCfg: BackendConfig = { id: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {} };
+const backendCfg: BackendConfig = { id: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:8012', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true } };
 const values = resolveNextEdit(backendCfg, 'qwen3.8-flash-next-iq3_s', parseSettings(none).settings);
 
 const CIRCLE = [

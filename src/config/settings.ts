@@ -7,6 +7,14 @@ export const NEXT_EDIT_DISPLAYS = ['auto', 'native', 'decorations'] as const;
 export type NextEditFormatSetting = (typeof NEXT_EDIT_FORMATS)[number];
 export type NextEditDisplay = (typeof NEXT_EDIT_DISPLAYS)[number];
 
+export type BackendUse = 'completions' | 'nextEdit';
+export const BACKEND_USES: readonly BackendUse[] = ['completions', 'nextEdit'];
+
+/** Whether the backend serves the given use. */
+export function usesFor(cfg: BackendConfig, use: BackendUse): boolean {
+  return cfg.use[use];
+}
+
 export interface Settings {
   backends: BackendConfig[];
   fim: {
@@ -125,6 +133,26 @@ function parseBackendFim(raw: unknown, at: string, problems: string[]): BackendF
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Parses a backend's `use` list. Missing means both; an empty list, a non-array or only unknown values count as both too, with a problem. */
+function parseUse(raw: unknown, where: string, problems: string[]): BackendConfig['use'] {
+  const both = { completions: true, nextEdit: true };
+  if (raw === undefined) return both;
+  if (!Array.isArray(raw)) {
+    problems.push(`${where}: use is not a list (expected ${BACKEND_USES.join(', ')}), counted as both`);
+    return both;
+  }
+  const kept = new Set<BackendUse>();
+  for (const v of raw) {
+    if (typeof v === 'string' && (BACKEND_USES as readonly string[]).includes(v)) kept.add(v as BackendUse);
+    else problems.push(`${where}: use ${JSON.stringify(v)} is not one of ${BACKEND_USES.join(', ')}, ignored`);
+  }
+  if (kept.size === 0) {
+    if (raw.length === 0) problems.push(`${where}: use is empty (expected ${BACKEND_USES.join(', ')}), counted as both`);
+    return both;
+  }
+  return { completions: kept.has('completions'), nextEdit: kept.has('nextEdit') };
+}
+
 /** Parses one raw backends entry; pushes every problem; undefined when the entry is unusable. `seen` collects ids for duplicate checks. */
 export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, problems: string[]): BackendConfig | undefined {
   const fail = (problem: string): undefined => void problems.push(problem);
@@ -149,7 +177,7 @@ export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, pr
     for (const [k, v] of Object.entries(raw.headers)) if (typeof v === 'string') headers[k] = v;
   }
   seen.add(id);
-  const backend: BackendConfig = { id, kind: raw.kind as BackendKind, baseUrl, fimMode: fimMode as FimMode, headers };
+  const backend: BackendConfig = { id, kind: raw.kind as BackendKind, baseUrl, fimMode: fimMode as FimMode, headers, use: parseUse(raw.use, `${at} ("${id}")`, problems) };
   if (typeof raw.hostFlavor === 'string' && HOST_FLAVORS.includes(raw.hostFlavor as HostFlavor)) backend.hostFlavor = raw.hostFlavor as HostFlavor;
   const fimModel = str(raw.fimModel);
   if (fimModel) backend.fimModel = fimModel;
@@ -250,9 +278,13 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
   }
 
   const requested = resource<unknown>('fim.backend', undefined);
-  let backendId: string | undefined = backends[0]?.id;
+  let backendId: string | undefined = backends.find((b) => usesFor(b, 'completions'))?.id;
   if (typeof requested === 'string' && requested !== '') {
-    if (backends.some((b) => b.id === requested)) backendId = requested;
+    const found = backends.find((b) => b.id === requested);
+    if (found && !usesFor(found, 'completions')) {
+      backendId = undefined;
+      problems.push(`aiAutocomplete.fim.backend: backend "${requested}" is not used for completions; completions have no backend`);
+    } else if (found) backendId = requested;
     else problems.push(`aiAutocomplete.fim.backend: no backend with id "${requested}"${backendId ? `, using "${backendId}"` : ''}`);
   }
 
@@ -260,7 +292,9 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
   const nextEditRequested = resource<unknown>('nextEdit.backend', undefined);
   let nextEditBackendId: string | undefined;
   if (typeof nextEditRequested === 'string' && nextEditRequested !== '') {
-    if (backends.some((b) => b.id === nextEditRequested)) nextEditBackendId = nextEditRequested;
+    const found = backends.find((b) => b.id === nextEditRequested);
+    if (found && !usesFor(found, 'nextEdit')) problems.push(`aiAutocomplete.nextEdit.backend: backend "${nextEditRequested}" is not used for Next Edit; Next Edit is off`);
+    else if (found) nextEditBackendId = nextEditRequested;
     else problems.push(`aiAutocomplete.nextEdit.backend: no backend with id "${nextEditRequested}"; Next Edit is off`);
   }
   const nextEditTimeout = resource<unknown>('nextEdit.timeoutMs', DEFAULT_NEXT_EDIT_TIMEOUT_MS);

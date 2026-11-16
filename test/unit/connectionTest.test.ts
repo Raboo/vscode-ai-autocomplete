@@ -15,7 +15,7 @@ const SETTINGS = parseSettings({ inspect: () => undefined }).settings;
 
 interface FakeOpts { config?: Partial<BackendConfig>; native?: boolean; info?: ServerInfo | Error; chunks?: string[] | Error; onStream?: (r: FimRequest) => void; clock?: { t: number }; streamCost?: number; caps?: Partial<RouteCaps>; chatEvents?: ChatEvent[] | Error; onChat?: (r: ChatRequest) => void; chatFor?: (r: ChatRequest) => ChatEvent[]; failAfter?: Error }
 function fake(o: FakeOpts = {}) {
-  const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, ...o.config };
+  const config: BackendConfig = { id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, ...o.config };
   const listModels = vi.fn(async (): Promise<ServerInfo> => {
     const i = o.info ?? { models: ['qwen2.5-coder-7b'], contextWindows: {} };
     if (i instanceof Error) throw i;
@@ -378,7 +378,7 @@ describe('explainFailure', () => {
         return { sse: ['{"choices":[{"delta":{"reasoning":"Let me think."}}]}', '{"choices":[{"delta":{"content":"<COMPLETION>a + b;"},"finish_reason":"stop"}]}', '[DONE]'] };
       });
       try {
-        const config: BackendConfig = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.url}/api/v1`, fimMode: 'auto', headers: {}, fimModel: 'google/gemini-2.5-pro' };
+        const config: BackendConfig = { id: 'or', kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.url}/api/v1`, fimMode: 'auto', headers: {}, use: { completions: true, nextEdit: true }, fimModel: 'google/gemini-2.5-pro' };
         const backend = new OpenRouterBackend(config, async () => 'k');
         const res = await runConnectionTest({ backend, settings: SETTINGS, localOnly: false, isLocal: async () => true, signal: new AbortController().signal, log: nullLog, now: () => 0 }, () => {});
         expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'ok'], ['thinking', 'fail']]);

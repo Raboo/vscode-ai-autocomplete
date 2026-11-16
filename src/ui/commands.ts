@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
+import { usesFor, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
@@ -57,13 +58,26 @@ function openOptions(arg: unknown): OpenOptions {
   return { ...(o.add === true ? { add: true } : {}), ...(typeof o.focus === 'string' ? { focus: o.focus } : {}) };
 }
 
-async function pickBackend(placeHolder: string): Promise<string | undefined> {
-  const ids = readSettings().settings.backends.map((b) => b.id);
-  if (ids.length === 0) {
+const USE_NAMES: Record<BackendUse, string> = { completions: 'completions', nextEdit: 'Next Edit' };
+
+/** Backends the user can pick from, optionally only those serving `use`. Tells the user when there are none. */
+function pickableBackends(use?: BackendUse): string[] | undefined {
+  const all = readSettings().settings.backends;
+  if (all.length === 0) {
     void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
     return undefined;
   }
-  return vscode.window.showQuickPick(ids, { placeHolder });
+  const ids = all.filter((b) => use === undefined || usesFor(b, use)).map((b) => b.id);
+  if (ids.length === 0 && use !== undefined) {
+    void vscode.window.showInformationMessage(`AI Autocomplete: no backend is set up for ${USE_NAMES[use]}. Open "AI Autocomplete: Manage Backends" to set one up.`);
+    return undefined;
+  }
+  return ids;
+}
+
+async function pickBackend(placeHolder: string, use?: BackendUse): Promise<string | undefined> {
+  const ids = pickableBackends(use);
+  return ids ? vscode.window.showQuickPick(ids, { placeHolder }) : undefined;
 }
 
 export function registerCommands(d: CommandDeps): vscode.Disposable[] {
@@ -105,15 +119,12 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       d.status.refresh();
     }),
     reg('selectBackend', async () => {
-      const id = await pickBackend('Select the completion backend');
+      const id = await pickBackend('Select the completion backend', 'completions');
       if (id) await useBackend(id);
     }),
     reg('selectNextEditBackend', async () => {
-      const ids = readSettings().settings.backends.map((b) => b.id);
-      if (ids.length === 0) {
-        void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
-        return;
-      }
+      const ids = pickableBackends('nextEdit');
+      if (!ids) return;
       const OFF = 'Off';
       const current = readSettings().settings.nextEdit.backendId;
       const pick = await vscode.window.showQuickPick<vscode.QuickPickItem>(

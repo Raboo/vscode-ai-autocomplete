@@ -121,9 +121,9 @@ export function templateMismatch(backend: BackendConfig, model: string | undefin
   return own !== undefined && own !== template ? { template, own } : undefined;
 }
 
-/** The model Next Edit requests use: the backend's `nextEditModel`, else its `fimModel`, else the detected one. */
+/** The model Next Edit requests use: the backend's `nextEditModel`, else its `fimModel` (only when it serves completions), else the detected one. */
 export function nextEditModel(backend: BackendConfig, detected: string | undefined): string | undefined {
-  return backend.nextEditModel ?? backend.fimModel ?? detected;
+  return backend.nextEditModel ?? (backend.use.completions ? backend.fimModel : undefined) ?? detected;
 }
 
 /**

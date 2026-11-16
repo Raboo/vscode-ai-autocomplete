@@ -2,6 +2,7 @@ import type { NextEditFormatSetting } from '../../config/settings';
 import { chatXtabFormat } from './chatXtab';
 import type { FormatId, NextEditFormat } from './format';
 import { sweepFormat } from './sweep';
+import { zeta21Format } from './zeta21';
 
 /** The format for a setting: `auto` picks by the model id (Zeta, Sweep, else chatXtab). */
 export function formatIdFor(setting: NextEditFormatSetting, model: string | undefined): FormatId {
@@ -20,8 +21,8 @@ export function pickFormat(setting: NextEditFormatSetting, model: string | undef
   switch (formatIdFor(setting, model)) {
     case 'sweep':
       return sweepFormat(sweepVariant(model));
-    // zeta21 is not registered yet: it runs as chatXtab.
     case 'zeta21':
+      return zeta21Format;
     case 'chatXtab':
       return chatXtabFormat;
   }

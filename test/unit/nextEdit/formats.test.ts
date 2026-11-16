@@ -14,6 +14,11 @@ describe('pickFormat', () => {
     expect(pickFormat('sweep', 'x').id).toBe('sweep');
   });
 
+  it('auto picks zeta21 for Zeta model ids, and an explicit zeta21 wins over the model', () => {
+    expect(pickFormat('auto', 'randmaru/zeta-2.1-mlx').id).toBe('zeta21');
+    expect(pickFormat('zeta21', 'x').id).toBe('zeta21');
+  });
+
   it('an explicit setting wins over the model id', () => {
     expect(pickFormat('chatXtab', 'zeta-2.1').id).toBe('chatXtab');
   });

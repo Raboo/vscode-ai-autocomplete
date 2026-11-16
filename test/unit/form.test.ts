@@ -9,7 +9,7 @@ const settings = (extraContext?: boolean): Settings => {
   const s = parseSettings(none).settings;
   return extraContext === undefined ? s : { ...s, fim: { ...s.fim, extraContext } };
 };
-const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
+const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {}, ...over });
 const view = (vs: ReturnType<typeof fieldViews>, f: string) => vs.find((v) => v.field === f)!;
 
 describe('Next Edit-only models', () => {
@@ -18,18 +18,27 @@ describe('Next Edit-only models', () => {
     expect(formWarnings(form({ model: 'zeta-2.1' }), 'zeta-2.1', settings()).join()).toMatch(/untick Completions, or choose a completion model/);
     expect(formWarnings(form({ model: 'qwen2.5-coder-3b' }), 'qwen2.5-coder-3b', settings()).join()).not.toMatch(/Next Edit model/);
   });
+
+  test('the warning follows the Completions checkbox: Zeta and Sweep models warn only with Completions ticked', () => {
+    const only = { completions: false, nextEdit: true };
+    for (const m of ['zeta-2.1', 'sweep-next-edit-1.5b']) {
+      expect(formWarnings(form({ model: m }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
+      expect(formWarnings(form({ model: m, use: { completions: true, nextEdit: false } }), m, settings()).join()).toMatch(/Next Edit model; it cannot do completions/);
+      expect(formWarnings(form({ model: m, use: only }), m, settings())).toEqual([]);
+    }
+  });
 });
 
 describe('form model', () => {
   test('newForm prefills from the type', () => {
-    expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} });
+    expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} });
     expect(newForm('mistral', [])).toMatchObject({ id: 'codestral', model: 'codestral-latest' });
   });
 
   test('retypeForm replaces the URL, id and model only while they are empty or the old type\'s defaults', () => {
     const fresh = newForm('llamacpp', ['lmstudio']);
     expect(retypeForm(fresh, { ...fresh, type: 'lmstudio' }, ['lmstudio'], true))
-      .toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {} });
+      .toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} });
     expect(retypeForm(fresh, { ...fresh, type: 'mistral' }, [], true)).toMatchObject({ id: 'codestral', baseUrl: 'https://codestral.mistral.ai', model: 'codestral-latest' });
     const mistral = newForm('mistral', []);
     expect(retypeForm(mistral, { ...mistral, type: 'other' }, [], true)).toMatchObject({ id: 'openai', baseUrl: '', model: '' });
@@ -141,7 +150,7 @@ describe('form model', () => {
     expect(view(vs, 'fimMode').options).toEqual(['auto', 'native', 'template', 'chat']);
   });
 
-  const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', nextEditModel: '', changed: { fimMode: 'chat' }, ...o });
+  const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: { fimMode: 'chat' }, ...o });
 
   test('thinking round-trips through fim.thinking and validates', () => {
     const f = form({ changed: { thinking: 'reasoningEffortNone' } });
@@ -270,5 +279,34 @@ describe('form model', () => {
     expect(planRename('a', 'b', 'a', 'a')).toEqual({ moveKey: true, updateUserFimBackend: true, warnWorkspace: true });
     expect(planRename('a', 'b', 'x', undefined)).toEqual({ moveKey: true, updateUserFimBackend: false, warnWorkspace: false });
     expect(planRename('a', 'a', 'a', 'a')).toEqual({ moveKey: false, updateUserFimBackend: false, warnWorkspace: false });
+  });
+});
+
+describe('uses in the form', () => {
+  test('newForm and entryToForm tick both uses; entryToForm reads use', () => {
+    expect(newForm('lmstudio', []).use).toEqual({ completions: true, nextEdit: true });
+    expect(entryToForm({ id: 'z', kind: 'openai', baseUrl: 'http://127.0.0.1:1234/v1', use: ['nextEdit'] }).use).toEqual({ completions: false, nextEdit: true });
+    expect(entryToForm({ id: 'z', kind: 'openai', baseUrl: 'http://h', use: ['completions'] }).use).toEqual({ completions: true, nextEdit: false });
+    expect(entryToForm({ id: 'z', kind: 'openai', baseUrl: 'http://h', use: [] }).use).toEqual({ completions: true, nextEdit: true });
+    expect(entryToForm({ id: 'z', kind: 'openai', baseUrl: 'http://h', use: 'nextEdit' }).use).toEqual({ completions: true, nextEdit: true });
+  });
+  test('formToEntry writes use only when not both, and drops the model of an unticked use', () => {
+    const both = formToEntry({ ...form(), model: 'coder', nextEditModel: 'zeta' });
+    expect(both.use).toBeUndefined();
+    const ne = formToEntry({ ...form(), model: 'coder', nextEditModel: 'zeta', use: { completions: false, nextEdit: true } });
+    expect(ne.use).toEqual(['nextEdit']);
+    expect(ne.fimModel).toBeUndefined();
+    expect(ne.nextEditModel).toBe('zeta');
+    const c = formToEntry({ ...form(), model: 'coder', nextEditModel: 'zeta', use: { completions: true, nextEdit: false } });
+    expect(c.use).toEqual(['completions']);
+    expect(c.nextEditModel).toBeUndefined();
+    expect(c.fimModel).toBe('coder');
+    // ticking both again removes a stored use list
+    expect(formToEntry(form(), { id: 'lm', use: ['nextEdit'] }).use).toBeUndefined();
+    expect(formToConfig(form({ use: { completions: false, nextEdit: true } }))?.use).toEqual({ completions: false, nextEdit: true });
+  });
+  test('no use ticked is a form error', () => {
+    expect(validateForm({ ...form(), use: { completions: false, nextEdit: false } }, []).map((e) => e.field)).toContain('use');
+    expect(validateForm(form(), []).map((e) => e.field)).not.toContain('use');
   });
 });

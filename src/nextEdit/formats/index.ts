@@ -36,6 +36,18 @@ export function sweepVariant(model: string | undefined): 'v1' | 'v2' {
   return model !== undefined && /v2|7b/i.test(model) ? 'v2' : 'v1';
 }
 
+/** What the Backends page calls the format a setting and model id pick. */
+export function nextEditFormatLabel(setting: NextEditFormatSetting, model: string | undefined): string {
+  switch (formatIdFor(setting, model)) {
+    case 'sweep':
+      return `Sweep ${sweepVariant(model)} format`;
+    case 'zeta21':
+      return 'Zeta 2.1 format';
+    case 'chatXtab':
+      return 'chat prompt (chatXtab)';
+  }
+}
+
 export function pickFormat(setting: NextEditFormatSetting, model: string | undefined): NextEditFormat {
   switch (formatIdFor(setting, model)) {
     case 'sweep':

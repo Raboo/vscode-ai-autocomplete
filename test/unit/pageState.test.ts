@@ -15,7 +15,7 @@ const inputs = (over: Partial<PageInputs> = {}): PageInputs => ({
   settings: base(), rawBackends: [lm, cpp], keysStored: new Set(), local: new Map([['lm', true], ['cpp', true]]), detected: new Map(), tests: new Map(), ...over,
 });
 const ok: TestStep = { id: 'reach', state: 'ok', text: 'x' };
-const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', changed: {}, ...over });
+const form = (over: Partial<BackendForm> = {}): BackendForm => ({ type: 'lmstudio', id: 'lm', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {}, ...over });
 
 describe('page state', () => {
   test('cards: in use, key stored, detected model, lock and template warning', () => {
@@ -122,5 +122,68 @@ describe('page state', () => {
     const s = buildPageState(inputs({ rawBackends: [cpp, { id: 'bad', kind: 'nope' }, 7, lm, { ...cpp }] }));
     expect(s.cards.map((c) => c.id)).toEqual(['cpp', 'lm']);
     expect(buildPageState(inputs({ rawBackends: undefined })).cards).toEqual([]);
+  });
+});
+
+describe('uses on the page', () => {
+  const neOnly = { ...lm, id: 'ne', use: ['nextEdit'] };
+  test('cards carry uses and the Next Edit in-use flag', () => {
+    const s = buildPageState(inputs({ rawBackends: [lm, { ...neOnly, nextEditModel: 'zeta-2.1' }], nextEditInUseId: 'ne', inUseId: 'lm', local: new Map([['lm', true], ['ne', true]]) }));
+    expect(s.cards[0]).toMatchObject({ uses: { completions: true, nextEdit: true }, nextEditInUse: false, inUse: true, model: 'llama-3' });
+    expect(s.cards[1]).toMatchObject({ uses: { completions: false, nextEdit: true }, nextEditInUse: true, inUse: false, nextEditModel: 'zeta-2.1' });
+    expect(s.cards[1]!.model).toBeUndefined();
+    expect(s.cards[1]!.warning).toBeUndefined();
+  });
+  test('a Next Edit-only card has no completion-route warning at all', () => {
+    for (const model of ['zeta-2.1', 'sweep-next-edit-v2-7b', 'llama-3']) {
+      const s = buildPageState(inputs({ rawBackends: [{ ...neOnly, fimModel: model, nextEditModel: model }] }));
+      expect(s.cards[0]!.warning).toBeUndefined();
+    }
+    const detected = buildPageState(inputs({ rawBackends: [{ id: 'ne', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', use: ['nextEdit'] }], detected: new Map([['ne', 'zeta-2.1']]) }));
+    expect(detected.cards[0]).toMatchObject({ nextEditModel: 'zeta-2.1', modelDetected: false });
+    expect(detected.cards[0]!.warning).toBeUndefined();
+    expect(detected.cards[0]!.model).toBeUndefined();
+  });
+  test('the Next Edit model of a card is the configured one, else the completion model, else the detected one', () => {
+    const both = buildPageState(inputs({ rawBackends: [{ ...lm, nextEditModel: 'mercury' }, { ...lm, id: 'lm2' }, cpp, { ...cpp, id: 'c2', use: ['completions'] }], detected: new Map([['cpp', 'qwen3.8']]) }));
+    expect(both.cards.map((c) => c.nextEditModel)).toEqual(['mercury', 'llama-3', 'qwen3.8', undefined]);
+  });
+  test('an entry without use builds the same card as before; uses is both', () => {
+    const s = buildPageState(inputs({ inUseId: 'lm' }));
+    expect(s.cards[0]).toEqual({ id: 'lm', typeLabel: 'LM Studio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'llama-3', nextEditModel: 'llama-3', modelDetected: false, inUse: true, keyStored: false,
+      warning: 'No completion template for this model', dot: 'yellow', uses: { completions: true, nextEdit: true }, nextEditInUse: false });
+  });
+  test('the edit view carries the form use and copies it as booleans only', () => {
+    const e = buildPageState(inputs({ edit: { cardId: null, form: form({ use: { completions: false, nextEdit: true, extra: 1 } as never }), testing: false } })).edit!;
+    expect(e.form.use).toEqual({ completions: false, nextEdit: true });
+    const bad = buildPageState(inputs({ edit: { cardId: null, form: { ...form(), use: { completions: 'no', nextEdit: 0 } as never }, testing: false } })).edit!;
+    expect(bad.form.use).toEqual({ completions: true, nextEdit: true });
+    const missing = buildPageState(inputs({ edit: { cardId: null, form: { ...form(), use: undefined } as never, testing: false } })).edit!;
+    expect(missing.form.use).toEqual({ completions: true, nextEdit: true });
+    const none = buildPageState(inputs({ edit: { cardId: null, form: form({ use: { completions: false, nextEdit: false } }), testing: false } })).edit!;
+    expect(none.errors.map((x) => x.field)).toContain('use');
+  });
+  test('the edit view names the Next Edit format', () => {
+    const fmt = (f: Partial<BackendForm>, setting?: 'sweep', detected?: string): string | undefined => {
+      const s = setting ? { ...base(), nextEdit: { ...base().nextEdit, format: setting } } : base();
+      return buildPageState(inputs({ settings: s, ...(detected ? { detected: new Map([['lm', detected]]) } : {}), edit: { cardId: 'lm', form: form({ originalId: 'lm', ...f }), testing: false } })).edit!.nextEditFormat;
+    };
+    expect(fmt({ nextEditModel: 'zeta-2.1' })).toBe('Zeta 2.1 format');
+    expect(fmt({ nextEditModel: 'sweep-next-edit-1.5b' })).toBe('Sweep v1 format');
+    expect(fmt({ nextEditModel: 'sweep-next-edit-v2-7b' })).toBe('Sweep v2 format');
+    expect(fmt({ model: 'qwen3.8' })).toBe('chat prompt (chatXtab)');
+    expect(fmt({ model: 'qwen3.8' }, 'sweep')).toBe('Sweep v1 format');
+    // both ticked, empty Next Edit model: the completion model decides
+    expect(fmt({ model: 'zeta-2.1' })).toBe('Zeta 2.1 format');
+    // Next Edit alone, empty Next Edit model: the detected model; the completion model is not used
+    expect(fmt({ model: 'zeta-2.1', use: { completions: false, nextEdit: true } }, undefined, 'sweep-next-edit-1.5b')).toBe('Sweep v1 format');
+    // Next Edit not used: no format
+    expect(fmt({ nextEditModel: 'zeta-2.1', use: { completions: true, nextEdit: false } })).toBeUndefined();
+  });
+  test('the edit view of a Next Edit-only form has no completion warnings', () => {
+    const e = buildPageState(inputs({ edit: { cardId: null, form: form({ nextEditModel: 'zeta-2.1', use: { completions: false, nextEdit: true } }), testing: false } })).edit!;
+    expect(e.warnings).toEqual([]);
+    const c = buildPageState(inputs({ edit: { cardId: null, form: form({ model: 'zeta-2.1' }), testing: false } })).edit!;
+    expect(c.warnings.join()).toContain('Next Edit model');
   });
 });

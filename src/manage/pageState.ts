@@ -1,8 +1,8 @@
 import { createBackend } from '../backends';
-import { resolveFim } from '../completion/effective';
+import { nextEditModel as effectiveNextEditModel, resolveFim } from '../completion/effective';
 import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoRoute } from '../completion/route';
 import { parseBackendEntry, type Settings } from '../config/settings';
-import { nextEditOnlyNote } from '../nextEdit/formats';
+import { nextEditFormatLabel, nextEditOnlyNote } from '../nextEdit/formats';
 import type { BackendConfig } from '../types';
 import { fieldViews, formWarnings, knownChanged, validateForm } from './form';
 import type { BackendForm, CardView, Dot, EditView, PageState, TestStep } from './protocol';
@@ -12,7 +12,7 @@ export interface EditDraft {
   cardId: string | null; form: BackendForm; models?: { id: string; tag: string }[]; modelsError?: string; testing: boolean; test?: TestStep[];
 }
 export interface PageInputs {
-  settings: Settings; rawBackends: unknown; inUseId?: string; keysStored: ReadonlySet<string>;
+  settings: Settings; rawBackends: unknown; inUseId?: string; nextEditInUseId?: string; keysStored: ReadonlySet<string>;
   /** isLocal per backend id, precomputed by the host. */
   local: ReadonlyMap<string, boolean>;
   /** Models detected this session (provider or tests). */
@@ -30,6 +30,9 @@ export function dotFor(steps: TestStep[] | undefined, offlineWarning: boolean, l
   if (steps && steps.length > 0) return 'green';
   return 'grey';
 }
+
+/** A real boolean from an untrusted form; anything else counts as ticked, as a missing `use` does in the settings. */
+const boolOr = (v: unknown): boolean => (typeof v === 'boolean' ? v : true);
 
 const typeLabel = (id: string): string => SERVER_TYPES.find((t) => t.id === id)?.label ?? id;
 
@@ -79,13 +82,16 @@ export function buildPageState(i: PageInputs): PageState {
   const cards = entries.map((cfg): CardView => {
     const locked = isLocked(cfg.id);
     const detected = i.detected.get(cfg.id);
-    const model = cfg.fimModel ?? detected;
-    const warning = locked ? 'not used here (local only)' : routeWarning(cfg, model, settings);
+    // The completion model and its route warning exist only for a backend used for completions.
+    const model = cfg.use.completions ? cfg.fimModel ?? detected : undefined;
+    const nextEditModel = cfg.use.nextEdit ? effectiveNextEditModel(cfg, detected) : undefined;
+    const warning = locked ? 'not used here (local only)' : cfg.use.completions ? routeWarning(cfg, model, settings) : undefined;
     const test = i.tests.get(cfg.id);
     return {
       id: cfg.id, typeLabel: typeLabel(serverTypeOf(cfg)), baseUrl: cfg.baseUrl,
-      ...(model !== undefined ? { model } : {}), modelDetected: cfg.fimModel === undefined && detected !== undefined,
-      inUse: cfg.id === i.inUseId, keyStored: i.keysStored.has(cfg.id),
+      ...(model !== undefined ? { model } : {}), modelDetected: cfg.use.completions && cfg.fimModel === undefined && detected !== undefined,
+      ...(nextEditModel !== undefined ? { nextEditModel } : {}), uses: { ...cfg.use },
+      inUse: cfg.id === i.inUseId, nextEditInUse: cfg.id === i.nextEditInUseId, keyStored: i.keysStored.has(cfg.id),
       ...(warning ? { warning } : {}), dot: dotFor(test, warning !== undefined, locked), ...(test ? { test } : {}),
     };
   });
@@ -96,17 +102,22 @@ export function buildPageState(i: PageInputs): PageState {
     // Copy field by field: whatever else the incoming object carries must never reach the page.
     const form: BackendForm = {
       ...(d.form.originalId !== undefined ? { originalId: d.form.originalId } : {}),
-      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, nextEditModel: d.form.nextEditModel, changed: knownChanged(d.form.changed),
+      type: d.form.type, id: d.form.id, baseUrl: d.form.baseUrl, model: d.form.model, nextEditModel: d.form.nextEditModel,
+      use: { completions: boolOr(d.form.use?.completions), nextEdit: boolOr(d.form.use?.nextEdit) }, changed: knownChanged(d.form.changed),
     };
     const own = form.originalId;
-    const model = form.model !== '' ? form.model : own !== undefined ? i.detected.get(own) : undefined;
+    const found = own !== undefined ? i.detected.get(own) : undefined;
+    // The completion model: only for a backend used for completions.
+    const model = !form.use.completions ? undefined : form.model !== '' ? form.model : found;
+    const neModel = form.nextEditModel !== '' ? form.nextEditModel : form.use.completions ? model : found;
     const errors = validateForm(form, ids.filter((id) => id !== own));
     const warnings = formWarnings(form, model, settings);
-    if (model === undefined) warnings.push('model not detected yet: Test or reload the list to detect it');
+    if (form.use.completions && model === undefined) warnings.push('model not detected yet: Test or reload the list to detect it');
     const keyId = own ?? d.cardId ?? undefined;
     edit = {
       cardId: d.cardId, form, keyMode: SERVER_TYPES.find((t) => t.id === form.type)?.key ?? 'optional',
       keyStored: keyId !== undefined && i.keysStored.has(keyId), fields: fieldViews(form, model, settings, errors),
+      ...(form.use.nextEdit ? { nextEditFormat: nextEditFormatLabel(settings.nextEdit.format, neModel) } : {}),
       ...(d.models ? { models: d.models.map((m) => ({ id: m.id, tag: m.tag })) } : {}), ...(d.modelsError !== undefined ? { modelsError: d.modelsError } : {}),
       errors: errors.map((e) => ({ field: e.field, message: e.message })), warnings, testing: d.testing, ...(d.test ? { test: d.test } : {}),
     };

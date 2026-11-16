@@ -47,7 +47,7 @@ export function knownChanged(changed: Record<string, unknown>): BackendForm['cha
 
 export function newForm(type: ServerTypeId, taken: readonly string[]): BackendForm {
   const t = typeInfo(type);
-  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', changed: {} };
+  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} };
 }
 
 /**
@@ -63,6 +63,14 @@ export function retypeForm(prev: BackendForm, next: BackendForm, taken: readonly
   if (isNew && out.id === suggestId(prev.type, taken)) out.id = suggestId(next.type, taken);
   if (out.model.trim() === '' || out.model === (from.defaultModel ?? '')) out.model = to.defaultModel ?? '';
   return out;
+}
+
+/** The ticked uses of a stored `use` list: a missing, empty or unusable list is both, as in the settings. */
+function usesOf(raw: unknown): BackendForm['use'] {
+  const list = Array.isArray(raw) ? raw : [];
+  const completions = list.includes('completions');
+  const nextEdit = list.includes('nextEdit');
+  return completions || nextEdit ? { completions, nextEdit } : { completions: true, nextEdit: true };
 }
 
 export function entryToForm(raw: Record<string, unknown>): BackendForm {
@@ -85,7 +93,7 @@ export function entryToForm(raw: Record<string, unknown>): BackendForm {
   }
   return { ...(id ? { originalId: id } : {}), type: serverTypeOf({ kind, ...(flavor ? { hostFlavor: flavor } : {}), baseUrl }), id, baseUrl,
     model: typeof raw.fimModel === 'string' ? raw.fimModel : '',
-    nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', changed };
+    nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', use: usesOf(raw.use), changed };
 }
 
 function parseHeaders(text: string): { headers: Record<string, string>; bad: boolean } {
@@ -113,6 +121,7 @@ export function validateForm(f: BackendForm, taken: readonly string[]): FieldErr
   const err = (field: FieldError['field'], message: string): void => void errors.push({ field, message });
   if (!ID_RE.test(f.id)) err('id', 'use lowercase letters, digits and dashes');
   else if (f.id !== f.originalId && taken.includes(f.id)) err('id', 'another backend already uses this name');
+  if (!f.use.completions && !f.use.nextEdit) err('use', 'choose at least one use');
   const url = f.baseUrl.trim();
   if (url === '') {
     if (f.type !== 'other') err('baseUrl', 'the URL is required');
@@ -164,10 +173,14 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
     else delete out.hostFlavor;
   }
   out.baseUrl = f.baseUrl.trim();
-  if (f.model.trim() !== '') out.fimModel = f.model.trim();
+  // The model of an unticked use is dropped; both uses is the default and is stored as no `use` at all.
+  if (f.use.completions && f.model.trim() !== '') out.fimModel = f.model.trim();
   else delete out.fimModel;
-  if (f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
+  if (f.use.nextEdit && f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
   else delete out.nextEditModel;
+  if (f.use.completions && !f.use.nextEdit) out.use = ['completions'];
+  else if (f.use.nextEdit && !f.use.completions) out.use = ['nextEdit'];
+  else delete out.use;
 
   const fim: Record<string, unknown> = isObj(original?.fim) ? { ...original.fim } : {};
   for (const k of FIM_KEYS) delete fim[k];
@@ -279,8 +292,10 @@ export function fieldViews(f: BackendForm, model: string | undefined, s: Setting
 export function formWarnings(f: BackendForm, model: string | undefined, s: Settings): string[] {
   const cfg = formToConfig(f);
   if (!cfg) return [];
+  // These warnings are about completions only.
+  if (!cfg.use.completions) return [];
   const out: string[] = [];
-  const nextEditOnly = cfg.use.completions ? nextEditOnlyNote(model) : undefined;
+  const nextEditOnly = nextEditOnlyNote(model);
   // Nothing else about completions matters for a model that cannot do them.
   if (nextEditOnly) return [`${nextEditOnly.text}; ${nextEditOnly.hint}`];
   const values = resolveFim(cfg, model, s).values;

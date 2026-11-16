@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { FIM_LIMITS, THINKING_STRATEGIES } from '../../src/config/settings';
+import { FIM_LIMITS, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 test('identity', () => {
   expect(pkg.publisher).toBe('raboo'); expect(pkg.name).toBe('ai-autocomplete');
@@ -44,4 +44,9 @@ test('fim.thinking schema enum equals THINKING_STRATEGIES; modelOverrides descri
   const props = pkg.contributes.configuration.properties;
   expect(props['aiAutocomplete.backends'].items.properties.fim.properties.thinking.enum).toEqual([...THINKING_STRATEGIES]);
   expect(props['aiAutocomplete.modelOverrides'].markdownDescription).toContain('`thinking`');
+});
+test('nextEdit format and display enums match the code', () => {
+  const props = pkg.contributes.configuration.properties;
+  expect(props['aiAutocomplete.nextEdit.format'].enum).toEqual([...NEXT_EDIT_FORMATS]);
+  expect(props['aiAutocomplete.nextEdit.display'].enum).toEqual([...NEXT_EDIT_DISPLAYS]);
 });

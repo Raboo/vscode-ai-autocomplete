@@ -223,7 +223,7 @@ describe('thinking and localOnly strings', () => {
 describe('nextEdit settings', () => {
   test('nextEdit defaults: enabled, no backend, 10 s', () => {
     const { settings } = parseSettings(src({}));
-    expect(settings.nextEdit).toEqual({ enabled: true, timeoutMs: 10000 });
+    expect(settings.nextEdit).toMatchObject({ enabled: true, timeoutMs: 10000 });
     expect(settings.nextEdit.backendId).toBeUndefined();
   });
   test('nextEdit.backend chooses among configured ids', () => {
@@ -237,5 +237,31 @@ describe('nextEdit settings', () => {
     const r = parseSettings(src({ 'nextEdit.timeoutMs': { globalValue: 100 } }));
     expect(r.settings.nextEdit.timeoutMs).toBe(10000);
     expect(r.problems.some((p) => p.includes('aiAutocomplete.nextEdit.timeoutMs'))).toBe(true);
+  });
+  test('nextEdit 3b defaults', () => {
+    const { settings } = parseSettings(src({}));
+    expect(settings.nextEdit).toMatchObject({ format: 'auto', display: 'auto', regionLinesAbove: 5, regionLinesBelow: 10, historySize: 5, contextBudget: 3500 });
+  });
+  test('nextEdit 3b values are read', () => {
+    const { settings, problems } = parseSettings(src({
+      'nextEdit.format': { globalValue: 'zeta21' }, 'nextEdit.display': { globalValue: 'decorations' },
+      'nextEdit.regionLinesAbove': { globalValue: 3 }, 'nextEdit.regionLinesBelow': { globalValue: 20 },
+      'nextEdit.historySize': { globalValue: 2 }, 'nextEdit.contextBudget': { globalValue: 6000 },
+    }));
+    expect(settings.nextEdit).toMatchObject({ format: 'zeta21', display: 'decorations', regionLinesAbove: 3, regionLinesBelow: 20, historySize: 2, contextBudget: 6000 });
+    expect(problems).toEqual([]);
+  });
+  test('nextEdit 3b invalid values fall back with a problem', () => {
+    const cases: [string, unknown, string, unknown][] = [
+      ['format', 'instinct', 'format', 'auto'], ['display', 'popup', 'display', 'auto'],
+      ['regionLinesAbove', 21, 'regionLinesAbove', 5], ['regionLinesBelow', -1, 'regionLinesBelow', 10],
+      ['historySize', 11, 'historySize', 5], ['contextBudget', 500, 'contextBudget', 3500],
+      ['historySize', 2.5, 'historySize', 5],
+    ];
+    for (const [key, value, field, dflt] of cases) {
+      const r = parseSettings(src({ [`nextEdit.${key}`]: { globalValue: value } }));
+      expect((r.settings.nextEdit as unknown as Record<string, unknown>)[field], key).toBe(dflt);
+      expect(r.problems.some((p) => p.startsWith(`aiAutocomplete.nextEdit.${key}: expected`) && p.endsWith(', ignored')), key).toBe(true);
+    }
   });
 });

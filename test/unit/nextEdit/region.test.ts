@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { clipAroundRegion, editableRegion } from '../../../src/nextEdit/region';
+import { clipAroundRegion, editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
 
 const lines = (n: number): string[] => Array.from({ length: n }, () => '123456789');
 
@@ -10,6 +10,15 @@ test('region stays inside the file', () => {
   expect(editableRegion(0, 3)).toEqual({ start: 0, end: 2 });
   expect(editableRegion(99, 100)).toEqual({ start: 94, end: 99 });
   expect(editableRegion(0, 1)).toEqual({ start: 0, end: 0 });
+});
+test('editableRegion takes the configured sizes', () => {
+  expect(editableRegion(10, 100, 2, 3)).toEqual({ start: 8, end: 13 });
+});
+test("editableRegion keeps 3a's default", () => {
+  expect(editableRegion(10, 100)).toEqual({ start: 5, end: 20 });
+});
+test("nextEditBudgets(3500) is 3a's constants", () => {
+  expect(nextEditBudgets(3500)).toEqual({ fileChars: 5250, historyChars: 3500, snippetsChars: 3500 });
 });
 test('region of an empty file is line 0', () => {
   expect(editableRegion(0, 0)).toEqual({ start: 0, end: 0 });

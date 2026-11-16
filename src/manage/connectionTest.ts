@@ -26,6 +26,20 @@ const THINKING_PROBES: readonly ThinkingStrategy[] = THINKING_STRATEGIES.filter(
 const LIST_TIMEOUT_MS = 5000;
 const CANNOT_DISABLE_HINT = 'autocomplete needs a model that answers without thinking; choose another model';
 const NEXT_EDIT_THINKING_HINT = 'Next Edit needs a model that answers without thinking; choose another model';
+/** Plain words for the formats' own fixed `invalid` reasons (chatXtab, Sweep, Zeta 2.1); an unknown code gets the fallback. */
+const INVALID_ANSWER: Record<string, string> = {
+  noFence: 'it was not in a code block',
+  truncated: 'it was cut off',
+  special: 'it began with a special token',
+  empty: 'it was empty',
+  tooLong: 'it was much longer than the code shown',
+  markers: 'it lacked the expected markers',
+  range: 'its marker range was outside the code',
+  glued: 'a line ran into the next marker',
+};
+export function invalidAnswerText(why: string): string {
+  return `the answer could not be read (${Object.hasOwn(INVALID_ANSWER, why) ? INVALID_ANSWER[why] : 'it was not in the expected format'})`;
+}
 const MAX_LINES = 16;
 const SHOWN_CHARS = 80;
 
@@ -67,12 +81,12 @@ export function explainFailure(err: unknown): { text: string; hint?: string } {
   return { text: 'request failed' };
 }
 
-/** The server answered the sample completion; a slow or empty answer still is one. Steps stop at the first failure, so reach passed too. */
+/** The server answered the sample completion; a slow or empty answer still is one. The completion steps stop at their first failure or warning (the Next Edit step still runs after one), so a completion step that did not fail means reach passed too. */
 export function completionServed(r: ConnectionTestResult): boolean {
   return r.steps.some((s) => s.id === 'completion' && s.state !== 'fail');
 }
 
-/** Runs the steps in order, calling onStep after each; never throws. */
+/** Runs the steps in order, calling onStep after each; never throws. The completion steps stop at their first failure or warning; the Next Edit step is checked on its own after them. */
 export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: TestStep) => void): Promise<ConnectionTestResult> {
   const now = i.now ?? Date.now;
   const steps: TestStep[] = [];
@@ -301,7 +315,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       const format = pickFormat(settings.nextEdit.format, model);
       const route = formatRoute(format, backend.routes());
       if (!route.ok) {
-        emit({ id: 'nextEdit', state: 'warn', text: `${model}: the ${format.id} format needs a ${route.name} route; this server has none` }, stageStart);
+        emit({ id: 'nextEdit', state: 'warn', text: `${model}: the ${nextEditFormatLabel(settings.nextEdit.format, model)} needs a ${route.name} route; this server has none` }, stageStart);
         return;
       }
       const values = { ...resolveNextEdit(cfg, model, settings), timeoutMs: TEST_TIMEOUT_MS };
@@ -335,7 +349,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       // The chat format has no max-tokens signal: its cut answer lacks the closing fence and parses as `truncated`.
       else if (truncated || (parsed?.kind === 'invalid' && parsed.why === 'truncated')) emit({ id: 'nextEdit', state: 'warn', text: `${label}: the answer was cut at max tokens and is not used` }, stageStart);
       // An unreadable answer: the reason is one of the formats' own fixed words, never server text.
-      else if (parsed?.kind === 'invalid') emit({ id: 'nextEdit', state: 'fail', text: `the answer could not be read (${parsed.why})` }, stageStart, `the answer could not be read (${parsed.why})`);
+      else if (parsed?.kind === 'invalid') emit({ id: 'nextEdit', state: 'fail', text: invalidAnswerText(parsed.why) }, stageStart, invalidAnswerText(parsed.why));
       else emit({ id: 'nextEdit', state: 'warn', text: `${label}: answered, no edit suggested`, hint: 'the sample renames a variable; a Next Edit model should rename its other uses' }, stageStart);
     };
 

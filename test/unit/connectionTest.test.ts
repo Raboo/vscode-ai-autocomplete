@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { completionServed, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
+import { completionServed, invalidAnswerText, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, SAMPLE, TEST_TIMEOUT_MS, type ConnectionTestInput } from '../../src/manage/connectionTest';
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from '../../src/backends/types';
 import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
@@ -254,6 +254,18 @@ describe('runConnectionTest', () => {
   });
 });
 
+describe('invalidAnswerText', () => {
+  test('puts each fixed reason of the formats in plain words, with a fallback', () => {
+    for (const why of ['noFence', 'truncated', 'special', 'empty', 'tooLong', 'markers', 'range', 'glued']) {
+      const text = invalidAnswerText(why);
+      expect(text).toMatch(/^the answer could not be read \([a-z ]+\)$/);
+      expect(text).not.toMatch(/\((noFence|truncated|special|empty|tooLong|markers|range|glued)\)/);
+    }
+    expect(invalidAnswerText('somethingNew')).toBe('the answer could not be read (it was not in the expected format)');
+    expect(invalidAnswerText('constructor')).toBe('the answer could not be read (it was not in the expected format)');
+  });
+});
+
 describe('the Next Edit step', () => {
   const ZETA = { kind: 'llamacpp' as const, nextEditModel: 'zeta-2.1', use: { completions: false, nextEdit: true } };
   const noNative = { native: false };
@@ -361,7 +373,7 @@ describe('the Next Edit step', () => {
     const same = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|><|marker_1|>'] }));
     expect(same.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'Next Edit in 0 ms with zeta-2.1 (Zeta 2.1 format): answered, no edit suggested' });
     const bad = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_9|>x'] }));
-    expect(bad.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'the answer could not be read (markers)' });
+    expect(bad.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'the answer could not be read (it lacked the expected markers)' });
     const cut = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|>def'], onStream: (r) => r.onTruncated?.() }));
     expect(cut.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn' });
     expect(cut.res.steps[1].text).toMatch(/cut at max tokens/);
@@ -390,12 +402,12 @@ describe('the Next Edit step', () => {
     const sweep = { kind: 'llamacpp' as const, nextEditModel: 'sweep-v2-7b', use: { completions: false, nextEdit: true } };
     const f = fake({ ...noNative, caps: { template: false, chat: true }, config: sweep });
     const r = await run(f);
-    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'sweep-v2-7b: the sweep format needs a raw completions route; this server has none' });
+    expect(r.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'sweep-v2-7b: the Sweep v2 format needs a raw completions route; this server has none' });
     expect(f.streamFim).not.toHaveBeenCalled();
     expect(f.streamChat).not.toHaveBeenCalled();
     const chat = fake({ ...noNative, caps: { template: true, chat: false }, config: { kind: 'llamacpp', nextEditModel: 'qwen3-coder', use: { completions: false, nextEdit: true } } });
     const c = await run(chat);
-    expect(c.res.steps[1]).toMatchObject({ state: 'warn', text: 'qwen3-coder: the chatXtab format needs a chat completions route; this server has none' });
+    expect(c.res.steps[1]).toMatchObject({ state: 'warn', text: 'qwen3-coder: the chat prompt (chatXtab) needs a chat completions route; this server has none' });
     expect(chat.streamChat).not.toHaveBeenCalled();
   });
 

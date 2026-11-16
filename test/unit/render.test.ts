@@ -220,6 +220,7 @@ describe('backends page render', () => {
     expect(on).toContain('Local only: off in this workspace');
     expect(on).toMatch(/<button[^>]*data-action="openSettings"[^>]*>General settings…</);
     expect(on).toMatch(/<button[^>]*data-action="add"[^>]*>\+ Add backend</);
+    expect(on).toMatch(/<button[^>]*data-action="setUpLocal"[^>]*>Set up local model<\/button><button[^>]*data-action="add"/);
     const off = renderPage(state({ completionsOn: false, localOnly: true }), ui());
     expect(off).toContain('Completions off');
     expect(off).toContain('Local only: on in this workspace');

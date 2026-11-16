@@ -49,6 +49,7 @@ export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
+const SET_UP_LOCAL: MenuEntry = { label: 'Set up local model...', id: 'setUpLocalModel' };
 const SWITCH: MenuEntry = { label: 'Turn off AI Autocomplete', id: 'toggleEnabled' };
 const COMPLETIONS: MenuEntry = { label: 'Completions: off', id: 'selectBackend' };
 const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
@@ -60,6 +61,7 @@ const MENU: MenuEntry[] = [
   NEXT_EDIT,
   ENABLE_NATIVE,
   MANAGE,
+  SET_UP_LOCAL,
   { label: 'Settings...', id: 'openSettings' },
   { label: 'Set API key...', id: 'setApiKey' },
   RETRY,
@@ -70,7 +72,8 @@ const MENU: MenuEntry[] = [
 /**
  * The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed.
  * "Turn off/on AI Autocomplete" switches completions and Next Edit together; "Completions: <backend>" and "Next Edit: <backend>" (or off) pick each one's backend,
- * then "Enable native Next Edit UI..." unless the native UI is already on. With no backend configured, "Manage backends..." comes first of all.
+ * then "Enable native Next Edit UI..." unless the native UI is already on. "Set up local model..." follows "Manage backends...";
+ * with no backend configured, both come first of all.
  */
 export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
   const label = (e: MenuEntry): MenuEntry => {
@@ -81,6 +84,6 @@ export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
   };
   const menu = MENU.filter((e) => !(m.nativeNextEdit && e === ENABLE_NATIVE)).map(label);
   let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
-  if (m.backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
+  if (m.backendCount === 0) list = [MANAGE, SET_UP_LOCAL, ...list.filter((e) => e !== MANAGE && e !== SET_UP_LOCAL)];
   return list;
 }

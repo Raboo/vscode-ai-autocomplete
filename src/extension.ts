@@ -12,7 +12,9 @@ import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
+import { RECIPES, type Recipe } from './local/recipes';
 import { LocalServers } from './local/vscode/servers';
+import { removeLocalModels, setUpLocalModel, type SetupDeps } from './local/vscode/setup';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
@@ -30,7 +32,14 @@ const IS_LOCAL_TTL_MS = 60_000;
 /** Kept for deactivate(), which has no context to reach the manager through. */
 let localServers: LocalServers | undefined;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean; nextEditPending: () => ReturnType<NextEditController['pendingEdit']> } {
+export function activate(context: vscode.ExtensionContext): {
+  status: StatusBar;
+  secrets: Secrets;
+  backendsPanel: () => BackendsPanel | undefined;
+  nativeNextEdit: boolean;
+  nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
+  local: { setRecipes(r: Recipe[] | undefined): void };
+} {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -176,13 +185,18 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     }),
   );
 
-  const servers = new LocalServers({ context, log, settings: () => settings });
+  // Tests swap in their own recipes, for setup and for the servers it records alike.
+  let testRecipes: readonly Recipe[] | undefined;
+  const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
+  const servers = new LocalServers({ context, log, settings: () => settings, recipes });
   localServers = servers;
   sub(servers);
+  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };
 
   for (const d of registerCommands({
     context,
     localServers: servers,
+    localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
     status,
     secrets,
     channel,
@@ -236,7 +250,18 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   status.setLocalLock(settings.privacy.localOnly);
   // Not awaited: a model can take a minute to load, and activation must not wait for it.
   void servers.startSelected();
-  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native, nextEditPending: () => nextEdit.pendingEdit() };
+  return {
+    status,
+    secrets,
+    backendsPanel: () => BackendsPanel.current(),
+    nativeNextEdit: native,
+    nextEditPending: () => nextEdit.pendingEdit(),
+    local: {
+      setRecipes: (r) => {
+        testRecipes = r;
+      },
+    },
+  };
 }
 
 /** Stops the llama-servers the extension started; VS Code waits briefly for the promise. */

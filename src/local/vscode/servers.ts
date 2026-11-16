@@ -19,7 +19,8 @@ export interface LocalServersDeps {
   recipes?(): readonly Recipe[];
 }
 
-function realEnv(): RuntimeEnv {
+/** The machine as runtime lookup sees it: platform, home, PATH and the file system. */
+export function realEnv(): RuntimeEnv {
   return {
     platform: process.platform,
     home: homedir(),

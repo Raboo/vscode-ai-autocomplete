@@ -39,6 +39,8 @@ export interface CommandDeps {
   nextEditDismiss(): void;
   /** The llama-servers the extension started; `active` lists the ready ones and the ones still loading. */
   localServers: { active(): string[]; stopAll(): Promise<void> };
+  /** Set Up Local Model (the argument skips the pickers) and Remove Downloaded Models. */
+  localModels: { setUp(arg: unknown): Promise<unknown>; remove(): Promise<void> };
 }
 
 /** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
@@ -195,6 +197,8 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       await d.localServers.stopAll();
       void vscode.window.showInformationMessage(`Stopped local models: ${ids.join(', ')}.`);
     }),
+    reg('setUpLocalModel', (arg) => d.localModels.setUp(arg)),
+    reg('removeLocalModels', () => d.localModels.remove()),
     reg('enableNativeNextEdit', async () => {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');

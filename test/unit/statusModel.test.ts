@@ -40,14 +40,14 @@ describe('menuEntries', () => {
     expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
-    expect(ids('idle')).toEqual([...SETUP, 'enableNativeNextEdit', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle')).toEqual([...SETUP, 'enableNativeNextEdit', 'manageBackends', 'setUpLocalModel', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(ids('loading')).toEqual(ids('idle'));
   });
   test('no separate completions toggle: the Completions entry turns them off', () => {
     expect(ids('idle')).not.toContain('toggle');
   });
   test('the native UI entry is absent once the native UI is on; Settings stays', () => {
-    expect(ids('idle', 1, true)).toEqual([...SETUP, 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle', 1, true)).toEqual([...SETUP, 'manageBackends', 'setUpLocalModel', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(menuEntries('idle', M()).find((e) => e.id === 'enableNativeNextEdit')).toEqual({ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' });
     expect(menuEntries('idle', M()).find((e) => e.id === 'openSettings')).toEqual({ label: 'Settings...', id: 'openSettings' });
   });
@@ -65,12 +65,24 @@ describe('menuEntries', () => {
     expect(menuEntries('idle', M())[0]).toEqual({ label: 'Turn off AI Autocomplete', id: 'toggleEnabled' });
     expect(menuEntries('disabled', M({ enabled: false }))[0]).toEqual({ label: 'Turn on AI Autocomplete', id: 'toggleEnabled' });
   });
-  test('Manage backends comes first when no backend exists', () => {
+  test('Set up local model comes right after Manage backends', () => {
+    expect(menuEntries('idle', M()).find((e) => e.id === 'setUpLocalModel')).toEqual({ label: 'Set up local model...', id: 'setUpLocalModel' });
+    for (const count of [0, 1]) {
+      for (const state of ['idle', 'error', 'snoozed'] as const) {
+        const list = ids(state, count);
+        expect(list.indexOf('setUpLocalModel')).toBe(list.indexOf('manageBackends') + 1);
+      }
+    }
+  });
+  test('Manage backends and Set up local model come first when no backend exists', () => {
     expect(menuEntries('idle', M({ backendCount: 0 }))[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
-    expect(ids('idle', 0)).toEqual(['manageBackends', ...SETUP, 'enableNativeNextEdit', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
-    expect(ids('error', 0).slice(0, 2)).toEqual(['manageBackends', 'retry']);
-    expect(ids('snoozed', 0).slice(0, 2)).toEqual(['manageBackends', 'resume']);
-    for (const state of ['idle', 'error', 'snoozed'] as const) expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+    expect(ids('idle', 0)).toEqual(['manageBackends', 'setUpLocalModel', ...SETUP, 'enableNativeNextEdit', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('error', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'retry']);
+    expect(ids('snoozed', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'resume']);
+    for (const state of ['idle', 'error', 'snoozed'] as const) {
+      expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+      expect(ids(state, 0).filter((id) => id === 'setUpLocalModel')).toHaveLength(1);
+    }
   });
 });
 

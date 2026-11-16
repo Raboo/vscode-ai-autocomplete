@@ -531,8 +531,18 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.setUpLocalModel",
+        "title": "Set Up Local Model",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.stopLocalModels",
         "title": "Stop Local Models",
+        "category": "AI Autocomplete"
+      },
+      {
+        "command": "aiAutocomplete.removeLocalModels",
+        "title": "Remove Downloaded Models",
         "category": "AI Autocomplete"
       }
     ],

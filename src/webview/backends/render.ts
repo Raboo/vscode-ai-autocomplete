@@ -55,7 +55,8 @@ function header(s: PageState): string {
   return '<header class="page-head"><h1>Backends</h1>'
     + `<span class="muted">· Completions ${s.completionsOn ? 'on' : 'off'} · Local only: ${s.localOnly ? 'on' : 'off'} in this workspace ·</span>`
     + button('openSettings', 'General settings…', { id: 'a-openSettings', cls: 'link' })
-    + button('add', '+ Add backend', { id: 'a-add', cls: 'btn primary push' })
+    + button('setUpLocal', 'Set up local model', { id: 'a-setUpLocal', cls: 'btn secondary push' })
+    + button('add', '+ Add backend', { id: 'a-add', cls: 'btn primary' })
     + '</header>';
 }
 

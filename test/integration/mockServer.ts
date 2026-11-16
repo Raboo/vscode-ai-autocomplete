@@ -64,6 +64,8 @@ export interface MockOptions {
    * lists the model with `compatibility_type: "mlx"`.
    */
   mlx?: { content: string[] };
+  /** Files `GET <path>` serves (a model download), answering a `Range: bytes=<start>-` request with 206. */
+  files?: Record<string, Buffer>;
 }
 
 /** What only a Sweep Next Edit prompt contains. */
@@ -92,7 +94,17 @@ export async function startMockServer(o: MockOptions = {}): Promise<MockServer> 
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
       requests.push({ method: req.method ?? '', path, body });
       const answer = (): void => {
-        if (path === '/props') {
+        const file = req.method === 'GET' && o.files !== undefined && Object.hasOwn(o.files, path) ? o.files[path] : undefined;
+        if (file !== undefined) {
+          const start = Number(/^bytes=(\d+)-$/.exec(req.headers.range ?? '')?.[1] ?? 0);
+          if (start >= file.length && start > 0) {
+            res.writeHead(416, { 'content-range': `bytes */${file.length}` }).end();
+          } else if (start > 0) {
+            res.writeHead(206, { 'content-length': file.length - start, 'content-range': `bytes ${start}-${file.length - 1}/${file.length}` }).end(file.subarray(start));
+          } else {
+            res.writeHead(200, { 'content-length': file.length }).end(file);
+          }
+        } else if (path === '/props') {
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(props));
         } else if (path === '/v1/models' && req.method === 'GET') {
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));

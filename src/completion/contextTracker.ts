@@ -4,6 +4,16 @@ import type { ExtraContextRing } from './context';
 
 const SELECTION_DEBOUNCE_MS = 1000;
 
+/** The path prompts, diffs and snippets name a document by: relative to its workspace folder, led by the folder's name in a multi-root workspace. */
+export function docPath(uri: vscode.Uri): string {
+  return vscode.workspace.asRelativePath(uri);
+}
+
+/** Unsaved files and files inside a workspace folder, in any scheme (a remote window's files are `vscode-remote:`). */
+export function inProject(uri: vscode.Uri): boolean {
+  return uri.scheme === 'untitled' || vscode.workspace.getWorkspaceFolder(uri) !== undefined;
+}
+
 /** Feeds recently viewed/edited regions of open files into the extra-context ring and Next Edit's recent snippets. */
 export class ContextTracker implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -30,12 +40,10 @@ export class ContextTracker implements vscode.Disposable {
   }
 
   private capture(doc: vscode.TextDocument, line: number): void {
-    // Only unsaved files and files inside a workspace folder: a file opened from elsewhere is not project context.
-    const inWorkspace = doc.uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(doc.uri) !== undefined;
-    if (doc.uri.scheme !== 'untitled' && !inWorkspace) return;
-    if (this.isExcluded(doc)) return;
+    // A file opened from outside the workspace is not project context.
+    if (!inProject(doc.uri) || this.isExcluded(doc)) return;
     const lines = doc.getText().split(/\r?\n/);
-    const path = vscode.workspace.asRelativePath(doc.uri, false);
+    const path = docPath(doc.uri);
     this.ring.add(path, lines, line);
     this.snippets?.add(path, lines, line);
   }

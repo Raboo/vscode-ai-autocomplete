@@ -13,6 +13,7 @@ import { toItemText, type NextEditShow } from '../nextEdit/diff';
 import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
 import { buildFimWindow, type ExtraContextRing } from './context';
+import { docPath } from './contextTracker';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
@@ -233,7 +234,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       return [];
     }
 
-    const filePath = vscode.workspace.asRelativePath(doc.uri, false);
+    // The extra-context ring names files the same way, so the current file's own chunks are left out.
+    const filePath = docPath(doc.uri);
     const extra = fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars) : [];
     const multiline = shouldCompleteMultiline(fim.multiline, linePrefix, lineSuffix, doc.languageId);
     // Not linked to the VS Code token: a newer keystroke may join this request. It is aborted by a newer request for this uri.

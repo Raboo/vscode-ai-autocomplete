@@ -64,7 +64,7 @@ const askedAfterFim = (m: MockServer): boolean => {
   return fim >= 0 && fim < m.requests.findIndex(isNextEdit);
 };
 /** The path the extension writes into prompts and diffs for a document. */
-const pathOf = (doc: vscode.TextDocument): string => vscode.workspace.asRelativePath(doc.uri, false);
+const pathOf = (doc: vscode.TextDocument): string => vscode.workspace.asRelativePath(doc.uri);
 const nextEditsFor = (m: MockServer, doc: vscode.TextDocument) => nextEdits(m).filter((r) => userMessage(r.body).includes(`current_file_path: ${pathOf(doc)}\n`));
 /** The mock's requests without their bodies, for failure messages. */
 const seen = (m: MockServer): string =>

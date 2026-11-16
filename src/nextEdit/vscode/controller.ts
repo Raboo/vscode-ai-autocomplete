@@ -4,6 +4,7 @@ import { classifyError } from '../../backends/http';
 import { inferHostFlavor } from '../../backends/hostFlavor';
 import { MissingApiKeyError } from '../../backends/mistral';
 import type { ChatMessage, FimBackend } from '../../backends/types';
+import { docPath, inProject } from '../../completion/contextTracker';
 import { nextEditModel, resolveNextEdit } from '../../completion/effective';
 import { describeFailure, recordBackendFailure } from '../../completion/requestStatus';
 import { EFFORT_NONE_REJECTED, thinkingBlocked } from '../../completion/route';
@@ -156,13 +157,11 @@ export class NextEditController implements vscode.Disposable {
 
   /** Workspace files and unsaved files that completions may use, as for extra context. */
   private eligible(doc: vscode.TextDocument): boolean {
-    const { scheme } = doc.uri;
-    const inWorkspace = scheme === 'file' && vscode.workspace.getWorkspaceFolder(doc.uri) !== undefined;
-    return (scheme === 'untitled' || inWorkspace) && !this.d.isExcluded(doc);
+    return inProject(doc.uri) && !this.d.isExcluded(doc);
   }
 
   private path(doc: vscode.TextDocument): string {
-    return vscode.workspace.asRelativePath(doc.uri, false);
+    return docPath(doc.uri);
   }
 
   private opened(doc: vscode.TextDocument): void {

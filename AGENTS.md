@@ -5,7 +5,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## What this is
 
 - An autocomplete-only VS Code extension: no chat, no agents, no telemetry.
-- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phase 3a: the chatXtab format, ghost text and native inline edits); self-hosted backends first.
+- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phases 3a and 3b: the chatXtab, Sweep and Zeta 2.1 formats, ghost text, native inline edits and a decoration fallback); self-hosted backends first.
 - Design spec: `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`. Phase status: `docs/ROADMAP.md`.
 
 ## Hard rules
@@ -48,13 +48,19 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `src/manage/` is the pure logic of the Backends page (protocol, server types, form, page state, connection test). `src/completion/effective.ts` resolves per-backend values and is shared with the provider.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - Next Edit (`src/nextEdit/`, all pure except `vscode/`):
-  - `history.ts`: edit-diff history per file (merged per area) and recently viewed snippets;
-  - `region.ts`: the editable region (5 above, 10 below, at most 25 lines) and clipping the file to 10-line pages;
+  - `history.ts`: edit-diff history per file (merged per area, with structured hunks and the text before the latest change) and recently viewed snippets;
+  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages;
+  - `formats/format.ts`: the format interface (chat or raw completion transport), the answer type and the shared reserved-string and budgeting helpers;
+  - `formats/index.ts`: `pickFormat`, which maps the `nextEdit.format` setting and the model id to a format;
   - `formats/chatXtab.ts`: the chat prompt (our own wording, Copilot/Mercury tag names) and the answer parser;
+  - `formats/sweep.ts`: Sweep next-edit prompts (v1 and v2 layouts) and answer parser; adapts Apache-2.0 scripts, see `THIRD_PARTY_NOTICES.md`;
+  - `formats/zeta21.ts`: Zeta 2.1 prompt with marker blocks and answer parser, written from the model card only (never read Zed's GPL source);
   - `diff.ts`: old region vs new region as one line edit, filters, ghost text or inline edit;
+  - `decorations.ts`: the decoration plan for an inline edit (which text to mark, what to show, the hint, whether Tab jumps first) and `displayFor`, which picks item, decorations or drop from the `display` setting;
   - `trigger.ts`: when to ask (edit pause, cursor move after an edit) and the cooldowns;
-  - `request.ts`: one request over the backend's chat stream, failing fast on thinking;
+  - `request.ts`: one request over the backend's chat stream or raw completion route, failing fast on thinking;
   - `optIn.ts`: the argv.json path and edit for the native-UI opt-in;
+  - `vscode/decorations.ts`: draws a decoration plan and sets the `aiAutocomplete.nextEditPending` context key that the Tab and Esc keybindings read;
   - `vscode/controller.ts`: events, history, trigger rules, requests and the latest result; the proposed-API `.d.ts` is `src/types/vscode.proposed.inlineCompletionsAdditions.d.ts` (pinned from `release/1.146`).
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.

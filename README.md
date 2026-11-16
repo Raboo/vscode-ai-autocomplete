@@ -125,21 +125,61 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 
 ## Next Edit
 
-Next Edit suggests the edit you are likely to make next. After you change code, for example rename a parameter, the extension asks a chat model to rewrite a small region around the cursor (5 lines above, 10 below) and shows the result. It is off until you choose a backend, so completion-only users send no extra requests.
+Next Edit suggests the edit you are likely to make next. After you change code, for example rename a parameter, the extension asks a model to rewrite a small region around the cursor (by default 5 lines above, 10 below) and shows the result. It is off until you choose a backend, so completion-only users send no extra requests.
 
-**Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend. It needs a backend that serves chat (for example Strata or OpenRouter); other backends send nothing. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); otherwise the backend's completion model is used. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. `aiAutocomplete.nextEdit.enabled` switches it off again. **AI Autocomplete: Snooze Completions** pauses Next Edit too; **AI Autocomplete: Toggle Completions** turns off completions only.
+**Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); otherwise the backend's completion model is used. When the server lists several models, set `nextEditModel`, so the extension does not have to guess which one to use. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. `aiAutocomplete.nextEdit.enabled` switches it off again. **AI Autocomplete: Snooze Completions** pauses Next Edit too; **AI Autocomplete: Toggle Completions** turns off completions only.
 
-**What shows without the opt-in:** only an edit that is a pure insertion at the cursor, as ghost text. Any other edit (a change on another line, a replacement) needs VS Code's native inline-edit display, which is a proposed API. The extension shows a notice once that offers it.
+**Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `sweep` gets Sweep, any other model gets `chatXtab`.
+
+| Format | Fits | Route |
+| --- | --- | --- |
+| `sweep` | Sweep next-edit 0.5B, 1.5B and v2-7B | raw completions (llama.cpp `/completion`, or `/v1/completions` on LM Studio and others) |
+| `zeta21` | Zeta 2.1 | raw completions |
+| `chatXtab` | chat models such as Qwen3.8 on Strata | chat |
+
+Sweep 0.5B and 1.5B use Sweep's first prompt layout; a model name with `v2` or `7b` uses the v2 layout. Which layout the 0.5B and 1.5B GGUF files answer best is not settled yet. To force v2, set the format to `sweep` and use a model name that contains `v2`.
+
+Sweep and Zeta need a server with a raw completions route, so they do not work on Strata. The format setting is global, and `auto` reads the Next Edit model's name: if you run a Zeta model next to a completion model, name the Zeta model in the backend's `nextEditModel`. Sweep always uses its trained window of 10 lines above and below the cursor; the region settings below do not change it.
+
+A file that contains one of a format's special strings (for example `<|file_sep|>` for Sweep, `<|marker_1|>` or `<[fim-suffix]>` for Zeta) gets no Next Edit request in that format, because the model would read the text as control tokens. This repo's own sources are such files. The log says why nothing was asked.
+
+**What shows without the opt-in:** an edit that is a pure insertion at the cursor shows as ghost text. Any other edit (a change on another line, a replacement) shows as decorations: the old text that changes gets a red background, the new text of each line shows after it, extra new lines are counted as "(+N lines)", and a hint on the cursor line says what `Tab` does.
+
+**Display:** `aiAutocomplete.nextEdit.display` (default `auto`) chooses between the two views for edits that are not ghost text. `auto` uses the native view when the opt-in is active and decorations otherwise. `native` shows inline edits only with the opt-in (nothing otherwise, with the one-time notice). `decorations` always uses decorations. The native view is the better one: it draws the diff the way VS Code draws its own suggestions. Decorations work in any VS Code with no setup.
+
+With a decoration showing:
+
+- `Tab` moves the cursor to the edit when it is away from the cursor line; a second `Tab` applies it. When the edit is at the cursor line, one `Tab` applies it.
+- `Esc` dismisses it, and nothing shows again for 5 s.
+- `Tab` keeps its normal job when something else wants it: accepting ghost text or a suggest-widget item, moving through snippet placeholders, and indenting a selection.
+- Any change to the file, a switch to another editor, snooze or a new result clears the decoration. `Tab` never applies an edit to text that changed.
 
 **Native inline edits:** run **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code (not just reload the window). The command adds this extension to `enable-proposed-api` in VS Code's `argv.json`. It keeps the comments in that file; if the file is malformed it is left alone and VS Code's runtime-arguments file opens with instructions to paste. Until you opt in, VS Code logs an error that the extension declares a proposed API it may not use. That is expected.
 
-With the opt-in, an edit away from the cursor shows as an inline edit. `Tab` jumps to it and `Tab` again accepts it. `Esc` dismisses it, and nothing shows again for 5 s. After you accept, the next suggestion is requested at once, so repeated `Tab` walks through a refactor.
+With the opt-in (and `display` on `auto` or `native`), an edit away from the cursor shows as an inline edit. `Tab` jumps to it and `Tab` again accepts it. `Esc` dismisses it, and nothing shows again for 5 s. After you accept, the next suggestion is requested at once, so repeated `Tab` walks through a refactor.
 
 **When it asks:** 400 ms after you stop typing, when completions had nothing to show for that version of the file; and when you move the cursor within 10 s of an edit (not twice on the same line within 5 s). Completions win while you type. With VS Code's default `editor.quickSuggestions`, the word suggestion list can take the request that follows typing; Next Edit then asks on your next cursor move. It does not ask when the region holds a line starting with ```` ``` ```` (a Markdown code block) or is very long (minified code). Files that completions may not use (`aiAutocomplete.fim.disableInFiles`, `fim.disableInLanguages`, files outside the workspace) never get a Next Edit request.
 
 **What is sent:** the 10-line pages of the current file around the region, the region itself with the cursor marked, and the current file's recent edits as diffs. Those diffs always go to the Next Edit backend. Snippets and diffs of your other files go only while `aiAutocomplete.fim.extraContext` is on.
 
-**Deadline:** `aiAutocomplete.nextEdit.timeoutMs` (default 10000, 500 to 60000). Next Edit runs in the background, so it waits longer than completions. Failures are logged and shown once per backend and kind as a notification with **Show Log**, not in the status bar. A Next Edit failure also pauses completions on the same backend for the usual retry time. The model must be able to turn thinking off, as for chat completions.
+**Settings:**
+
+| Setting | Default | Limits |
+| --- | --- | --- |
+| `aiAutocomplete.nextEdit.format` | `auto` | `auto`, `chatXtab`, `sweep`, `zeta21` |
+| `aiAutocomplete.nextEdit.display` | `auto` | `auto`, `native`, `decorations` |
+| `aiAutocomplete.nextEdit.regionLinesAbove` | 5 | 0 to 20 |
+| `aiAutocomplete.nextEdit.regionLinesBelow` | 10 | 0 to 40 |
+| `aiAutocomplete.nextEdit.historySize` | 5 | 0 to 10 recent edit diffs |
+| `aiAutocomplete.nextEdit.contextBudget` | 3500 | 1000 to 16000 tokens, split between the file (3/7), the edit history (2/7) and recently viewed snippets (2/7) |
+
+A value outside its limits is ignored, and a warning names it. The region settings apply to `chatXtab` and `zeta21`, not to Sweep.
+
+**Status bar menu:** the menu has two Next Edit entries. **Enable native Next Edit UI...** appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
+
+**Troubleshooting:** the output channel shows timings, status codes and sizes only at the Debug log level. Run **Developer: Set Log Level...**, pick AI Autocomplete, then Debug. Prompt and answer text appears only with `aiAutocomplete.debug.logPrompts`, which belongs in your User settings (workspace values are ignored). When nothing shows, the Debug log says why a request was not asked (a reserved string, a region that is too long, a fence line) or what the model answered.
+
+**Deadline:** `aiAutocomplete.nextEdit.timeoutMs` (default 10000, 500 to 60000). Next Edit runs in the background, so it waits longer than completions. Failures are logged and shown once per backend and kind as a notification with **Show Log**, not in the status bar. A Next Edit failure also pauses completions on the same backend for the usual retry time. A chat model must be able to turn thinking off, as for chat completions. Sweep and Zeta are not chat models, so this does not apply to them; an answer that is cut at its token limit is dropped.
 
 ## Privacy
 

@@ -225,3 +225,28 @@ Left open by the Phase 3a plan, its task reviews and its final review.
 - argv.json is written in place, without a backup or an atomic rename.
 - `useNextEditBackend` repeats `useBackend`'s target rule and `pickBackend`'s lookup; the collapsed backend card does not show `nextEditModel`.
 - Integration: "without the proposed API an edit elsewhere is not applied" also passes when nothing is offered; the stale-result test may pass through cancellation; both launches share one user-data dir.
+
+## Phase 3b (2026-11-16)
+
+### Ideas from sr-tream/vscode-nes (AGPL-3.0: ideas only, no code)
+
+Left out of 3b on purpose (Ruling 13). Each would help in the way named.
+
+- Suppression rules (window unfocused, a multi-line selection, a bulk change, snippet mode): fewer wasted requests and no suggestions while the user is doing something else.
+- LSP diagnostics in the prompt: the model sees the errors a rename or a type change causes, so it can point at the next fix.
+- Splitting disjoint hunks of an answer into a queue: an answer that edits two places shows one edit at a time instead of being dropped or shown as one big rewrite.
+- Reusing a request while the user types into its ghost text: no new request per keystroke while the typed text still matches the suggestion.
+- A cursor target after accept: Tab lands where the next edit probably is, so repeated Tab walks through a change faster.
+- A context-exit retrigger: leaving a string, comment or block asks again at once instead of waiting for the next pause.
+- Native `displayLocation` labels and `debounceDelayMs: 0` metadata: VS Code labels the edit and does not delay it, which makes the native view feel faster.
+
+### Parked during execution
+
+- Local integration runs: the user's `~/.vscode/argv.json` (the native opt-in) also enables the proposed API in the test VS Code, so three `main`-launch tests fail locally; CI has no such file. Isolate `.vscode-test.mjs` from `~/.vscode/argv.json`.
+- Sweep: the original-window shift test is weak (old and new text are equal at the shifted position); no +20/+21 boundary test; no v2 test that drops a hunk with `<|cursor|>`; the current file path is not checked for reserved strings; an all-blank window gets its blank lines appended to a non-blank answer.
+- Zeta: a tail block replaced by one blank line is treated like a deletion; deleting the whole region leaves one empty line; the same marker twice with text between counts as no change, so an insertion answered that way is ignored; no test for a cursor on a block boundary.
+- History: after a file is closed and reopened with different text, `previous()` still describes the text before closing; hunk arrays are returned by reference.
+- Settings: no manifest test ties `NEXT_EDIT_LIMITS` to the numbers in `package.json`; the region defaults are duplicated with `REGION_ABOVE` and `REGION_BELOW`; at maximum settings a region is 62 lines.
+- Controller and tests: no tests for the check after the history flush, or for the `historySize` and region-size wiring; the mock server's events are leaner than real servers'; old llama.cpp builds report `stopped_limit` instead of `stop_type: "limit"`; no test for a caller abort on the completion path.
+- Decorations: the hint text goes stale after a manual cursor move (Tab still re-plans correctly); no tests for undo-clears, editor-switch-clears or `pendingEdit().version`; the Tab and Esc `when` clauses do not exclude `inlineEditIsVisible`, `parameterHintsVisible` or `editorHasMultipleSelections`; the Esc test waits out the 5 s rejection cooldown, which slows the suite; the snooze test's first quick pick is outside its `try`.
+- Menu: after a successful opt-in, **Enable native Next Edit UI...** stays until VS Code restarts.

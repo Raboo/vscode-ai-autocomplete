@@ -93,3 +93,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Sweep AI (sweep-next-edit)
+
+`src/nextEdit/formats/sweep.ts` adapts the prompt layouts of two inference scripts on Hugging Face: `sweepai/sweep-next-edit-1.5B` `run_model.py` @ 409016591c6c1a94f545f22328a85a3516118f34 and `sweepai/sweep-next-edit-v2-7B` `inference.py` @ 851f4ac1427ec91eb6c19d408409490d6e0c00a0. Apache-2.0. Copyright Sweep AI.
+
+The Apache-2.0 license text is this project's own `LICENSE` file, which applies to the adapted parts. No file of the Sweep projects is copied; the adapted parts are the layouts of the prompts and the rules for reading the answers.

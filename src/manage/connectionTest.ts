@@ -348,8 +348,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       }
     }
 
-    // 5. Next Edit
-    if (cfg.use.nextEdit) {
+    // 5. Next Edit. A backend that also serves completions and was never pointed at Next Edit (no Next Edit model, not the
+    // selected Next Edit backend) is not checked: its settings, written before `use` existed, must test as before.
+    if (cfg.use.nextEdit && (!cfg.use.completions || cfg.nextEditModel !== undefined || settings.nextEdit.backendId === cfg.id)) {
       stage = 'nextEdit';
       stageStart = now();
       await nextEditStep(info);

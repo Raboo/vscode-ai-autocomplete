@@ -33,6 +33,8 @@ describe('form model', () => {
   test('newForm prefills from the type', () => {
     expect(newForm('lmstudio', ['lmstudio'])).toEqual({ type: 'lmstudio', id: 'lmstudio-2', baseUrl: 'http://127.0.0.1:1234/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} });
     expect(newForm('mistral', [])).toMatchObject({ id: 'codestral', model: 'codestral-latest' });
+    // Mistral's FIM endpoint has no chat route to carry Next Edit: a new Mistral backend is for completions only.
+    expect(newForm('mistral', []).use).toEqual({ completions: true, nextEdit: false });
   });
 
   test('retypeForm replaces the URL, id and model only while they are empty or the old type\'s defaults', () => {

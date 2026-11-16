@@ -47,7 +47,7 @@ export function knownChanged(changed: Record<string, unknown>): BackendForm['cha
 
 export function newForm(type: ServerTypeId, taken: readonly string[]): BackendForm {
   const t = typeInfo(type);
-  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: {} };
+  return { type, id: suggestId(type, taken), baseUrl: t.defaultUrl, model: t.defaultModel ?? '', nextEditModel: '', use: { completions: true, nextEdit: type !== 'mistral' }, changed: {} };
 }
 
 /**

@@ -3,7 +3,7 @@ import { completionServed, explainFailure, PROBE_TIMEOUT_MS, runConnectionTest, 
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest, RouteCaps, ServerInfo } from '../../src/backends/types';
 import { HttpError, StreamError } from '../../src/backends/http';
 import { MissingApiKeyError } from '../../src/backends/mistral';
-import { parseSettings } from '../../src/config/settings';
+import { parseBackendEntry, parseSettings } from '../../src/config/settings';
 import { nullLog } from '../../src/log';
 import { THINKING_LABELS } from '../../src/models/thinking';
 import type { BackendConfig } from '../../src/types';
@@ -259,6 +259,8 @@ describe('the Next Edit step', () => {
   const noNative = { native: false };
   const zetaRewrite = '<|marker_1|>def total(width, height):\n    a = width * height\n    print(a)\n    return a * 2\n<|marker_2|>';
   const stepIds = (r: { res: { steps: TestStep[] } }) => r.res.steps.map((s) => s.id);
+  /** The backends here have id 'b'; selecting it as the Next Edit backend makes the step run for a backend with both uses. */
+  const selected = { ...SETTINGS, nextEdit: { ...SETTINGS.nextEdit, backendId: 'b' } };
 
   test('a Next Edit-only backend runs reach and the Next Edit step only, through the format the editor uses', async () => {
     const f = fake({ ...noNative, config: ZETA, chunks: [zetaRewrite] });
@@ -301,16 +303,16 @@ describe('the Next Edit step', () => {
       config: { kind: 'openai', fimModel: 'Qwen3.8-Flash-Next', use: { completions: true, nextEdit: true } },
       chatFor: (req) => (req.messages.some((m) => m.content.includes('<COMPLETION>')) ? [{ type: 'content', text: '<COMPLETION>a + b;' }] : [{ type: 'content', text: '```\ndef total(width, height):\n    a = width * height\n    print(a)\n    return a * 2\n\n```\n' }]),
     });
-    const r = await run(f);
+    const r = await run(f, { settings: selected });
     expect(stepIds(r)).toEqual(['reach', 'model', 'completion', 'thinking', 'context', 'nextEdit']);
     expect(r.res.steps[5]).toMatchObject({ state: 'ok', text: 'Next Edit in 0 ms with Qwen3.8-Flash-Next (chat prompt (chatXtab)): suggests an edit' });
   });
 
   test('the step runs after a completion-step warning, but not after a reach failure', async () => {
-    const warned = await run(fake({ ...noNative, info: { models: ['a', 'b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: true, nextEdit: true } } }));
+    const warned = await run(fake({ ...noNative, info: { models: ['a', 'b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: true, nextEdit: true } } }), { settings: selected });
     expect(warned.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'warn']]);
     expect(warned.res.steps[2].text).toBe('the server lists 2 models; choose a Next Edit model');
-    const zetaOnCompletions = await run(fake({ ...noNative, chunks: [zetaRewrite], config: { kind: 'llamacpp', fimModel: 'zeta-2.1', use: { completions: true, nextEdit: true } } }));
+    const zetaOnCompletions = await run(fake({ ...noNative, chunks: [zetaRewrite], config: { kind: 'llamacpp', fimModel: 'zeta-2.1', use: { completions: true, nextEdit: true } } }), { settings: selected });
     expect(zetaOnCompletions.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'ok']]);
     const down = await run(fake({ info: new HttpError(500, '', 'u'), config: { use: { completions: true, nextEdit: true } } }));
     expect(stepIds(down)).toEqual(['reach']);
@@ -321,6 +323,31 @@ describe('the Next Edit step', () => {
   test('no Next Edit use, no Next Edit step', async () => {
     const r = await run(fake());
     expect(stepIds(r)).not.toContain('nextEdit');
+  });
+
+  describe('a backend with no `use` (both uses)', () => {
+    // An old settings entry: it goes through the real parser, so `use` is both uses.
+    const entry = (extra: Record<string, unknown> = {}): BackendConfig => parseBackendEntry({ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8080', ...extra }, 0, new Set(), []) as BackendConfig;
+    test('has no Next Edit step unless it is the selected Next Edit backend or names a Next Edit model', async () => {
+      expect(entry().use).toEqual({ completions: true, nextEdit: true });
+      const plain = fake({ config: entry() });
+      expect(stepIds(await run(plain))).toEqual(['reach', 'model', 'completion']);
+      expect(plain.chatRequests).toHaveLength(0);
+      const other = await run(fake({ config: entry() }), { settings: { ...SETTINGS, nextEdit: { ...SETTINGS.nextEdit, backendId: 'elsewhere' } } });
+      expect(stepIds(other)).not.toContain('nextEdit');
+      const named = await run(fake({ ...noNative, config: { ...entry({ nextEditModel: 'zeta-2.1' }) }, chunks: [zetaRewrite] }));
+      expect(stepIds(named)).toContain('nextEdit');
+    });
+
+    test('runs the Next Edit step when it is the selected Next Edit backend', async () => {
+      const r = await run(fake({ ...noNative, config: entry(), chunks: ['x'], caps: { chat: true }, chatEvents: [{ type: 'content', text: 'x' }] }), { settings: selected });
+      expect(stepIds(r)).toContain('nextEdit');
+    });
+
+    test('a Next Edit-only backend always runs the step', async () => {
+      const r = await run(fake({ ...noNative, config: { ...entry(), use: { completions: false, nextEdit: true } }, chunks: [zetaRewrite], info: { models: ['zeta-2.1'], contextWindows: {} } }));
+      expect(stepIds(r)).toEqual(['reach', 'nextEdit']);
+    });
   });
 
   test('a lone listed model is the Next Edit model when none is set', async () => {

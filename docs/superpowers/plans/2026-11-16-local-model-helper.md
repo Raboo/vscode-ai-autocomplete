@@ -43,15 +43,15 @@
   - `downloadUrl(r: Recipe): string`
   - `fitsMemory(r: Recipe, totalMemBytes: number): boolean` (true when `r.bytes <= 0.4 * totalMemBytes`)
 
-- [ ] **Step 1: Tests** (`recipes.test.ts`):
+- [x] **Step 1: Tests** (`recipes.test.ts`):
   - every recipe's sha256 is 64 hex chars, revision 40 hex chars, `bytes > 0`, ids unique, `RECIPES[0].id === 'sweep-1.5b'`;
   - `downloadUrl(sweep)` is `https://huggingface.co/sweepai/sweep-next-edit-1.5B/resolve/409016591c6c1a94f545f22328a85a3516118f34/sweep-next-edit-1.5b.q8_0.v2.gguf`; a recipe with `url` returns it;
   - each recipe's `modelName` works with the existing model rules: `resolvePreset(modelName, {}).fimTemplate` is `qwen` for Sweep and Qwen, `mellum` for Mellum; for Sweep `sweepVariant(modelName) === 'v1'` and `pickFormat('auto', modelName).id === 'sweep'`; no model name contains `v2`;
   - `fitsMemory`: with 18 GiB (`18 * 2 ** 30`) the 7B recipe does not fit and the 3B one does.
-- [ ] **Step 2: Run** `npx vitest run test/unit/local/recipes.test.ts`: FAIL.
-- [ ] **Step 3: Implement** `src/local/recipes.ts`.
-- [ ] **Step 4: Run** the test: PASS; then `npm run typecheck && npm run lint`.
-- [ ] **Step 5: Commit:** `feat: local model recipes`
+- [x] **Step 2: Run** `npx vitest run test/unit/local/recipes.test.ts`: FAIL.
+- [x] **Step 3: Implement** `src/local/recipes.ts`.
+- [x] **Step 4: Run** the test: PASS; then `npm run typecheck && npm run lint`.
+- [x] **Step 5: Commit:** `feat: local model recipes`
 
 ### Task 2: Finding the runtimes, and their settings
 
@@ -67,16 +67,16 @@
   - `findRuntime(id: RuntimeId, env: RuntimeEnv, override?: string): string | undefined` (first candidate that exists)
   - `INSTALL_HINT: Record<RuntimeId, string>`: llama-server: `Install llama.cpp (macOS: brew install llama.cpp), or set aiAutocomplete.local.llamaServerPath.`; lms: `Install LM Studio from https://lmstudio.ai and start it once, or set aiAutocomplete.local.lmsPath.`
 
-- [ ] **Step 1: Tests:**
+- [x] **Step 1: Tests:**
   - an override is the only candidate (even when it does not exist);
   - llama-server: each `pathEnv` entry (split on `:`, or `;` on win32) + `llama-server` (`.exe` on win32), then `/opt/homebrew/bin/llama-server`, `/usr/local/bin/llama-server` (not on win32);
   - lms: each PATH entry + `lms`, then `<home>/.lmstudio/bin/lms`, then `<pointer>/bin/lms` when `<home>/.lmstudio-home-pointer` reads to a path (trimmed), then `<home>/.cache/lm-studio/bin/lms`;
   - `findRuntime` returns the first existing one, undefined when none;
   - settings: `local.llamaServerPath` from a workspace value is ignored, from `globalValue` it is read; `""` is unset.
-- [ ] **Step 2: Run** the tests: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** `npm run build && npm test && npm run typecheck && npm run lint`.
-- [ ] **Step 5: Commit:** `feat: find llama-server and LM Studio's CLI`
+- [x] **Step 2: Run** the tests: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** `npm run build && npm test && npm run typecheck && npm run lint`.
+- [x] **Step 5: Commit:** `feat: find llama-server and LM Studio's CLI`
 
 ### Task 3: The downloader
 
@@ -91,7 +91,7 @@
   - `downloadModel(o: DownloadOptions): Promise<'downloaded' | 'present'>`
   - `sha256File(path: string): Promise<string>`
 
-- [ ] **Step 1: Tests** (real temp dirs, a local HTTP server; the server records the `Range` header):
+- [x] **Step 1: Tests** (real temp dirs, a local HTTP server; the server records the `Range` header):
   - "present": `dest` already has the right bytes and checksum → `'present'`, no request;
   - a full download writes `dest`, reports progress ending at `total`, leaves no `.part`;
   - "resumes": an existing `<dest>.part` of N bytes sends `Range: bytes=N-`; a 206 answer is appended and the checksum passes;
@@ -101,10 +101,10 @@
   - a 404 throws `kind: 'http'`;
   - `freeBytes` below `(bytes - partBytes) * 1.1` throws `kind: 'space'` before any request;
   - aborting mid-stream throws `kind: 'cancelled'` and keeps the `.part`.
-- [ ] **Step 2: Run** `npx vitest run test/unit/local/download.test.ts`: FAIL.
-- [ ] **Step 3: Implement.** Create the destination directory; stream the body to the `.part` file; hash the finished file before renaming it.
-- [ ] **Step 4: Run** all checks.
-- [ ] **Step 5: Commit:** `feat: download local models with resume and checksum`
+- [x] **Step 2: Run** `npx vitest run test/unit/local/download.test.ts`: FAIL.
+- [x] **Step 3: Implement.** Create the destination directory; stream the body to the `.part` file; hash the finished file before renaming it.
+- [x] **Step 4: Run** all checks.
+- [x] **Step 5: Commit:** `feat: download local models with resume and checksum`
 
 ### Task 4: The llama-server process
 
@@ -120,15 +120,15 @@
   - `class LocalRuntimeError extends Error {}`
   - `class LlamaServerProcess { static start(o: { binary: string; args: string[]; port: number; spawnFn: SpawnLike; fetchFn?: typeof fetch; log(line: string): void; timeoutMs?: number; pollMs?: number }): Promise<LlamaServerProcess>; readonly port: number; readonly exited: Promise<void>; stop(): Promise<void> }` (defaults: `timeoutMs` 120000, `pollMs` 500)
 
-- [ ] **Step 1: Tests** (a fake child built on `EventEmitter` + `PassThrough`, a local HTTP server for `/health`):
+- [x] **Step 1: Tests** (a fake child built on `EventEmitter` + `PassThrough`, a local HTTP server for `/health`):
   - `llamaServerArgs` returns the exact array above;
   - `start` resolves once `GET http://127.0.0.1:<port>/health` answers 200 (503 first, then 200); each output line goes to `log`;
   - "early exit": the child exits before healthy → rejects with `LocalRuntimeError` whose message includes the last output lines (at most 20);
   - the deadline passes → the child gets `SIGTERM` and `start` rejects;
   - `stop()` sends `SIGTERM`, then `SIGKILL` after 5 s if the child has not exited (fake timers), and resolves on exit;
   - `freePort(p)` returns `p` when free, another port when `p` is held by a test server.
-- [ ] **Step 2–4:** run (FAIL), implement, run all checks.
-- [ ] **Step 5: Commit:** `feat: start and stop llama-server`
+- [x] **Step 2–4:** run (FAIL), implement, run all checks.
+- [x] **Step 5: Commit:** `feat: start and stop llama-server`
 
 ### Task 5: LM Studio's CLI
 
@@ -141,13 +141,13 @@
   - `class LmStudio { constructor(lms: string, exec: ExecLike); importModel(file: string, repo: string): Promise<string>; ensureServer(): Promise<number>; load(modelKey: string, contextTokens: number, identifier: string): Promise<void> }`; failures throw `LocalRuntimeError` (from Task 4) with the command's stderr (first 500 chars).
   - Commands (exact): `ls --json` (entries with `modelKey`, `path`); `import --hard-link -y --user-repo <repo> <file>`; `server status --json` (`{"running":true,"port":1234}`); `server start`; `ps --json` (entries with `identifier`); `load <modelKey> -c <contextTokens> --identifier <identifier> -y`.
 
-- [ ] **Step 1: Tests** (a recording fake `exec`):
+- [x] **Step 1: Tests** (a recording fake `exec`):
   - `importModel` returns the `modelKey` of the `ls --json` entry whose `path` is `<repo>/<file>`, without importing, when it is already listed; otherwise it imports, lists again and returns the new key; not found after import → throws;
   - `ensureServer` returns the port from `server status --json` when running; when not running it runs `server start` and reads the status again;
   - `load` skips loading when `ps --json` already has that `identifier`; otherwise runs the exact `load` arguments;
   - a non-zero exit code throws `LocalRuntimeError` with stderr.
-- [ ] **Step 2–4:** run (FAIL), implement, run all checks.
-- [ ] **Step 5: Commit:** `feat: drive LM Studio through its CLI`
+- [x] **Step 2–4:** run (FAIL), implement, run all checks.
+- [x] **Step 5: Commit:** `feat: drive LM Studio through its CLI`
 
 ### Task 6: Backend entries and managed servers
 
@@ -163,9 +163,9 @@
   - `interface ManagedServer { backendId: string; recipeId: string; file: string; port: number }`, `MANAGED_KEY = 'localServers'`, `parseManaged(raw: unknown): ManagedServer[]` (drops malformed entries)
   - `serversToStart(managed: ManagedServer[], s: Settings): ManagedServer[]`: those whose backend still exists in `s.backends` and is `s.fim.backendId` (with `s.fim.enabled`) or `s.nextEdit.backendId` (with `s.nextEdit.enabled`), all only when `s.enabled`
 
-- [ ] **Step 1: Tests:** both entries parse with the existing settings parser (`parseSettings` with the entry as `backends` `globalValue`) into the expected `BackendConfig` (`use`, models, flavor); a completions-only recipe has no `nextEditModel`; `parseManaged` keeps valid and drops malformed entries; `serversToStart` covers selected for completions, selected for Next Edit, not selected, backend removed, switch off.
-- [ ] **Step 2–4:** run (FAIL), implement, run all checks.
-- [ ] **Step 5: Commit:** `feat: local backend entries`
+- [x] **Step 1: Tests:** both entries parse with the existing settings parser (`parseSettings` with the entry as `backends` `globalValue`) into the expected `BackendConfig` (`use`, models, flavor); a completions-only recipe has no `nextEditModel`; `parseManaged` keeps valid and drops malformed entries; `serversToStart` covers selected for completions, selected for Next Edit, not selected, backend removed, switch off.
+- [x] **Step 2–4:** run (FAIL), implement, run all checks.
+- [x] **Step 5: Commit:** `feat: local backend entries`
 
 ### Task 7: Managed llama-servers in VS Code
 
@@ -181,10 +181,10 @@
   - `class LocalServers implements vscode.Disposable { constructor(d: { context: vscode.ExtensionContext; log: Log; settings(): Settings; spawnFn?: SpawnLike }); start(m: ManagedServer): Promise<LlamaServerProcess>; startSelected(): Promise<void>; stop(backendId: string): Promise<void>; stopAll(): Promise<void>; record(m: ManagedServer): Promise<void>; forget(backendId: string): Promise<void>; running(): string[]; dispose(): void }`
   - `start` stops a running server for the same backend first; when the saved port is taken it uses a new one and rewrites that backend's `baseUrl` in user settings (`upsertBackend` from `src/manage/form.ts`); a server that exits unexpectedly is logged as an error once.
 
-- [ ] **Step 1: Test** `portFor`: a free saved port is kept (`changed: false`); a taken one gets the new port (`changed: true`).
-- [ ] **Step 2: Implement** `portFor`, `LocalServers`, the wiring and the command (with no servers running it says "No local models are running.").
-- [ ] **Step 3: Run** all checks.
-- [ ] **Step 4: Commit:** `feat: run local llama-servers with VS Code`
+- [x] **Step 1: Test** `portFor`: a free saved port is kept (`changed: false`); a taken one gets the new port (`changed: true`).
+- [x] **Step 2: Implement** `portFor`, `LocalServers`, the wiring and the command (with no servers running it says "No local models are running.").
+- [x] **Step 3: Run** all checks.
+- [x] **Step 4: Commit:** `feat: run local llama-servers with VS Code`
 
 ### Task 8: The setup and remove commands
 
@@ -208,22 +208,22 @@ Flow (decisions the code must follow):
 
 - `removeLocalModels`: a multi-select of the files under `<globalStorage>/models` (with sizes); a file used by a recorded managed server stops that server first and forgets it; LM Studio's hard links keep their data (said in the confirmation).
 
-- [ ] **Step 1: Tests:**
+- [x] **Step 1: Tests:**
   - unit: the menu order with `setUpLocalModel` after `manageBackends`; the page renders the button;
   - integration (`local.test.ts`, `main` launch), with a small test recipe served by the mock server (64 KiB of known bytes, its sha256 computed in the test), `local.llamaServerPath` pointing at the fake server (which answers `/health`, `/props`, `/v1/models` and `/infill` with `a + b;` on the `--port` it is given):
     - setup with `{ recipe: 'test', runtime: 'llamaServer' }` downloads the file, starts the fake server, writes `local-test`, selects it, and ghost text `a + b;` appears in a TypeScript file;
     - "second run": the same setup again sends no download request and replaces the backend (answer the modal through a test seam, or skip the modal when the existing entry was made by the helper, i.e. its id is in the managed list);
     - **Stop Local Models** stops it (`/health` refuses);
     - "fails cleanly": a fake server that exits at once (an env var tells the fixture to exit 1) shows the error and writes no backend.
-- [ ] **Step 2: Run** them: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** `npm run build && npm test && npm run typecheck && npm run lint && npm run test:integration` (the known three local failures stay; everything else passes).
-- [ ] **Step 5: Commit:** `feat: set up a local model in one command`
+- [x] **Step 2: Run** them: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** `npm run build && npm test && npm run typecheck && npm run lint && npm run test:integration` (the known three local failures stay; everything else passes).
+- [x] **Step 5: Commit:** `feat: set up a local model in one command`
 
 ### Task 9: Docs
 
 **Files:** `README.md` ("Local models": the command, runtimes, recipes with sizes and licences, where files go, stopping and removing, that the download is the only request off the machine), `AGENTS.md` (allowlist adds `src/local/vscode/*`; machine-scoped settings list adds `local.llamaServerPath`, `local.lmsPath`; layout lines for `src/local/`), `docs/ROADMAP.md` (3d "released in v0.5.1"; Phase 4 "implemented on `feat/local-models`" with this plan and the design; a Phase 4 smoke checklist: setup with llama-server and with LM Studio, restart VS Code with the backend selected, Stop Local Models, Remove Downloaded Models), main spec settings table (`local.*`).
 
-- [ ] **Step 1: Update the docs.**
-- [ ] **Step 2: Run** `npm run build && npm test && npm run lint`.
-- [ ] **Step 3: Commit:** `docs: local model helper`
+- [x] **Step 1: Update the docs.**
+- [x] **Step 2: Run** `npm run build && npm test && npm run lint`.
+- [x] **Step 3: Commit:** `docs: local model helper`

@@ -135,6 +135,7 @@ async function completionAnswer(o: RunOptions, format: CompletionFormat): Promis
     const chunks = o.backend.streamFim({
       ...(o.model ? { model: o.model } : {}),
       payload: { route: 'template', prompt: p.prompt },
+      slot: 'nextEdit',
       stop: p.stop,
       sampling: { temperature: 0, maxTokens: p.maxTokens },
       extraBody: o.values.extraBody,

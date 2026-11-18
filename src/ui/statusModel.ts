@@ -1,3 +1,4 @@
+import { sessionLine, type SessionStats } from '../completion/outcomes';
 import type { StatusState } from '../completion/requestStatus';
 
 export interface LastStatus { state: StatusState; detail?: string }
@@ -11,7 +12,7 @@ export function displayState(enabled: boolean, snoozedUntil: number, now: number
 
 /**
  * What completions show when no backend serves them. With no backend at all that is an error; with backends that are all
- * Next Edit-only (or `fim.backend` naming one) completions are simply not configured, so the status stays idle and says so.
+ * Next Edit-only (or `completions.backend` naming one) completions are simply not configured, so the status stays idle and says so.
  */
 export function noCompletionBackend(backendCount: number): { state: 'idle' | 'error'; detail: string } {
   return backendCount === 0 ? { state: 'error', detail: 'No backend configured' } : { state: 'idle', detail: 'No backend is used for completions' };
@@ -66,6 +67,7 @@ const MENU: MenuEntry[] = [
   { label: 'Set API key...', id: 'setApiKey' },
   RETRY,
   { label: 'Show log', id: 'showLog' },
+  { label: 'Why no suggestion?', id: 'whyNoSuggestion' },
   { label: 'About', id: 'about' },
 ];
 
@@ -81,6 +83,7 @@ const GROUP_OF: Record<string, string> = {
   setApiKey: 'Help',
   retry: 'Help',
   showLog: 'Help',
+  whyNoSuggestion: 'Help',
   about: 'Help',
 };
 
@@ -143,12 +146,12 @@ export function stateName(state: StatusState, snoozedUntil: number): string {
   return STATE_NAMES[state];
 }
 
-/** The status bar tooltip: the state, its detail, each feature's backend (or off), local-only and the accepted count. */
-export function tooltipLines(o: { shown: LastStatus; snoozedUntil: number; locked: boolean; accepted: number; menu: MenuInputs }): string[] {
+/** The status bar tooltip: the state, its detail, each feature's backend (or off), local-only and the session counts. */
+export function tooltipLines(o: { shown: LastStatus; snoozedUntil: number; locked: boolean; session: SessionStats; menu: MenuInputs }): string[] {
   const lines = [`AI Autocomplete: ${stateName(o.shown.state, o.snoozedUntil)}`];
   if (o.shown.detail) lines.push(o.shown.detail);
   lines.push(`Completions: ${o.menu.completionBackend ?? 'off'}`, `Next Edit: ${o.menu.nextEditBackend ?? 'off'}`);
   if (o.locked) lines.push('Local only: requests go to loopback or private-network hosts only');
-  lines.push(`Accepted this session: ${o.accepted}`);
+  lines.push(sessionLine(o.session));
   return lines;
 }

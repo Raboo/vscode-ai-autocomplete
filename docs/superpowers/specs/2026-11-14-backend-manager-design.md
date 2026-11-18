@@ -22,7 +22,7 @@ The first real use exposed the gap: LM Studio serving `randmaru/zeta-2.1-mlx` lo
 
 ## Non-goals
 
-- Editing the general settings (`fim.enabled`, `privacy.localOnly`, `fim.disableInLanguages`, `fim.disableInFiles`, `fim.skipMidWord`, `debug.logPrompts`) on the page. They stay on VS Code's Settings page, which the page links to.
+- Editing the general settings (`completions.enabled`, `privacy.localOnly`, `completions.disableInLanguages`, `completions.disableInFiles`, `completions.skipMidWord`, `debug.logPrompts`) on the page. They stay on VS Code's Settings page, which the page links to.
 - Editing `aiAutocomplete.modelOverrides` on the page. Its values still apply and show up as defaults.
 - Next Edit fields (Phase 3). (The chat route and the OpenRouter and Strata server types were non-goals here and arrived in Phase 2; they are described below.)
 - Running or downloading local models (Phase 4).
@@ -84,7 +84,7 @@ There is one page at a time. Opening it again reveals the existing tab.
   - URL, prefilled from the server type.
   - Model: a combo box. It lists what the server reports, plus free text, plus "auto-detect" (empty), with a "reload list" link. Each listed model is tagged "ready" when it has a FIM route, "chat prompt" when it would complete through the chat prompt ("chat prompt, cannot turn thinking off" when it cannot, which OpenRouter reports per model), or "no completion template" when it has no route ("choose a Codestral model" on a Mistral backend, whose FIM endpoint serves Codestral models only; the card warning says the same).
   - API key: a password field shown for hosted server types. Its placeholder is "stored" when a key exists. Leaving it empty keeps the stored key, and a "Remove key" link deletes it.
-- **Prompt:** template (dropdown of every template id, default from the model's preset; disabled on the chat route, which uses no template), prompt mode (`fimMode`), the Thinking switch (dropdown of the thinking strategies, default from the model's family and server; enabled only on the chat route), multi-line. The dropdown shows the labels of `THINKING_LABELS` (`src/models/thinking.ts`), for example `enable_thinking: false (Qwen3, GLM, Gemma 4, Nemotron 3)`, `reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)`, `/no_think in the system prompt (Nemotron Nano v2, early Qwen3)`, `Model doesn't think (send nothing)` and `Can't be turned off (completions disabled)`.
+- **Prompt:** template (dropdown of every template id, default from the model's preset; disabled on the chat route, which uses no template), prompt mode (`mode`), the Thinking switch (dropdown of the thinking strategies, default from the model's family and server; enabled only on the chat route), multi-line. The dropdown shows the labels of `THINKING_LABELS` (`src/models/thinking.ts`), for example `enable_thinking: false (Qwen3, GLM, Gemma 4, Nemotron 3)`, `reasoning_effort: none (Mistral Small 4, OpenAI-style APIs)`, `/no_think in the system prompt (Nemotron Nano v2, early Qwen3)`, `Model doesn't think (send nothing)` and `Can't be turned off (completions disabled)`.
 - **Context:** context size (tokens), lines before cursor, lines after cursor, use other open files.
 - **Generation:** temperature, top P, top K, max tokens, wait after typing (ms), timeout (ms).
 - **Advanced** (collapsed): stop sequences (one per line), extra HTTP headers (`Name: value` per line), extra request body (JSON).
@@ -92,8 +92,8 @@ There is one page at a time. Opening it again reveals the existing tab.
 
 **How defaults show:**
 
-- **Wait after typing** defaults to "auto (adaptive)", which is today's `fim.debounceMs: null`. The field shows "auto" with the starting delay as a hint: 75 ms for local backends, 250 ms for hosted ones. A number stores a fixed delay (the Debouncer's `fixedMs`), and clearing the field returns to auto. *(Builder's call.)*
-- **The model is unknown** when it is set to auto-detect and has not been detected this session. The form then shows the generic preset's defaults, with the note "model not detected yet: Test or reload the list to detect it". The "no completion template" warning (card line, yellow dot, status bar) appears only for an explicit `fimModel`, or for a model the completion path or a test detected this session. The provider's detected-model cache is exposed read-only for this, so the page never fetches on open. *(Builder's call.)*
+- **Wait after typing** defaults to "auto (adaptive)", which is today's `completions.debounceMs: null`. The field shows "auto" with the starting delay as a hint: 75 ms for local backends, 250 ms for hosted ones. A number stores a fixed delay (the Debouncer's `fixedMs`), and clearing the field returns to auto. *(Builder's call.)*
+- **The model is unknown** when it is set to auto-detect and has not been detected this session. The form then shows the generic preset's defaults, with the note "model not detected yet: Test or reload the list to detect it". The "no completion template" warning (card line, yellow dot, status bar) appears only for an explicit `model`, or for a model the completion path or a test detected this session. The provider's detected-model cache is exposed read-only for this, so the page never fetches on open. *(Builder's call.)*
 
 - Every field shows the value that would be used if the backend set nothing. A grey "default" marks it, and a hint names where the value comes from: the built-in preset for this model, your model overrides, or your settings.
 - A field the user changes gets a blue "changed · reset" marker. Only changed fields are saved.
@@ -125,29 +125,29 @@ When an existing entry has a `kind`/`hostFlavor` pair the table doesn't list, it
 
 **Storage:**
 
-- The values are stored in the backend entry under a new optional `fim` object:
+- The values are stored in the backend entry under a new optional `completions` object:
   ```json
   { "id": "lmstudio", "kind": "openai", "hostFlavor": "lmstudio", "baseUrl": "http://127.0.0.1:1234/v1",
-    "fimModel": "randmaru/zeta-2.1-mlx",
-    "fim": { "template": "seed-coder", "temperature": 0.05 } }
+    "model": "randmaru/zeta-2.1-mlx",
+    "completions": { "template": "seed-coder", "temperature": 0.05 } }
   ```
-- Keys of `fim`: `template`, `contextTokens`, `prefixLines`, `suffixLines`, `extraContext`, `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`.
-- `fimMode` and `headers` stay where they are, at the top level of the entry.
-- The `package.json` schema documents `fim`, so settings.json gets completion and validation.
-- `parseSettings` validates `fim`. It keeps the valid keys and reports each dropped one, the way `modelOverrides` problems are reported.
+- Keys of `completions`: `template`, `contextTokens`, `prefixLines`, `suffixLines`, `extraContext`, `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`.
+- `mode` and `headers` stay where they are, at the top level of the entry.
+- The `package.json` schema documents `completions`, so settings.json gets completion and validation.
+- `parseSettings` validates `completions`. It keeps the valid keys and reports each dropped one, the way `modelOverrides` problems are reported.
 
 **Precedence**, highest first:
 
-1. the backend's `fim` value;
+1. the backend's `completions` value;
 2. a matching `modelOverrides` entry (template, stop, sampling, extraBody);
-3. the general settings: `fim.prefixLines`, `fim.suffixLines`, `fim.maxTokens`, `fim.multiline`, `fim.debounceMs`, with normal VS Code precedence;
+3. the general settings: `completions.prefixLines`, `completions.suffixLines`, `completions.maxTokens`, `completions.multiline`, `completions.debounceMs`, with normal VS Code precedence;
 4. the built-in preset or constant.
 
-The existing rule still holds: a `maxTokens` from levels 1 or 2 replaces `fim.maxTokens`, and single-line completions stay capped at 48.
+The existing rule still holds: a `maxTokens` from levels 1 or 2 replaces `completions.maxTokens`, and single-line completions stay capped at 48.
 
 **Exceptions to that precedence:**
 
-- **`extraContext` is restrict-only:** other files are used only if the backend's value is true (the default) **and** `fim.extraContext` resolves to true. When the general setting is off, the checkbox is disabled and says so.
+- **`extraContext` is restrict-only:** other files are used only if the backend's value is true (the default) **and** `completions.extraContext` resolves to true. When the general setting is off, the checkbox is disabled and says so.
 - **`stop`:** the backend's list is added to the preset's stops (the same merge as `modelOverrides`), not used instead of them. Hosted flavors send only the first 4, and the form warns when the merged list is longer.
 - **`extraBody`:** merged over the `modelOverrides` value.
 
@@ -237,10 +237,10 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
   - VS Code rewrites the array, so comments inside it are lost; the README says so.
 - Renaming a backend id:
   - moves its stored API key to the new id;
-  - updates a user-level `fim.backend` that names the old id;
-  - warns if a workspace-level `fim.backend` still does.
+  - updates a user-level `completions.backend` that names the old id;
+  - warns if a workspace-level `completions.backend` still does.
 - Remove deletes the entry and its stored key after confirmation.
-- "Use for completions" writes `fim.backend` with the same target rule as **Select Completion Backend**: the workspace only when the workspace already sets it, otherwise user settings (so picking never edits a repo's `.vscode/settings.json`).
+- "Use for completions" writes `completions.backend` with the same target rule as **Select Completion Backend**: the workspace only when the workspace already sets it, otherwise user settings (so picking never edits a repo's `.vscode/settings.json`).
 - A settings change made outside the page re-renders the cards that are not being edited. A card in edit mode keeps its form, and Save merges onto the fresh read.
 
 ## Webview implementation
@@ -293,7 +293,7 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
   - when the chat route is not possible: `model "<id>" has no FIM template (not a known code-completion model): pick a coder model, or choose a template for it in AI Autocomplete: Manage Backends`;
   - when it is possible: `... pick a coder model, choose a template for it, or set the prompt mode to chat in AI Autocomplete: Manage Backends`.
 - **Mistral:** a chat-family model has no route there. The log says `model "<id>" cannot complete through Mistral's FIM endpoint: choose a Codestral model in AI Autocomplete: Manage Backends` and the status is `<backend>: choose a Codestral model`.
-- **A prompt mode the server cannot use** (for example `fimMode: "chat"` on Mistral) logs `prompt mode (fimMode) "<mode>" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`. This replaces the earlier "chat FIM arrives in v0.2" message.
+- **A prompt mode the server cannot use** (for example `mode: "chat"` on Mistral) logs `prompt mode "<mode>" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`. This replaces the earlier "chat FIM arrives in v0.2" message.
 - **A route the server turns out not to have** (404, 405 or 501 on a route in `auto` mode) is logged as `no <route> endpoint for <model> (HTTP <status>); the next request uses the next prompt route` and remembered for the session. **Retry now**, a passing connection test and a change of the API key forget the routes learned as missing.
 - **Status bar:** shows `<backend>: no completion template` as an error state. Clicking it opens the page at that card.
 - **Elsewhere:** the model list tags such models, and the Template dropdown fixes them.

@@ -108,6 +108,11 @@ export class InFlight {
     result.then(remove, remove);
   }
 
+  /** Whether a request for this uri is running. */
+  busy(uri: string): boolean {
+    return this.flights.some((f) => f.uri === uri);
+  }
+
   /** Aborts every running request (e.g. after a settings change); like abortAll, without a reason. */
   abortEverything(): void {
     const all = this.flights;

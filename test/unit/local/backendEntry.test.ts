@@ -39,7 +39,7 @@ describe('localBackendEntry', () => {
     const entry = localBackendEntry(both, 'llamaServer', 8123);
     expect(entry).toEqual({
       id: 'local-sweep-1-5b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8123',
-      use: ['completions', 'nextEdit'], fimModel: both.modelName, nextEditModel: both.modelName,
+      use: ['completions', 'nextEdit'], model: both.modelName, nextEditModel: both.modelName,
     });
     const { settings, problems } = parseSettings(src({ backends: { globalValue: [entry] } }));
     expect(problems).toEqual([]);
@@ -67,9 +67,9 @@ describe('localBackendEntry', () => {
       expect(settings.backends[0].use).toEqual({ completions: true, nextEdit: false });
     }
   });
-  test('a Next Edit only recipe has no fimModel', () => {
+  test('a Next Edit only recipe has no model', () => {
     const entry = localBackendEntry({ ...both, uses: ['nextEdit'] }, 'llamaServer', 8012);
-    expect(entry).not.toHaveProperty('fimModel');
+    expect(entry).not.toHaveProperty('model');
     expect(entry.nextEditModel).toBe(both.modelName);
     expect(entry.use).toEqual(['nextEdit']);
   });
@@ -127,21 +127,21 @@ describe('serversToStart', () => {
     return parseSettings(src(inspected)).settings;
   }
   test('selected for completions', () => {
-    expect(serversToStart([a, b, c], settings({ 'fim.backend': 'b', 'nextEdit.enabled': false }))).toEqual([b]);
+    expect(serversToStart([a, b, c], settings({ 'completions.backend': 'b', 'nextEdit.enabled': false }))).toEqual([b]);
   });
   test('selected for Next Edit', () => {
-    expect(serversToStart([a, b, c], settings({ 'fim.enabled': false, 'nextEdit.enabled': true, 'nextEdit.backend': 'c' }))).toEqual([c]);
+    expect(serversToStart([a, b, c], settings({ 'completions.enabled': false, 'nextEdit.enabled': true, 'nextEdit.backend': 'c' }))).toEqual([c]);
   });
   test('selected for both gives one entry per server, in managed order', () => {
-    expect(serversToStart([a, b, c], settings({ 'fim.backend': 'c', 'nextEdit.backend': 'a' }))).toEqual([a, c]);
-    expect(serversToStart([a, b], settings({ 'fim.backend': 'a', 'nextEdit.backend': 'a' }))).toEqual([a]);
+    expect(serversToStart([a, b, c], settings({ 'completions.backend': 'c', 'nextEdit.backend': 'a' }))).toEqual([a, c]);
+    expect(serversToStart([a, b], settings({ 'completions.backend': 'a', 'nextEdit.backend': 'a' }))).toEqual([a]);
   });
   test('not selected', () => {
-    expect(serversToStart([b, c], settings({ 'fim.backend': 'a', 'nextEdit.backend': 'a' }))).toEqual([]);
+    expect(serversToStart([b, c], settings({ 'completions.backend': 'a', 'nextEdit.backend': 'a' }))).toEqual([]);
   });
   test('a selection whose use is switched off does not count', () => {
-    expect(serversToStart([a, b], settings({ 'fim.enabled': false, 'fim.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([b]);
-    expect(serversToStart([a, b], settings({ 'nextEdit.enabled': false, 'fim.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([a]);
+    expect(serversToStart([a, b], settings({ 'completions.enabled': false, 'completions.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([b]);
+    expect(serversToStart([a, b], settings({ 'nextEdit.enabled': false, 'completions.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([a]);
   });
   test('backend removed from the settings', () => {
     const s = parseSettings(src({ backends: { globalValue: [{ id: 'b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8013' }] } })).settings;
@@ -150,7 +150,7 @@ describe('serversToStart', () => {
     expect(serversToStart([a, b], none)).toEqual([]);
   });
   test('the master switch off starts nothing', () => {
-    expect(serversToStart([a, b, c], settings({ enabled: false, 'fim.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([]);
+    expect(serversToStart([a, b, c], settings({ enabled: false, 'completions.backend': 'a', 'nextEdit.backend': 'b' }))).toEqual([]);
   });
 });
 
@@ -167,32 +167,32 @@ describe('selectionChange', () => {
   const none = { start: [], stop: [] };
 
   test('a backend that became selected starts', () => {
-    expect(selectionChange([a, b], settings({ 'fim.backend': 'b' }), settings({ 'fim.backend': 'a' }), [])).toEqual({ start: [a], stop: [] });
+    expect(selectionChange([a, b], settings({ 'completions.backend': 'b' }), settings({ 'completions.backend': 'a' }), [])).toEqual({ start: [a], stop: [] });
   });
   test('a backend no longer selected, or removed, or with completions switched off, stops when this window runs it', () => {
-    const before = settings({ 'fim.backend': 'a' });
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'b' }), ['a'])).toEqual({ start: [b], stop: ['a'] });
+    const before = settings({ 'completions.backend': 'a' });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'b' }), ['a'])).toEqual({ start: [b], stop: ['a'] });
     // With "a" gone the selection falls back to the remaining backend.
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a' }, ['b']), ['a'])).toEqual({ start: [b], stop: ['a'] });
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', 'fim.enabled': false }), ['a'])).toEqual({ start: [], stop: ['a'] });
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', enabled: false }), ['a'])).toEqual({ start: [], stop: ['a'] });
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'b' }), [])).toEqual({ start: [b], stop: [] });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'a' }, ['b']), ['a'])).toEqual({ start: [b], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'a', 'completions.enabled': false }), ['a'])).toEqual({ start: [], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'a', enabled: false }), ['a'])).toEqual({ start: [], stop: ['a'] });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'b' }), [])).toEqual({ start: [b], stop: [] });
   });
   test('an unrelated change (a moved port, another setting) starts and stops nothing: a server stopped with Stop Local Models stays stopped', () => {
-    const before = settings({ 'fim.backend': 'a' });
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a' }, ['a', 'b'], 9001), [])).toEqual(none);
-    expect(selectionChange([a, b], before, settings({ 'fim.backend': 'a', 'fim.debounceMs': 100 }), ['a'])).toEqual(none);
+    const before = settings({ 'completions.backend': 'a' });
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'a' }, ['a', 'b'], 9001), [])).toEqual(none);
+    expect(selectionChange([a, b], before, settings({ 'completions.backend': 'a', 'completions.debounceMs': 100 }), ['a'])).toEqual(none);
   });
   test("setup's server: the backends write and the selection write neither stop nor start it again", () => {
     // Setup starts the server first, then writes the backend (not selected yet), records it, then selects it.
-    const noEntry = settings({ 'fim.backend': 'b' }, ['b']);
-    const written = settings({ 'fim.backend': 'b' });
-    const selected = settings({ 'fim.backend': 'a' });
+    const noEntry = settings({ 'completions.backend': 'b' }, ['b']);
+    const written = settings({ 'completions.backend': 'b' });
+    const selected = settings({ 'completions.backend': 'a' });
     expect(selectionChange([b], noEntry, written, ['a'])).toEqual(none);
     expect(selectionChange([a, b], written, selected, ['a'])).toEqual(none);
   });
   test('a selected backend without a record has nothing to start', () => {
-    expect(selectionChange([b], settings({ 'fim.backend': 'b' }), settings({ 'fim.backend': 'a' }), [])).toEqual(none);
+    expect(selectionChange([b], settings({ 'completions.backend': 'b' }), settings({ 'completions.backend': 'a' }), [])).toEqual(none);
   });
 });
 

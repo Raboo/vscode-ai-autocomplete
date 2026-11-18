@@ -62,8 +62,14 @@ function startOpts(child: FakeChild, port: number, over: Partial<Parameters<type
 }
 
 describe('llamaServerArgs', () => {
-  it('returns the exact argument array', () => {
-    expect(llamaServerArgs({ file: '/m/a.gguf', modelName: 'qwen', port: 8123, contextTokens: 8192 })).toEqual([
+  it('returns the exact argument array: with Next Edit, 2 slots sharing twice the context', () => {
+    expect(llamaServerArgs({ file: '/m/a.gguf', modelName: 'qwen', port: 8123, contextTokens: 8192, nextEdit: true })).toEqual([
+      '-m', '/m/a.gguf', '--alias', 'qwen', '--host', '127.0.0.1', '--port', '8123',
+      '-c', '16384', '-ngl', '99', '-fa', 'on', '-np', '2', '--cache-reuse', '256', '--no-webui',
+    ]);
+  });
+  it('completions only: 1 slot with the recipe context', () => {
+    expect(llamaServerArgs({ file: '/m/a.gguf', modelName: 'qwen', port: 8123, contextTokens: 8192, nextEdit: false })).toEqual([
       '-m', '/m/a.gguf', '--alias', 'qwen', '--host', '127.0.0.1', '--port', '8123',
       '-c', '8192', '-ngl', '99', '-fa', 'on', '-np', '1', '--cache-reuse', '256', '--no-webui',
     ]);

@@ -87,7 +87,7 @@ export function explainUnsupported(
   if (model === undefined) {
     return {
       onceKey: `detect:${backendId}`,
-      log: `backend "${backendId}": could not detect its model (server unreachable or several models listed); set fimModel`,
+      log: `backend "${backendId}": could not detect its model (server unreachable or several models listed); set its model`,
       status: `${backendId}: model not detected`,
     };
   }
@@ -97,7 +97,7 @@ export function explainUnsupported(
   if (why === 'mode') {
     return {
       onceKey,
-      log: `backend "${backendId}": prompt mode (fimMode) "${mode}" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`,
+      log: `backend "${backendId}": prompt mode "${mode}" does not work with this server: set it to auto in AI Autocomplete: Manage Backends`,
       status: `${backendId}: ${noRouteText(why, mode)}`,
       action,
     };

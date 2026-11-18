@@ -133,4 +133,16 @@ describe("InFlight", () => {
     expect(f.find(U, "a", S)).toBeUndefined();
     expect(f.find("file:///b.ts", "a", S)).toBeDefined();
   });
+
+  test("busy says whether a request for that uri is running", async () => {
+    const f = new InFlight();
+    let resolve!: (v: string | undefined) => void;
+    f.add(U, "a", S, new Promise((r) => (resolve = r)), new AbortController());
+    expect(f.busy(U)).toBe(true);
+    expect(f.busy("file:///b.ts")).toBe(false);
+    resolve("x");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(f.busy(U)).toBe(false);
+  });
 });

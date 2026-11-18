@@ -9,7 +9,7 @@ export type Multiline = 'auto' | 'always' | 'never';
 export type ThinkingStrategy = 'none' | 'templateKwarg:enable_thinking' | 'templateKwarg:thinking' | 'templateKwarg:thinking_mode=disabled'
   | 'templateKwarg:thinking_budget=0' | 'reasoningEffortNone' | 'systemSoftSwitch:/no_think' | 'vendorThinkingDisabled' | 'cannotDisable';
 
-/** Per-backend completion settings; every key is optional and overrides the global `aiAutocomplete.fim.*` value. */
+/** Per-backend completion settings; every key is optional and overrides the global `aiAutocomplete.completions.*` value. */
 export interface BackendFimSettings {
   template?: FimTemplateId; contextTokens?: number; prefixLines?: number; suffixLines?: number; extraContext?: boolean;
   multiline?: Multiline; maxTokens?: number; temperature?: number; topP?: number; topK?: number;

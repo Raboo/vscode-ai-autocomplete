@@ -7,6 +7,7 @@ import type { Secrets } from '../config/secrets';
 import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
+import { describeOutcome, relativeTime, type OutcomeLog } from '../completion/outcomes';
 import type { StatusBar } from './statusBar';
 import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
@@ -21,6 +22,7 @@ export interface Snooze {
 export interface CommandDeps {
   context: vscode.ExtensionContext;
   status: StatusBar;
+  outcomes: OutcomeLog;
   secrets: Secrets;
   snooze: Snooze;
   channel: vscode.OutputChannel;
@@ -31,6 +33,8 @@ export interface CommandDeps {
   manageBackends(o: OpenOptions): void;
   /** Whether VS Code's native Next Edit UI is available (the proposed API is enabled for this extension). */
   nativeNextEdit(): boolean;
+  /** A completion was accepted (after the stats are counted): prefetches the next one on local llama.cpp. */
+  completionAccepted(): void;
   /** A Next Edit item was accepted. */
   nextEditAccepted(): void;
   /** Tab on a Next Edit shown as decorations: jump to it, or apply it. */
@@ -46,18 +50,21 @@ export interface CommandDeps {
 /** Writes `key` where its value comes from: the workspace when it sets one, otherwise user settings. */
 async function update(key: string, value: unknown): Promise<void> {
   const config = vscode.workspace.getConfiguration('aiAutocomplete');
-  await config.update(key, value, writesToWorkspace(config.inspect(key)) ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
+  // A workspace still on the old fim.* name (not moved: untrusted) sets the value too.
+  const old = key.startsWith('completions.') ? config.inspect(`fim.${key.slice('completions.'.length)}`) : undefined;
+  const inWorkspace = writesToWorkspace(config.inspect(key)) || writesToWorkspace(old);
+  await config.update(key, value, inWorkspace ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
 }
 
 /** Turns a switch on or off where its value comes from. */
-async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+async function setSwitch(key: 'enabled' | 'completions.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
   await update(key, on);
 }
 
 /** Selects the completion backend in user settings, or in the workspace when it already selects one. Completions turned off are turned back on. */
 export async function useBackend(id: string): Promise<void> {
-  await update('fim.backend', id);
-  if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
+  await update('completions.backend', id);
+  if (!readSettings().settings.fim.enabled) await setSwitch('completions.enabled', true);
 }
 
 /** Selects the Next Edit backend, by the same rule as `useBackend`. Next Edit turned off is turned back on. */
@@ -70,9 +77,11 @@ export async function useNextEditBackend(id: string): Promise<void> {
 export function offerFirstBackend(message: string): void {
   const local = 'Set Up Local Model';
   const server = 'Connect a Server';
-  void vscode.window.showInformationMessage(message, local, server).then((c) => {
+  const start = 'Get Started';
+  void vscode.window.showInformationMessage(message, local, server, start).then((c) => {
     if (c === local) return vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
     if (c === server) return vscode.commands.executeCommand('aiAutocomplete.manageBackends', { add: true });
+    if (c === start) return vscode.commands.executeCommand('workbench.action.openWalkthrough', `${EXTENSION_ID}#getStarted`, false);
     return undefined;
   });
 }
@@ -166,7 +175,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       const { fim } = readSettings().settings;
       const pick = await pickBackendOrOff('Select the completion backend', 'completions', fim.backendId, !fim.enabled);
       if (pick === undefined) return;
-      await (pick === OFF ? setSwitch('fim.enabled', false) : useBackend(pick));
+      await (pick === OFF ? setSwitch('completions.enabled', false) : useBackend(pick));
     }),
     reg('selectNextEditBackend', async () => {
       const { nextEdit } = readSettings().settings;
@@ -198,9 +207,24 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       await vscode.window.showTextDocument(doc, { preview: true });
       await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
     }),
+    reg('whyNoSuggestion', async () => {
+      const doc = vscode.window.activeTextEditor?.document;
+      const list = doc ? d.outcomes.forUri(doc.uri.toString()) : [];
+      if (list.length === 0) {
+        void vscode.window.showInformationMessage('No completion requests for this file yet.');
+        return;
+      }
+      const now = Date.now();
+      await vscode.window.showQuickPick(
+        list.map((o) => ({ label: describeOutcome(o), description: relativeTime(now, o.at) })),
+        { placeHolder: 'Why no suggestion? The latest completion requests for this file, newest first' },
+      );
+    }),
     reg('accepted', () => {
       accepted++;
+      d.outcomes.accepted();
       d.status.setStats(accepted);
+      d.completionAccepted();
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),
     reg('nextEditTab', () => d.nextEditTab()),

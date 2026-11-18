@@ -41,14 +41,14 @@ describe('menuEntries', () => {
     expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
-    expect(ids('idle')).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle')).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'whyNoSuggestion', 'about']);
     expect(ids('loading')).toEqual(ids('idle'));
   });
   test('no separate completions toggle: the Completions entry turns them off', () => {
     expect(ids('idle')).not.toContain('toggle');
   });
   test('the native UI entry is absent once the native UI is on; Settings stays', () => {
-    expect(ids('idle', 1, true)).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle', 1, true)).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'whyNoSuggestion', 'about']);
     expect(menuEntries('idle', M()).find((e) => e.id === 'enableNativeNextEdit')).toEqual({ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' });
     expect(menuEntries('idle', M()).find((e) => e.id === 'openSettings')).toEqual({ label: 'Settings...', id: 'openSettings' });
   });
@@ -78,7 +78,7 @@ describe('menuEntries', () => {
   });
   test('Manage backends and Set up local model come first when no backend exists', () => {
     expect(menuEntries('idle', M({ backendCount: 0 }))[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
-    expect(ids('idle', 0)).toEqual(['manageBackends', 'setUpLocalModel', ...BACKENDS, 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle', 0)).toEqual(['manageBackends', 'setUpLocalModel', ...BACKENDS, 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'whyNoSuggestion', 'about']);
     expect(ids('error', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'retry']);
     expect(ids('snoozed', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'resume']);
     for (const state of ['idle', 'error', 'snoozed'] as const) {
@@ -174,26 +174,26 @@ describe('tooltip', () => {
     expect(stateName('snoozed', at)).toBe('Snoozed until 09:05');
     expect(hhmm(new Date(2026, 0, 1, 23, 59).getTime())).toBe('23:59');
   });
-  test('lists the state, its detail, both backends, local-only and the accepted count', () => {
-    expect(tooltipLines({ shown: { state: 'error', detail: 'coder: HTTP 503' }, snoozedUntil: 0, locked: true, accepted: 3, menu: M() })).toEqual([
+  test('lists the state, its detail, both backends, local-only and the session counts', () => {
+    expect(tooltipLines({ shown: { state: 'error', detail: 'coder: HTTP 503' }, snoozedUntil: 0, locked: true, session: { requests: 42, shown: 17, accepted: 3, medianMs: 380 }, menu: M() })).toEqual([
       'AI Autocomplete: Error',
       'coder: HTTP 503',
       'Completions: coder',
       'Next Edit: zeta',
       'Local only: requests go to loopback or private-network hosts only',
-      'Accepted this session: 3',
+      'This session: 42 requests · 17 shown · 3 accepted · median 380 ms',
     ]);
   });
   test('a feature without a backend reads off', () => {
-    expect(tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, accepted: 0, menu: M({ completionBackend: undefined, nextEditBackend: undefined }) })).toEqual([
+    expect(tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, session: { requests: 0, shown: 0, accepted: 0 }, menu: M({ completionBackend: undefined, nextEditBackend: undefined }) })).toEqual([
       'AI Autocomplete: Ready',
       'Completions: off',
       'Next Edit: off',
-      'Accepted this session: 0',
+      'This session: 0 requests · 0 shown · 0 accepted',
     ]);
   });
   test('a snooze with an end time names it', () => {
-    expect(tooltipLines({ shown: { state: 'snoozed' }, snoozedUntil: at, locked: false, accepted: 0, menu: M() })[0]).toBe('AI Autocomplete: Snoozed until 09:05');
+    expect(tooltipLines({ shown: { state: 'snoozed' }, snoozedUntil: at, locked: false, session: { requests: 0, shown: 0, accepted: 0 }, menu: M() })[0]).toBe('AI Autocomplete: Snoozed until 09:05');
   });
 });
 
@@ -204,7 +204,7 @@ describe('menuGroups', () => {
     expect(shape('idle')).toEqual([
       ['Backends', ['selectBackend', 'selectNextEditBackend', 'manageBackends', 'setUpLocalModel', 'enableNativeNextEdit']],
       ['Pause', ['toggleEnabled', 'snooze']],
-      ['Help', ['openSettings', 'setApiKey', 'retry', 'showLog', 'about']],
+      ['Help', ['openSettings', 'setApiKey', 'retry', 'showLog', 'whyNoSuggestion', 'about']],
     ]);
   });
   test('Retry and Resume stay first, above every group', () => {

@@ -52,7 +52,7 @@ const RUNTIME_NOTE: Record<LocalRuntime, string> = {
 };
 const USE_LABEL: Record<BackendUse, string> = { completions: 'Completions', nextEdit: 'Next Edit' };
 /** The settings selecting a backend that setup may change (through useBackend and useNextEditBackend). */
-const SELECTION_KEYS = ['fim.backend', 'fim.enabled', 'nextEdit.backend', 'nextEdit.enabled'] as const;
+const SELECTION_KEYS = ['completions.backend', 'completions.enabled', 'nextEdit.backend', 'nextEdit.enabled'] as const;
 
 const isEntry = (e: unknown): e is Record<string, unknown> => typeof e === 'object' && e !== null && !Array.isArray(e);
 const config = (): vscode.WorkspaceConfiguration => vscode.workspace.getConfiguration('aiAutocomplete');

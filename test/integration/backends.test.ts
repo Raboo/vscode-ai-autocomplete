@@ -15,7 +15,7 @@ interface Api {
 }
 
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'nextEdit.backend', 'nextEdit.enabled', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'completions.backend', 'completions.enabled', 'nextEdit.backend', 'nextEdit.enabled', 'privacy.localOnly'];
 /** Every API key a test may store. */
 const KEYS = ['old', 'renamed'];
 /** Time for the extension's onDidChangeConfiguration handler to rebuild its backends. */
@@ -101,13 +101,13 @@ suite('Backends page', () => {
   });
 
   test('Use for completions and Use for Next Edit select the backend and turn a feature that was off back on', async () => {
-    await configure({ backends: [{ id: 'both', kind: 'llamacpp', baseUrl: mock.baseUrl }], 'fim.enabled': false, 'nextEdit.enabled': false });
+    await configure({ backends: [{ id: 'both', kind: 'llamacpp', baseUrl: mock.baseUrl }], 'completions.enabled': false, 'nextEdit.enabled': false });
     const panel = await open();
     const cfg = () => vscode.workspace.getConfiguration('aiAutocomplete');
 
     await panel.handle({ type: 'use', id: 'both' });
-    assert.equal(cfg().get('fim.backend'), 'both');
-    assert.equal(cfg().get('fim.enabled'), true);
+    assert.equal(cfg().get('completions.backend'), 'both');
+    assert.equal(cfg().get('completions.enabled'), true);
 
     await panel.handle({ type: 'useNextEdit', id: 'both' });
     assert.equal(cfg().get('nextEdit.backend'), 'both');
@@ -122,7 +122,7 @@ suite('Backends page', () => {
 
     await panel.handle({ type: 'save', form });
 
-    assert.deepEqual(userBackends(), [keep, { id: 'fresh', kind: 'llamacpp', baseUrl: mock.baseUrl, fim: { temperature: 0.2 } }]);
+    assert.deepEqual(userBackends(), [keep, { id: 'fresh', kind: 'llamacpp', baseUrl: mock.baseUrl, completions: { temperature: 0.2 } }]);
     assert.equal(panel.lastState()!.edit, undefined, 'the draft stays open after save');
     assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').inspect('backends')?.workspaceValue, undefined);
   });
@@ -153,7 +153,7 @@ suite('Backends page', () => {
   });
 
   test('rename moves the stored key', async () => {
-    await configure({ backends: [{ id: 'old', kind: 'llamacpp', baseUrl: mock.baseUrl }], 'fim.backend': 'old' });
+    await configure({ backends: [{ id: 'old', kind: 'llamacpp', baseUrl: mock.baseUrl }], 'completions.backend': 'old' });
     await api.secrets.set('old', 'sk-moved');
     const panel = await open();
     await panel.handle({ type: 'edit', id: 'old' });
@@ -165,14 +165,14 @@ suite('Backends page', () => {
     assert.equal(await api.secrets.get('renamed'), 'sk-moved');
     assert.equal(await api.secrets.get('old'), undefined);
     assert.deepEqual(userBackends(), [{ id: 'renamed', kind: 'llamacpp', baseUrl: mock.baseUrl }]);
-    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').inspect('fim.backend')?.globalValue, 'renamed');
+    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').inspect('completions.backend')?.globalValue, 'renamed');
     assert.ok(!JSON.stringify(panel.lastState()).includes('sk-moved'), 'the key reached the page');
   });
 
   test('a card test still running when the card is saved leaves no result and sends nothing more', async () => {
     const slow = await startMockServer({ nCtx: 8192, delayMs: SLOW_MS });
     try {
-      await configure({ backends: [{ id: 'slow', kind: 'llamacpp', baseUrl: slow.baseUrl }], 'fim.backend': 'slow' });
+      await configure({ backends: [{ id: 'slow', kind: 'llamacpp', baseUrl: slow.baseUrl }], 'completions.backend': 'slow' });
       const panel = await open();
       await panel.handle({ type: 'test', id: 'slow' });
       assert.ok(await waitFor(() => slow.requests.length > 0, 5000), 'the test never reached the server');
@@ -194,7 +194,7 @@ suite('Backends page', () => {
     const slow = await startMockServer({ nCtx: 8192, delayMs: SLOW_MS });
     const entry = { id: 'slow', kind: 'llamacpp', baseUrl: slow.baseUrl };
     try {
-      await configure({ backends: [entry], 'fim.backend': 'slow' });
+      await configure({ backends: [entry], 'completions.backend': 'slow' });
       const panel = await open();
       await panel.handle({ type: 'test', id: 'slow' });
       assert.ok(await waitFor(() => slow.requests.length > 0, 5000), 'the test never reached the server');

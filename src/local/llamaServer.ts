@@ -14,16 +14,21 @@ export class LocalRuntimeError extends Error {
   }
 }
 
-export function llamaServerArgs(o: { file: string; modelName: string; port: number; contextTokens: number }): string[] {
+/**
+ * llama-server's arguments. A recipe that serves Next Edit gets 2 slots (slot 0 for completions, slot 1 for Next Edit,
+ * see LlamaCppBackend) sharing twice its context, so each keeps the recipe's context; a completions-only recipe gets 1.
+ */
+export function llamaServerArgs(o: { file: string; modelName: string; port: number; contextTokens: number; nextEdit: boolean }): string[] {
+  const slots = o.nextEdit ? 2 : 1;
   return [
     '-m', o.file,
     '--alias', o.modelName,
     '--host', '127.0.0.1',
     '--port', String(o.port),
-    '-c', String(o.contextTokens),
+    '-c', String(o.contextTokens * slots), // slots share -c: each keeps the recipe's context
     '-ngl', '99',
     '-fa', 'on',
-    '-np', '1',
+    '-np', String(slots),
     '--cache-reuse', '256',
     '--no-webui',
   ];

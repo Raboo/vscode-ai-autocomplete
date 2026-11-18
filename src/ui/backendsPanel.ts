@@ -263,15 +263,15 @@ export class BackendsPanel implements vscode.Disposable {
     const original = old === undefined ? undefined : entriesOf(list).find((e) => e.id === old);
     await config().update('backends', upsertBackend(list, formToEntry(form, original), old), vscode.ConfigurationTarget.Global);
     if (old !== undefined) {
-      const fimBackend = config().inspect<string>('fim.backend');
+      const fimBackend = config().inspect<string>('completions.backend');
       const plan = planRename(old, form.id, fimBackend?.globalValue, fimBackend?.workspaceValue);
       const key = plan.moveKey ? await this.d.secrets.get(old) : undefined;
       if (key !== undefined) {
         await this.d.secrets.set(form.id, key);
         await this.d.secrets.delete(old);
       }
-      if (plan.updateUserFimBackend) await config().update('fim.backend', form.id, vscode.ConfigurationTarget.Global);
-      if (plan.warnWorkspace) void vscode.window.showWarningMessage(`AI Autocomplete: this workspace still selects "${old}" in aiAutocomplete.fim.backend.`);
+      if (plan.updateUserFimBackend) await config().update('completions.backend', form.id, vscode.ConfigurationTarget.Global);
+      if (plan.warnWorkspace) void vscode.window.showWarningMessage(`AI Autocomplete: this workspace still selects "${old}" in aiAutocomplete.completions.backend.`);
     }
     if (apiKey !== undefined) await this.d.secrets.set(form.id, apiKey);
     this.d.log.info(`backends page: saved backend "${form.id}"`);

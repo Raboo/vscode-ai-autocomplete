@@ -4,12 +4,14 @@ import { createBackend } from './backends/index';
 import { Capabilities } from './models/capabilities';
 import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
+import { OutcomeLog } from './completion/outcomes';
 import { ExtraContextRing } from './completion/context';
 import { ContextTracker } from './completion/contextTracker';
 import { resolveFim } from './completion/effective';
 import { FimProvider } from './completion/provider';
 import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
+import { isOldNameProblem } from './config/rename';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
@@ -20,6 +22,7 @@ import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
+import { migrationRunner } from './ui/migrateSettings';
 import { StatusBar } from './ui/statusBar';
 import { activity, menuInputs } from './ui/statusModel';
 
@@ -28,6 +31,7 @@ const REMOTE_DEBOUNCE_MS = 250;
 const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
+const WARM_DELAY_MS = 250;
 
 /** Kept for deactivate(), which has no context to reach the manager through. */
 let localServers: LocalServers | undefined;
@@ -61,7 +65,10 @@ export function activate(context: vscode.ExtensionContext): {
   let warnedProblems = false;
   let warnedNoBackends = false;
   const openSettings = (): void => void vscode.commands.executeCommand('workbench.action.openSettings', 'aiAutocomplete');
-  const warnOnce = (problems: string[]): void => {
+  const warnOnce = (all: string[]): void => {
+    // Old setting names are moved on start; what is left (folder settings, an untrusted workspace) is only logged.
+    for (const p of all.filter(isOldNameProblem)) log.info(`settings: ${p}`);
+    const problems = all.filter((p) => !isOldNameProblem(p));
     if (problems.length > 0 && !warnedProblems) {
       warnedProblems = true;
       void vscode.window.showWarningMessage(`AI Autocomplete settings: ${problems.join('; ')}`, 'Open Settings').then((c) => c && openSettings());
@@ -83,7 +90,8 @@ export function activate(context: vscode.ExtensionContext): {
     return r.problems;
   };
 
-  const status = new StatusBar({ enabled: () => activity(settings).on, menu: () => menuInputs(settings, false), snoozedUntil, localOnly: () => settings.privacy.localOnly });
+  const outcomes = new OutcomeLog();
+  const status = new StatusBar({ enabled: () => activity(settings).on, menu: () => menuInputs(settings, false), snoozedUntil, localOnly: () => settings.privacy.localOnly, stats: () => outcomes.stats() });
   sub(status);
 
   const cache = new SuggestionCache();
@@ -127,6 +135,7 @@ export function activate(context: vscode.ExtensionContext): {
     log,
     snoozedUntil,
     capabilities,
+    outcomes,
     backoff,
     nextEdit,
     debouncer: (id) => {
@@ -154,6 +163,20 @@ export function activate(context: vscode.ExtensionContext): {
   }
   nextEdit.native = native;
   log.info(native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)");
+
+  // Warm-up: a document that becomes active fills local llama.cpp's prompt cache with the window at the cursor. Shortly after
+  // the switch, so a cursor placed right after opening (go to definition, a search result) is the one used.
+  let warmTimer: ReturnType<typeof setTimeout> | undefined;
+  const warmSoon = (editor: vscode.TextEditor | undefined): void => {
+    clearTimeout(warmTimer);
+    if (!editor) return;
+    warmTimer = setTimeout(() => {
+      if (vscode.window.activeTextEditor === editor) provider.warm(editor.document, editor.selection.active);
+    }, WARM_DELAY_MS);
+  };
+  sub(vscode.window.onDidChangeActiveTextEditor(warmSoon));
+  sub({ dispose: () => clearTimeout(warmTimer) });
+  sub(vscode.workspace.onDidCloseTextDocument((doc) => provider.documentClosed(doc.uri.toString())));
 
   const panelDeps: BackendsPanelDeps = {
     context,
@@ -205,6 +228,7 @@ export function activate(context: vscode.ExtensionContext): {
 
   for (const d of registerCommands({
     context,
+    outcomes,
     localServers: servers,
     localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
     status,
@@ -213,6 +237,11 @@ export function activate(context: vscode.ExtensionContext): {
     log,
     manageBackends,
     nativeNextEdit: () => native,
+    completionAccepted: () => {
+      // The accepted text is in the document now: the cursor sits where the next completion would be asked.
+      const editor = vscode.window.activeTextEditor;
+      if (editor) provider.prefetch(editor.document, editor.selection.active);
+    },
     nextEditAccepted: () => nextEdit.accepted(),
     nextEditTab: () => nextEdit.nextEditTab(),
     nextEditDismiss: () => nextEdit.nextEditDismiss(),
@@ -247,22 +276,30 @@ export function activate(context: vscode.ExtensionContext): {
     // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
     provider.clearError();
     provider.forgetLogged();
+    provider.forgetWarmed();
     status.setLocalLock(settings.privacy.localOnly);
     status.refresh();
     warnOnce(problems);
   };
+  // Old fim.* keys in user settings move to the new names on start and after each settings change; a run that finds
+  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 1.0).
+  const migrate = migrationRunner(log);
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('aiAutocomplete')) onSettingsChanged();
+      if (!e.affectsConfiguration('aiAutocomplete')) return;
+      onSettingsChanged();
+      migrate();
     }),
   );
-  // An added folder of a multi-root workspace may bring its own privacy.localOnly or fim.disableInFiles.
+  // An added folder of a multi-root workspace may bring its own privacy.localOnly or completions.disableInFiles.
   sub(vscode.workspace.onDidChangeWorkspaceFolders(onSettingsChanged));
 
   warnOnce(rebuild());
+  migrate();
   status.setLocalLock(settings.privacy.localOnly);
   // Not awaited: a model can take a minute to load, and activation must not wait for it.
   void servers.startSelected();
+  warmSoon(vscode.window.activeTextEditor);
   return {
     status,
     secrets,

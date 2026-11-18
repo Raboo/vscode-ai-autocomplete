@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest';
-import { AFTER_EDIT_WINDOW_MS, EDIT_ECHO_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy } from '../../../src/nextEdit/trigger';
+import { describe, expect, test } from 'vitest';
+import { AFTER_EDIT_WINDOW_MS, EDIT_ECHO_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy, keepRequestWhileTyping } from '../../../src/nextEdit/trigger';
 
 test('a cursor move within 10 s of an edit triggers; after 10 s it does not', () => {
   const p = new TriggerPolicy();
@@ -64,4 +64,33 @@ test('afterPause is true outside a rejection cooldown', () => {
   p.rejected(10_000);
   expect(p.afterPause(12_000)).toBe(false);
   expect(p.afterPause(16_000)).toBe(true);
+});
+
+test('a closed document forgets its edit, so a new document reusing its URI does not ask on a cursor move', () => {
+  const p = new TriggerPolicy();
+  p.edited('untitled:Untitled-1', 1_000);
+  p.closed('untitled:Untitled-1');
+  expect(p.onCursorMove('untitled:Untitled-1', 0, 2_000)).toBe(false);
+  // Closing another document changes nothing.
+  p.edited('a', 3_000);
+  p.closed('b');
+  expect(p.onCursorMove('a', 0, 4_000)).toBe(true);
+});
+
+describe('keepRequestWhileTyping', () => {
+  const base = { nextEditBackendId: 'ne', completionsBackendId: 'ne', completionsActive: true, kind: 'llamacpp' as const, slots: undefined };
+  test('a Next Edit backend other than the completions one: kept', () => {
+    expect(keepRequestWhileTyping({ ...base, completionsBackendId: 'fim' })).toBe(true);
+  });
+  test('completions off or without a backend: nothing competes, kept', () => {
+    expect(keepRequestWhileTyping({ ...base, completionsActive: false })).toBe(true);
+    expect(keepRequestWhileTyping({ ...base, completionsBackendId: undefined })).toBe(true);
+  });
+  test('the same backend: kept only on llama.cpp reporting 2 or more slots', () => {
+    expect(keepRequestWhileTyping({ ...base, slots: 2 })).toBe(true);
+    expect(keepRequestWhileTyping({ ...base, slots: 4 })).toBe(true);
+    expect(keepRequestWhileTyping({ ...base, slots: 1 })).toBe(false);
+    expect(keepRequestWhileTyping(base)).toBe(false);
+    expect(keepRequestWhileTyping({ ...base, kind: 'openai', slots: 2 })).toBe(false);
+  });
 });

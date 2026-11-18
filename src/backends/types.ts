@@ -17,6 +17,8 @@ export interface FimRequest {
   stop: string[];
   sampling: Sampling;
   timeMaxPredictMs?: number;
+  /** Which feature asks; llama.cpp keeps one slot (prompt cache) per feature. Default completions. */
+  slot?: 'completions' | 'nextEdit';
   extraBody: Record<string, unknown>;
   signal: AbortSignal;
   timeoutMs: number;
@@ -77,4 +79,6 @@ export interface FimBackend {
   listModels(signal: AbortSignal, timeoutMs?: number): Promise<ServerInfo>;
   streamFim(req: FimRequest): AsyncIterable<string>;
   streamChat(req: ChatRequest): AsyncIterable<ChatEvent>;
+  /** The server's parallel slot count when known (llama.cpp's `total_slots`); undefined otherwise. */
+  slotCount?(): number | undefined;
 }

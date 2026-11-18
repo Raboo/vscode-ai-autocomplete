@@ -15,6 +15,8 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 - Run **AI Autocomplete: Set Up Local Model** from the Command Palette and pick a runtime and a model, or
 - run **AI Autocomplete: Manage Backends**, press **+ Add backend** and connect a server you already run.
 
+New here? **Get Started with AI Autocomplete** (Command Palette: *Welcome: Open Walkthrough...*) walks through these steps.
+
 Then start typing in a code file and press `Tab` to accept a suggestion.
 
 ## How it looks
@@ -46,6 +48,8 @@ llama-server --fim-qwen-3b-default --port 8012
 
 On Linux and Windows, download a build from the [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) instead. The `--fim-qwen-3b-default` preset downloads Qwen2.5-Coder 3B the first time it runs.
 
+With llama.cpp on this machine (`localhost` or `127.0.0.1`), the extension warms the server up: when you switch to a file it sends the code around the cursor once (at most every 30 s per file, generating nothing) so llama.cpp has it cached before you type, and after you accept a suggestion it asks for the next one at once and keeps it ready for your next keystroke. Neither shows anything by itself, and neither runs for remote servers.
+
 ### 2. Point the extension at it
 
 Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Connect a Server** button of the first-run notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, say what it is used for, pick its models from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends built-in samples, never your code.
@@ -56,7 +60,7 @@ Or edit the settings by hand. Open your user settings (**Preferences: Open User 
 "aiAutocomplete.backends": [
   { "id": "local", "kind": "llamacpp", "baseUrl": "http://127.0.0.1:8012" }
 ],
-"aiAutocomplete.fim.backend": "local"
+"aiAutocomplete.completions.backend": "local"
 ```
 
 Start typing and suggestions appear as ghost text; press `Tab` to accept one. To ask for a suggestion yourself, press `Alt+\` (`Option+\` on macOS), VS Code's shortcut for **Trigger Inline Suggestion**.
@@ -64,6 +68,8 @@ Start typing and suggestions appear as ghost text; press `Tab` to accept one. To
 If the server is not running yet, the status bar shows an error and the extension retries on its own after a while. Run **AI Autocomplete: Retry Now** (also in the status bar menu) to retry at once.
 
 Backends go in your user settings only; see [Privacy](#privacy) for why.
+
+Renamed settings: `aiAutocomplete.fim.*` is now `aiAutocomplete.completions.*`, and the backend fields `fimModel`, `fimMode` and `fim` are now `model`, `mode` and `completions`. When it starts, the extension moves old `aiAutocomplete.fim.*` keys in your user settings to the new names (for `disableInFiles` set under both names, the two lists are joined). It never changes workspace or folder settings, and never rewrites `aiAutocomplete.backends`: a backend gets the new field names when you save it from the Backends page. Until 1.0 old names keep working everywhere, with a note in the log (old and new `disableInFiles` lists are joined at each level).
 
 ### Local models
 
@@ -112,9 +118,9 @@ The only request that leaves your machine is the download from `huggingface.co` 
 
 ```jsonc
 "aiAutocomplete.backends": [
-  { "id": "codestral", "kind": "mistral", "baseUrl": "https://codestral.mistral.ai", "fimModel": "codestral-latest" }
+  { "id": "codestral", "kind": "mistral", "baseUrl": "https://codestral.mistral.ai", "model": "codestral-latest" }
 ],
-"aiAutocomplete.fim.backend": "codestral"
+"aiAutocomplete.completions.backend": "codestral"
 ```
 
 Then run **AI Autocomplete: Set API Key** from the Command Palette, pick `codestral` and paste your key.
@@ -123,17 +129,17 @@ Then run **AI Autocomplete: Set API Key** from the Command Palette, pick `codest
 
 ```jsonc
 "aiAutocomplete.backends": [
-  { "id": "lmstudio", "kind": "openai", "baseUrl": "http://127.0.0.1:1234/v1", "fimModel": "qwen2.5-coder-3b" }
+  { "id": "lmstudio", "kind": "openai", "baseUrl": "http://127.0.0.1:1234/v1", "model": "qwen2.5-coder-3b" }
 ],
-"aiAutocomplete.fim.backend": "lmstudio"
+"aiAutocomplete.completions.backend": "lmstudio"
 ```
 
-Set `fimModel` to the model name the server lists. It must be a coder model with a fill-in-the-middle template: Qwen2.5-Coder, Codestral, DeepSeek-Coder, StarCoder, Code Llama, CodeGemma, Granite, Seed-Coder or Mellum. vLLM listens on port 8000 by default, so its `baseUrl` is usually `http://127.0.0.1:8000/v1`.
+Set `model` to the model name the server lists. It must be a coder model with a fill-in-the-middle template: Qwen2.5-Coder, Codestral, DeepSeek-Coder, StarCoder, Code Llama, CodeGemma, Granite, Seed-Coder or Mellum. vLLM listens on port 8000 by default, so its `baseUrl` is usually `http://127.0.0.1:8000/v1`.
 
 The extension recognises LM Studio and Ollama only by their default ports (1234 and 11434). For any other self-hosted server, such as vLLM on port 8000, add `"hostFlavor": "vllm"` (or `"lmstudio"`, `"ollama"`) to the backend. Without it the server is treated as a hosted API: `top_k` is not sent and only the first 4 stop sequences are sent.
 
 ```jsonc
-{ "id": "vllm", "kind": "openai", "baseUrl": "http://127.0.0.1:8000/v1", "hostFlavor": "vllm", "fimModel": "Qwen/Qwen2.5-Coder-7B" }
+{ "id": "vllm", "kind": "openai", "baseUrl": "http://127.0.0.1:8000/v1", "hostFlavor": "vllm", "model": "Qwen/Qwen2.5-Coder-7B" }
 ```
 
 You can list several backends and switch between them with **AI Autocomplete: Select Completion Backend**.
@@ -143,8 +149,12 @@ You can list several backends and switch between them with **AI Autocomplete: Se
 Click **AI** in the status bar for the menu:
 
 - **Turn off AI Autocomplete** stops completions and Next Edit together (the `aiAutocomplete.enabled` setting); **Turn on AI Autocomplete** brings back exactly what you had, because both backend choices stay. The status bar shows the off icon meanwhile. **AI Autocomplete: Turn On/Off** in the Command Palette does the same.
-- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions: off".
+- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.completions.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions: off".
 - **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
+
+### Why no suggestion?
+
+When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion requests for the active file, newest first, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts and the median latency. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
 
 ### What a backend is used for
 
@@ -162,20 +172,20 @@ In the settings file the field is `use`, a list of `"completions"` and `"nextEdi
 { "id": "zeta", "kind": "openai", "baseUrl": "http://127.0.0.1:1234/v1", "nextEditModel": "zeta-2.1", "use": ["nextEdit"] }
 ```
 
-A backend with no `use` is used for both, as before, so existing settings need no change. An unknown value in the list is reported as a problem and ignored; an empty list, a list with only unknown values or a value that is not a list is reported as a problem and counts as both. If `aiAutocomplete.fim.backend` is unset, the first backend used for completions is selected. If it names a backend that is not used for completions, completions have no backend until you change it, and the log says so. `aiAutocomplete.nextEdit.backend` likewise needs a backend used for Next Edit. On a Next Edit-only backend the completion model is never used for Next Edit.
+A backend with no `use` is used for both, as before, so existing settings need no change. An unknown value in the list is reported as a problem and ignored; an empty list, a list with only unknown values or a value that is not a list is reported as a problem and counts as both. If `aiAutocomplete.completions.backend` is unset, the first backend used for completions is selected. If it names a backend that is not used for completions, completions have no backend until you change it, and the log says so. `aiAutocomplete.nextEdit.backend` likewise needs a backend used for Next Edit. On a Next Edit-only backend the completion model is never used for Next Edit.
 
 ### Per-backend settings
 
-Each backend can carry a `fim` object with its own completion settings. The Backends page edits the same fields.
+Each backend can carry a `completions` object with its own completion settings. The Backends page edits the same fields.
 
 ```jsonc
 { "id": "local", "kind": "llamacpp", "baseUrl": "http://127.0.0.1:8012",
-  "fim": { "contextTokens": 8000, "temperature": 0.1, "multiline": "auto" } }
+  "completions": { "contextTokens": 8000, "temperature": 0.1, "multiline": "auto" } }
 ```
 
-Fields: `template`, `contextTokens` (default 4700), `prefixLines` (lines before the cursor; the window starts on a multiple of a quarter of this value so the prompt start stays stable (unless the `contextTokens` budget cuts it), so it can hold up to `prefixLines + step − 1` lines, with `step` being `prefixLines / 4` rounded down and at least 1), `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`. A backend can also set `fimMode` and `headers` at the top level.
+Fields: `template`, `contextTokens` (default 4700), `prefixLines` (lines before the cursor; the window starts on a multiple of a quarter of this value so the prompt start stays stable (unless the `contextTokens` budget cuts it), so it can hold up to `prefixLines + step − 1` lines, with `step` being `prefixLines / 4` rounded down and at least 1), `suffixLines`, `extraContext` (can only switch it off), `multiline`, `maxTokens`, `temperature`, `topP`, `topK`, `debounceMs`, `timeoutMs`, `stop`, `extraBody`, `thinking`. A backend can also set `mode` and `headers` at the top level.
 
-A value is taken from the first of these that sets it: the backend's `fim` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.fim.*` settings, then the built-in preset for the model. Three fields work differently: the backend's `stop` sequences are added to the preset's and the override's, not used instead of them; its `extraBody` is merged over the override's; and its `extraContext` can only switch extra context off: it cannot turn it on while `aiAutocomplete.fim.extraContext` is off.
+A value is taken from the first of these that sets it: the backend's `completions` object, a matching `aiAutocomplete.modelOverrides` entry, the general `aiAutocomplete.completions.*` settings, then the built-in preset for the model. Three fields work differently: the backend's `stop` sequences are added to the preset's and the override's, not used instead of them; its `extraBody` is merged over the override's; and its `extraContext` can only switch extra context off: it cannot turn it on while `aiAutocomplete.completions.extraContext` is off.
 
 ### Keep requests on your machine
 
@@ -187,9 +197,9 @@ With this on, requests go only to backends on loopback or private-network addres
 
 ### Chat models (Strata, OpenRouter, general instruct models)
 
-A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. Chat models must be able to turn thinking off: autocomplete waits 5 s for an answer, and a model that reasons first cannot give one. With `fimMode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
+A model with no fill-in-the-middle support, such as a general instruct or chat-only model, completes through a chat prompt. It is slower than FIM. Chat models must be able to turn thinking off: autocomplete waits 5 s for an answer, and a model that reasons first cannot give one. With `mode` on `auto`, a chat model uses the chat prompt automatically, and so does a server that has no raw completions endpoint. Set the prompt mode to `chat` on the Backends page to force it.
 
-Thinking is turned off per model family and server. The Thinking dropdown on the Backends page (the `thinking` field of the backend's `fim` object) overrides what the extension picks. Reasoning text is never shown.
+Thinking is turned off per model family and server. The Thinking dropdown on the Backends page (the `thinking` field of the backend's `completions` object) overrides what the extension picks. Reasoning text is never shown.
 
 A model that cannot turn thinking off (gpt-oss, DeepSeek R1 and similar, or an OpenRouter model that must reason) is not used: the model list tags it `chat prompt, cannot turn thinking off`, the Test fails, and the status bar shows `cannot turn thinking off`. A model that keeps thinking although thinking was asked off fails the same way, and the status bar shows `keeps thinking`. For a model that keeps thinking, **Retry now**, a passing Test or a changed API key lets the extension try it again; a settings change clears everything it learned.
 
@@ -210,7 +220,7 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 **OpenRouter:** run **AI Autocomplete: Set API Key** and paste your key. Without a key no code is sent (the model list still loads; it needs no key). A model that must reason on OpenRouter is noticed on its first request (the server rejects turning reasoning off) and then treated like one that cannot turn thinking off. OpenRouter completes through the chat prompt only, because a raw FIM prompt reaches the model only with some of the providers OpenRouter picks. An "Other OpenAI-compatible" backend pointed at `openrouter.ai` follows the same rules.
 
 ```jsonc
-{ "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "fimModel": "z-ai/glm-5" }
+{ "id": "openrouter", "kind": "openai", "hostFlavor": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "model": "z-ai/glm-5" }
 ```
 
 **LM Studio:** when the status bar says the model keeps thinking, turn thinking off in LM Studio; the extension cannot switch it per request there. For a model from LM Studio's catalog, switch off **Enable Thinking** in its settings. For a model downloaded from Hugging Face, add `{%- set enable_thinking = false %}` as the first line of its prompt template (My Models → the model's settings → Prompt Template).
@@ -224,6 +234,8 @@ On Strata the extension pins the unchanged start of the prompt so Strata can reu
 Next Edit suggests the edit you are likely to make next. After you change code, for example rename a parameter, the extension asks a model to rewrite a small region around the cursor (by default 5 lines above, 10 below) and shows the result. It is off until you choose a backend, so completion-only users send no extra requests.
 
 **Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend; only backends with **Next Edit** ticked under **Use for** are listed. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); with both uses ticked and no Next Edit model, the backend's completion model is used. On a backend with only Next Edit ticked there is no completion model: the Next Edit model, or the model the server lists, is used. Press **Test connection** on the backend to check that its Next Edit model answers in its format. When the server lists several models, set `nextEditModel`, so the extension does not have to guess which one to use. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. **Off** in the same picker (the menu's **Next Edit** entry) turns it off again. **Snooze...** and **Turn off AI Autocomplete** pause Next Edit too; **Off** under **Completions** turns off completions only.
+
+**Typing it yourself:** if you start typing what Next Edit suggests (or what it is about to suggest), the rest of the suggestion stays and moves with your text; `Tab` applies what is left. Any other change drops it.
 
 **Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `sweep` gets Sweep, any other model gets `chatXtab`.
 
@@ -254,9 +266,9 @@ With a decoration showing:
 
 With the opt-in (and `display` on `auto` or `native`), an edit away from the cursor shows as an inline edit. `Tab` jumps to it and `Tab` again accepts it. `Esc` dismisses it, and nothing shows again for 5 s. After you accept, the next suggestion is requested at once, so repeated `Tab` walks through a refactor.
 
-**When it asks:** 400 ms after you stop typing, when completions had nothing to show for that version of the file; and when you move the cursor within 10 s of an edit (not twice on the same line within 5 s). Completions win while you type. With VS Code's default `editor.quickSuggestions`, the word suggestion list can take the request that follows typing; Next Edit then asks on your next cursor move. It does not ask when the region holds a line starting with ```` ``` ```` (a Markdown code block) or is very long (minified code). Files that completions may not use (`aiAutocomplete.fim.disableInFiles`, `fim.disableInLanguages`, files outside the workspace) never get a Next Edit request.
+**When it asks:** 400 ms after you stop typing, when completions had nothing to show for that version of the file; and when you move the cursor within 10 s of an edit (not twice on the same line within 5 s). Completions win while you type. With VS Code's default `editor.quickSuggestions`, the word suggestion list can take the request that follows typing; Next Edit then asks on your next cursor move. It does not ask when the region holds a line starting with ```` ``` ```` (a Markdown code block) or is very long (minified code). Files that completions may not use (`aiAutocomplete.completions.disableInFiles`, `completions.disableInLanguages`, files outside the workspace) never get a Next Edit request.
 
-**What is sent:** the 10-line pages of the current file around the region, the region itself with the cursor marked, and the current file's recent edits as diffs. Those diffs always go to the Next Edit backend. Snippets and diffs of your other files go only while `aiAutocomplete.fim.extraContext` is on.
+**What is sent:** the 10-line pages of the current file around the region, the region itself with the cursor marked, and the current file's recent edits as diffs. Those diffs always go to the Next Edit backend. Snippets and diffs of your other files go only while `aiAutocomplete.completions.extraContext` is on.
 
 **Settings:**
 
@@ -283,14 +295,14 @@ A value outside its limits is ignored, and a warning names it. The region settin
 
 - No telemetry. The extension sends nothing except completion requests to the backend you configure, and the model download from `huggingface.co` when you run **Set Up Local Model** (see [Local models](#local-models)).
 - Next Edit, when you choose a backend for it, sends the region around the cursor, clipped pages of the current file and the current file's recent edits to that backend; see [Next Edit](#next-edit).
-- Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
+- Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.completions.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.completions.disableInFiles` or in a language listed in `aiAutocomplete.completions.disableInLanguages`). Snippets are chosen by how many identifiers they share with the code around the cursor, and while Next Edit is on, your last 3 edits go along as a diff named `recent-edits.diff`.
 - OpenRouter forwards your code to the model's provider. The extension sends no attribution headers to it.
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.
 - With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
-- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the paths of the local runtimes (`aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
+- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the paths of the local runtimes (`aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.completions.backend`), but only from the ones you defined.
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
-- Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, `*.tfvars`, `*.p12`, `*.pfx`, `.netrc`, `.docker/config.json` and SSH keys `id_rsa*` and `id_ed25519*`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
+- Files matching `aiAutocomplete.completions.disableInFiles` (by default `.env`, `.env.*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, `*.tfvars`, `*.p12`, `*.pfx`, `.netrc`, `.docker/config.json` and SSH keys `id_rsa*` and `id_ed25519*`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.
 - Known limitation: the local-only check resolves the backend's hostname before the request, and the request then does its own lookup. It guards against a misconfigured `baseUrl`, not against a hostile DNS server that answers differently the second time. Use an IP address in `baseUrl` if that matters to you.
 

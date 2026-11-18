@@ -39,7 +39,7 @@ export interface FimValues {
 export interface ResolvedFim {
   values: FimValues;
   sources: Record<FimField, ValueSource>;
-  /** The `fim.extraContext` setting: a backend can only restrict extra context, never enable it. */
+  /** The `completions.extraContext` setting: a backend can only restrict extra context, never enable it. */
   extraContextAllowed: boolean;
 }
 
@@ -66,7 +66,7 @@ export function resolveFim(backend: BackendConfig, model: string | undefined, s:
     const v = b[k] ?? preset.sampling[k];
     if (v !== undefined) sampling[k] = v;
   }
-  // The preset's own maxTokens (128) is never the budget: only a backend or override value replaces fim.maxTokens.
+  // The preset's own maxTokens (128) is never the budget: only a backend or override value replaces completions.maxTokens.
   const maxTokens = b.maxTokens ?? (ov.sampling.includes('maxTokens') ? preset.sampling.maxTokens : s.fim.maxTokens);
   const extraContext = (b.extraContext ?? true) && s.fim.extraContext;
 

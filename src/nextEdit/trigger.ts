@@ -1,3 +1,5 @@
+import type { BackendKind } from '../types';
+
 /** Wait after the last change before asking for a Next Edit. */
 export const EDIT_PAUSE_MS = 400;
 /** A file's edits become one history entry after this much idle time. */
@@ -16,6 +18,22 @@ export const REJECTION_COOLDOWN_MS = 5_000;
 /** Delay before the next request after an accept, so repeated Tabs walk through a change. */
 export const CHAIN_DELAY_MS = 60;
 
+/**
+ * Whether a running Next Edit request keeps running while the user types inside its region (its answer is rebased when it
+ * comes). Only when it does not hold up completions: Next Edit has its own backend (or completions are off), or the shared
+ * backend is a llama.cpp server with 2 or more slots, so both can run at once. Otherwise each keystroke aborts it.
+ */
+export function keepRequestWhileTyping(o: {
+  nextEditBackendId: string;
+  completionsBackendId: string | undefined;
+  completionsActive: boolean;
+  kind: BackendKind | undefined;
+  slots: number | undefined;
+}): boolean {
+  if (!o.completionsActive || o.completionsBackendId === undefined || o.completionsBackendId !== o.nextEditBackendId) return true;
+  return o.kind === 'llamacpp' && o.slots !== undefined && o.slots >= 2;
+}
+
 /** When to ask for a Next Edit: after an edit pause, or on a cursor move shortly after an edit. Times are ms. */
 export class TriggerPolicy {
   private lastEdit: { uri: string; at: number } | undefined;
@@ -24,6 +42,12 @@ export class TriggerPolicy {
 
   edited(uri: string, now: number): void {
     this.lastEdit = { uri, at: now };
+  }
+
+  /** A closed document's edit and request are forgotten: an untitled document opened later may get the same URI. */
+  closed(uri: string): void {
+    if (this.lastEdit?.uri === uri) this.lastEdit = undefined;
+    if (this.lastRequest?.uri === uri) this.lastRequest = undefined;
   }
 
   rejected(now: number): void {

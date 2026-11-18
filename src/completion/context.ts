@@ -108,6 +108,34 @@ interface Chunk {
   startLine: number;
   endLine: number;
   text: string;
+  tokens: Set<string>;
+}
+
+const IDENTIFIER = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+/** The lower-cased identifiers of at least two characters in the text. */
+export function identifierTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(IDENTIFIER)) if (m[0].length >= 2) out.add(m[0].toLowerCase());
+  return out;
+}
+
+const QUERY_PREFIX_LINES = 30;
+const QUERY_SUFFIX_LINES = 10;
+
+/** The identifiers around the cursor (the prefix's last 30 lines and the suffix's first 10) that extra-context chunks are ranked against. */
+export function cursorQuery(prefix: string, suffix: string): Set<string> {
+  const before = prefix.split('\n').slice(-QUERY_PREFIX_LINES).join('\n');
+  const after = suffix.split('\n').slice(0, QUERY_SUFFIX_LINES).join('\n');
+  return identifierTokens(`${before}\n${after}`);
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  let shared = 0;
+  for (const t of small) if (large.has(t)) shared++;
+  return shared / (a.size + b.size - shared);
 }
 
 function overlapLines(a: { startLine: number; endLine: number }, b: { startLine: number; endLine: number }): number {
@@ -140,7 +168,8 @@ export class ExtraContextRing {
     const size = Math.min(this.chunkLines, lines.length);
     const startLine = Math.max(0, Math.min(centerLine - Math.floor(size / 2), lines.length - size));
     const endLine = startLine + size - 1;
-    const chunk: Chunk = { path, startLine, endLine, text: lines.slice(startLine, endLine + 1).join('\n') };
+    const text = lines.slice(startLine, endLine + 1).join('\n');
+    const chunk: Chunk = { path, startLine, endLine, text, tokens: identifierTokens(text) };
     // "Overlap" = shared lines are at least half of the shorter chunk. Re-capturing the same lines makes the chunk the newest
     // under the same key (`path:startLine`), so pick() still keeps its place in the prompt.
     this.chunks = this.chunks.filter((c) => c.path !== path || overlapLines(c, chunk) * 2 < Math.min(c.endLine - c.startLine + 1, size));
@@ -149,24 +178,44 @@ export class ExtraContextRing {
   }
 
   /**
-   * The newest chunks that fit the budget. Those returned last time (same `path:startLine`) come first in the same order,
-   * the others follow oldest-first, so the prompt prefix stays stable while the set does not change (server prompt caches).
+   * The chunks most similar to `query` (Jaccard over identifier tokens) that fit the budget, ties and zero-overlap chunks
+   * newest first; without a query, simply the newest. Those returned last time (same `path:startLine`) come first in the same
+   * order, the others follow in ring order (oldest first), so the prompt prefix stays stable while the set does not change
+   * (server prompt caches).
    */
-  pick(exclude: { path: string; startLine: number; endLine: number }, budgetChars: number): ContextFile[] {
+  pick(exclude: { path: string; startLine: number; endLine: number }, budgetChars: number, query: Set<string> = new Set()): ContextFile[] {
+    const candidates = this.chunks
+      .map((c, index) => ({ c, index, score: jaccard(query, c.tokens) }))
+      .filter(({ c }) => !(c.path === exclude.path && overlapLines(c, exclude) > 0))
+      .sort((x, y) => y.score - x.score || y.index - x.index);
     let remaining = budgetChars;
-    const members: Chunk[] = [];
-    for (let i = this.chunks.length - 1; i >= 0; i--) {
-      const c = this.chunks[i];
-      if (c.path === exclude.path && overlapLines(c, exclude) > 0) continue;
-      if (c.text.length > remaining) continue;
-      remaining -= c.text.length;
-      members.push(c);
+    const picked: { c: Chunk; index: number }[] = [];
+    for (const x of candidates) {
+      if (x.c.text.length > remaining) continue;
+      remaining -= x.c.text.length;
+      picked.push(x);
     }
-    members.reverse();
+    const members = picked.sort((x, y) => x.index - y.index).map((x) => x.c);
     const byKey = new Map(members.map((c) => [chunkKey(c), c]));
     const kept = this.lastPicked.flatMap((key) => byKey.get(key) ?? []);
     const chosen = [...kept, ...members.filter((c) => !kept.includes(c))];
     this.lastPicked = chosen.map(chunkKey);
     return chosen.map((c) => ({ path: c.path, text: c.text }));
   }
+}
+
+/**
+ * The extra context of a completion: the ring's chunks ranked by `query`, then the recent edits (most volatile, so last),
+ * all within `budgetChars`. The recent edits are sized first and the chunks get what they leave.
+ */
+export function buildExtraContext(
+  ring: ExtraContextRing,
+  exclude: { path: string; startLine: number; endLine: number },
+  budgetChars: number,
+  query: Set<string>,
+  recentEdits?: (maxChars: number) => ContextFile | undefined,
+): ContextFile[] {
+  const recent = recentEdits?.(budgetChars);
+  const chunks = ring.pick(exclude, budgetChars - (recent?.text.length ?? 0), query);
+  return recent ? [...chunks, recent] : chunks;
 }

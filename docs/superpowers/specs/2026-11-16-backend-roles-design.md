@@ -37,7 +37,7 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
   - The **Use for** checkboxes sit in the Connection section; at least one must be ticked (a form error otherwise).
   - **Model** shows only with Completions, **Next Edit model** only with Next Edit. With Next Edit alone, its placeholder is "auto-detect" instead of "same as the completion model".
   - The Next Edit model field's hint names the format it will use, from `nextEdit.format` and the model id: "Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format" or "chat prompt (chatXtab)".
-  - Cards list their uses, and show "Use for completions" / "Use for Next Edit" buttons and "in use" badges per use.
+  - Cards list their uses, and show "Use for completions" / "Use for Next Edit" buttons and "Completions" / "Next Edit" badges per use.
 - **Pickers:** **Select backend** lists Completions backends; **Select Next Edit Backend** lists Next Edit backends (plus Off). **Set API key** still lists all.
 - **Test:**
   - The Completions steps run as today when Completions is ticked.

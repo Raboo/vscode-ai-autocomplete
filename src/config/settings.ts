@@ -37,6 +37,14 @@ export interface Settings {
 /** Files whose content is never sent by default: environment files, keys and credential stores. */
 export const DEFAULT_DISABLE_IN_FILES: readonly string[] = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*'];
 
+/**
+ * Where a choice made in the UI (a switch, a selected backend) is written: the workspace only when it already sets the
+ * key (a user setting would not take effect over it), otherwise user settings, so the repo's .vscode/settings.json stays untouched.
+ */
+export function writesToWorkspace(i: Inspected<unknown> | undefined): boolean {
+  return i?.workspaceValue !== undefined;
+}
+
 export interface Inspected<T> {
   defaultValue?: T;
   globalValue?: T;

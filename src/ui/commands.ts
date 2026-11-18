@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
-import { usesFor, type BackendUse } from '../config/settings';
+import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
@@ -43,24 +43,26 @@ export interface CommandDeps {
   localModels: { setUp(arg: unknown): Promise<unknown>; remove(): Promise<void> };
 }
 
-/** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
-async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+/** Writes `key` where its value comes from: the workspace when it sets one, otherwise user settings. */
+async function update(key: string, value: unknown): Promise<void> {
   const config = vscode.workspace.getConfiguration('aiAutocomplete');
-  const target = config.inspect(key)?.workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await config.update(key, on, target);
+  await config.update(key, value, writesToWorkspace(config.inspect(key)) ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
 }
 
-/** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. Completions turned off are turned back on. */
+/** Turns a switch on or off where its value comes from. */
+async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+  await update(key, on);
+}
+
+/** Selects the completion backend in user settings, or in the workspace when it already selects one. Completions turned off are turned back on. */
 export async function useBackend(id: string): Promise<void> {
-  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+  await update('fim.backend', id);
   if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
 }
 
-/** Selects the Next Edit backend, in the same place `useBackend` writes. Next Edit turned off is turned back on. */
+/** Selects the Next Edit backend, by the same rule as `useBackend`. Next Edit turned off is turned back on. */
 export async function useNextEditBackend(id: string): Promise<void> {
-  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
+  await update('nextEdit.backend', id);
   if (!readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
 }
 

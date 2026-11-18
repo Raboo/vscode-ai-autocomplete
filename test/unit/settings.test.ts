@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, writesToWorkspace, type Inspected, type RawSettingsSource } from '../../src/config/settings';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -318,5 +318,15 @@ describe('backend use', () => {
     const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('c'), use: ['completions'] }] }, 'nextEdit.backend': { globalValue: 'c' } }));
     expect(settings.nextEdit.backendId).toBeUndefined();
     expect(problems.join()).toMatch(/nextEdit\.backend: backend "c" is not used for Next Edit/);
+  });
+});
+
+describe('writesToWorkspace', () => {
+  test('a choice goes to user settings unless the workspace already sets the key', () => {
+    expect(writesToWorkspace(undefined)).toBe(false);
+    expect(writesToWorkspace({ defaultValue: '', globalValue: 'a' })).toBe(false);
+    expect(writesToWorkspace({ workspaceFolderValue: 'a' })).toBe(false);
+    expect(writesToWorkspace({ globalValue: 'a', workspaceValue: 'b' })).toBe(true);
+    expect(writesToWorkspace({ workspaceValue: false })).toBe(true);
   });
 });

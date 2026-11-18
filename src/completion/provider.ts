@@ -74,6 +74,12 @@ interface Spot {
   pos: vscode.Position;
   lineSuffix: string;
   backendId: string;
+  call: Call;
+}
+
+/** One call of the provider: whether FIM's outcome was already told to Next Edit. */
+interface Call {
+  reported: boolean;
 }
 
 /** A failure's status detail, plus "retrying in N s" while the backend backs off. */
@@ -120,14 +126,20 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const cancel = new AbortController();
     const sub = token.onCancellationRequested(() => cancel.abort());
     if (token.isCancellationRequested) cancel.abort();
+    const version = doc.version;
+    const call: Call = { reported: false };
+    let items: vscode.InlineCompletionItem[] = [];
     try {
-      return await this.provide(doc, pos, ctx, cancel.signal);
+      items = await this.provide(doc, pos, ctx, cancel.signal, call);
     } catch (err) {
       this.d.log.error('inline completion failed', err);
-      return [];
     } finally {
       sub.dispose();
     }
+    // FIM showed nothing without an answer (a gate, local-only, a backoff, a failure): Next Edit may still ask after an edit.
+    // The controller applies its own checks (switch, snooze, excluded files) before it asks.
+    if (!call.reported && !cancel.signal.aborted && doc.version === version) this.d.nextEdit?.fimResult(doc.uri.toString(), version, false);
+    return items;
   }
 
   /**
@@ -138,11 +150,14 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if ((reason.kind as number) === 1 && this.nextEditItems.has(item)) this.d.nextEdit?.rejected();
   }
 
-  private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal): Promise<vscode.InlineCompletionItem[]> {
+  private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal, call: Call): Promise<vscode.InlineCompletionItem[]> {
     if (signal.aborted) return [];
     // A Next Edit result for this document version is shown alone; the controller already applied the gate when it asked.
     const next = this.d.nextEdit?.itemFor(doc, pos);
-    if (next) return [this.nextEditItem(next.show, doc, pos)];
+    if (next) {
+      call.reported = true;
+      return [this.nextEditItem(next.show, doc, pos)];
+    }
     const s = this.d.getSettings();
     const line = doc.lineAt(pos.line).text;
     const linePrefix = line.slice(0, pos.character);
@@ -198,7 +213,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     // The version the window was read from: FIM's outcome is reported to Next Edit for it.
     const version = doc.version;
     const uri = doc.uri.toString();
-    const spot: Spot = { doc, pos, lineSuffix, backendId: id };
+    const spot: Spot = { doc, pos, lineSuffix, backendId: id, call };
     // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
     const cached = invoked ? undefined : this.d.cache.find(uri, win.prefix, win.suffix);
     if (cached !== undefined) return this.reported(cached, spot, version);
@@ -399,6 +414,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
 
   /** FIM's answer, told to Next Edit while the document is still at the window's version: Next Edit only asks when FIM had nothing. */
   private reported(text: string, at: Spot, version: number): vscode.InlineCompletionItem[] {
+    at.call.reported = true;
     if (at.doc.version === version) this.d.nextEdit?.fimResult(at.doc.uri.toString(), version, text !== '');
     return this.items(text, at);
   }

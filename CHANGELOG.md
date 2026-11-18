@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.5.1...v0.6.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* aiAutocomplete.fim.* settings are now aiAutocomplete.completions.*, and backend fields fimModel, fimMode and fim are now model, mode and completions. Old user-level keys are moved on start; old names are still read until 1.0.
+
+### Features
+
+* local model helper (llama-server and LM Studio) ([#17](https://github.com/Raboo/vscode-ai-autocomplete/issues/17)) ([816f0c7](https://github.com/Raboo/vscode-ai-autocomplete/commit/816f0c795feff2261c86f0055e04f7c3b1da95e3))
+* polish before publish ([#19](https://github.com/Raboo/vscode-ai-autocomplete/issues/19)) ([a00b74d](https://github.com/Raboo/vscode-ai-autocomplete/commit/a00b74d0093a0fb4b76c242239d9d5458a3c00af))
+
 ## [0.5.1](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.5.0...v0.5.1) (2026-11-16)
 
 

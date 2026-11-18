@@ -78,6 +78,11 @@ export class LlamaCppBackend implements FimBackend {
     if (!model) {
       return { models: [], contextWindows: {} };
     }
+    // The detected model is the one requests will name: its count is known too, without another read.
+    if (!slotModel) {
+      if (typeof props?.total_slots === 'number') this.totalSlots.set(model, props.total_slots);
+      else this.slotsFailedAt.set(model, Date.now());
+    }
     const nCtx = props?.default_generation_settings?.n_ctx ?? props?.n_ctx;
     return {
       models: [model],

@@ -351,6 +351,23 @@ describe('LlamaCppBackend', () => {
         await collect(b.streamFim(req({ model: 'A' }))).catch(() => undefined);
         expect(b.slotCount('A')).toBeUndefined();
       });
+      test('detection also fills the detected model\'s count: no extra read, id_slot at once', async () => {
+        m = await startMockHttp(({ url }) => (url.startsWith('/props') ? { json: { model_alias: 'q', total_slots: 2 } } : { sse: SSE }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        expect(await b.detectModel(new AbortController().signal)).toBe('q');
+        await collect(b.streamFim(req({ model: 'q', slot: 'nextEdit' })));
+        await settle();
+        expect(propsUrls(m)).toEqual(['/props']);
+        expect(posts()[0].body).toMatchObject({ id_slot: 1 });
+      });
+      test('detection without a slot count also holds back the detected model\'s read for the retry delay', async () => {
+        m = await startMockHttp(({ url }) => (url.startsWith('/props') ? { json: { model_alias: 'q' } } : { sse: SSE }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        await b.detectModel(new AbortController().signal);
+        await collect(b.streamFim(req({ model: 'q' })));
+        await settle();
+        expect(propsUrls(m)).toEqual(['/props']);
+      });
       test('model detection against a router reports no model', async () => {
         m = await startMockHttp(() => ({ json: { role: 'router', model_path: 'none', model_alias: 'llama-server', default_generation_settings: { n_ctx: 0 } } }));
         const b = new LlamaCppBackend(cfg(m.url), async () => undefined);

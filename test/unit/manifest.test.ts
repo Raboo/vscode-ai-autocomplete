@@ -130,6 +130,9 @@ test('machine-scoped settings stay machine-scoped (a workspace must never redire
     'aiAutocomplete.backends',
     'aiAutocomplete.debug.logPrompts',
     'aiAutocomplete.local.llamaServerPath',
+    'aiAutocomplete.local.models',
+    'aiAutocomplete.local.modelsDir',
+    'aiAutocomplete.local.modelsInMemory',
     'aiAutocomplete.modelOverrides',
   ]);
 });

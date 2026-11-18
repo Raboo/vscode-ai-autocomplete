@@ -25,11 +25,31 @@ describe('parseSettings', () => {
   });
   test('local runtime paths are machine-scoped: workspace values are ignored, "" is unset', () => {
     const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' } }));
-    expect(a.settings.local).toEqual({});
+    expect(a.settings.local).toEqual({ modelsInMemory: 1, models: [] });
     const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' } }));
-    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server' });
+    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server', modelsInMemory: 1, models: [] });
     const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' } }));
-    expect(c.settings.local).toEqual({});
+    expect(c.settings.local).toEqual({ modelsInMemory: 1, models: [] });
+  });
+  test('local.modelsInMemory: whole number of 1 or more, else 1 with a problem', () => {
+    expect(parseSettings(src({})).problems.some((p) => p.includes('modelsInMemory'))).toBe(false);
+    expect(parseSettings(src({ 'local.modelsInMemory': { globalValue: 3 } })).settings.local.modelsInMemory).toBe(3);
+    for (const v of [0, 1.5]) {
+      const r = parseSettings(src({ 'local.modelsInMemory': { globalValue: v } }));
+      expect(r.settings.local.modelsInMemory).toBe(1);
+      expect(r.problems.some((p) => p.includes('modelsInMemory'))).toBe(true);
+    }
+  });
+  test('local.modelsDir, modelsInMemory and models ignore workspace values', () => {
+    const r = parseSettings(src({
+      'local.modelsDir': { workspaceValue: '/evil' },
+      'local.modelsInMemory': { workspaceValue: 5 },
+      'local.models': { workspaceValue: [{ name: 'x' }] },
+    }));
+    expect(r.settings.local).toEqual({ modelsInMemory: 1, models: [] });
+    const g = parseSettings(src({ 'local.modelsDir': { globalValue: '/m', workspaceValue: '/evil' }, 'local.models': { globalValue: [{ name: 'a', hidden: true }] } }));
+    expect(g.settings.local.modelsDir).toBe('/m');
+    expect(g.settings.local.models).toEqual([{ name: 'a', hidden: true }]);
   });
   test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));

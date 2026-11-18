@@ -29,6 +29,10 @@ describe('parseExtraArgs', () => {
     expect(parseExtraArgs('--x "open').refused).toBeDefined();
     expect(parseExtraArgs('--[x]')).toEqual({ args: [], refused: '--[x]' });
     expect(parseExtraArgs('--[evil] 1').refused).toBe('--[evil]');
+    // A value starting with ';' would read as a comment in presets.ini (and renderPresets refuses it).
+    expect(parseExtraArgs('--foo ;x').refused).toBe(';x');
+    expect(parseExtraArgs('--foo=;x').refused).toBe('--foo');
+    expect(parseExtraArgs('--foo a;b').args).toEqual(['--foo', 'a;b']);
     for (const br of ['\u0085', '\u2028', '\u2029']) expect(parseExtraArgs(`--threads 8${br}--x`).refused).toBeDefined();
   });
 });

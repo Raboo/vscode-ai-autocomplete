@@ -7,16 +7,15 @@ import type { BackendUse, Settings } from '../../config/settings';
 import { readSettings } from '../../config/vscodeSettings';
 import type { Log } from '../../log';
 import { runConnectionTest } from '../../manage/connectionTest';
-import { upsertBackend } from '../../manage/form';
 import type { TestStep } from '../../manage/protocol';
 import { useBackend, useNextEditBackend } from '../../ui/commands';
-import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, serversToStart, type ManagedServer } from '../backendEntry';
+import { LOCAL_BACKEND_ID, routerWanted, upsertLocalEntry } from '../backendEntry';
 import { DownloadError, downloadModel } from '../download';
 import { downloadUrl, fitsMemory, modelPathSegments, type Recipe } from '../recipes';
 import { INSTALL_HINT, findRuntime } from '../runtimes';
-import type { Started } from '../serverPool';
+import type { ServerPool } from '../serverPool';
 import { setupArgument } from '../setupArg';
-import { realEnv } from './servers';
+import { modelsDir, realEnv } from './servers';
 
 export interface SetupDeps {
   context: vscode.ExtensionContext;
@@ -24,12 +23,8 @@ export interface SetupDeps {
   settings(): Settings;
   /** The recipes to offer (RECIPES, or a test's own). */
   recipes(): readonly Recipe[];
-  servers: {
-    start(m: ManagedServer): Promise<Started>;
-    stop(backendId: string): Promise<void>;
-    record(m: ManagedServer): Promise<void>;
-    forget(backendId: string): Promise<void>;
-  };
+  /** The router of the `local` backend. */
+  router: Pick<ServerPool, 'start' | 'state' | 'port' | 'syncPresets' | 'stopHere'>;
   /** Opens the Backends page on a backend. */
   openBackend(id: string): void;
 }
@@ -40,25 +35,18 @@ export type SetupOutcome =
   | { ok: false; message: string }
   | undefined;
 
-const PREFERRED_PORT = 8012;
 const RECOMMENDED = 'sweep-1.5b';
 const PROGRESS_MS = 250;
 const USE_LABEL: Record<BackendUse, string> = { completions: 'Completions', nextEdit: 'Next Edit' };
 /** The settings selecting a backend that setup may change (through useBackend and useNextEditBackend). */
 const SELECTION_KEYS = ['completions.backend', 'completions.enabled', 'nextEdit.backend', 'nextEdit.enabled'] as const;
 
-const isEntry = (e: unknown): e is Record<string, unknown> => typeof e === 'object' && e !== null && !Array.isArray(e);
 const config = (): vscode.WorkspaceConfiguration => vscode.workspace.getConfiguration('aiAutocomplete');
 const userBackends = (): unknown => config().inspect('backends')?.globalValue;
 const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
 const size = (bytes: number): string => (bytes >= 1e8 ? gb(bytes) : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 const mb = (bytes: number): number => Math.round(bytes / 1e6);
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-/** Where downloaded models live: `<globalStorage>/models`. */
-export function modelsDir(context: vscode.ExtensionContext): string {
-  return join(context.globalStorageUri.fsPath, 'models');
-}
 
 function llamaServerPath(s: Settings): string | undefined {
   return findRuntime('llamaServer', realEnv(), s.local.llamaServerPath);
@@ -127,17 +115,6 @@ async function download(d: SetupDeps, r: Recipe, dest: string): Promise<'downloa
   );
 }
 
-/**
- * Starts the model and returns the port it is served on, plus the record of its llama-server (`port`: the one to try
- * first). A llama-server another window already runs for this backend is used as it is.
- */
-async function startRuntime(d: SetupDeps, r: Recipe, file: string, port: number): Promise<{ port: number; managed?: ManagedServer }> {
-  // The pool stops a server this window runs for this backend, then adopts one on the port or takes it (or a free one).
-  const m: ManagedServer = { backendId: localBackendId(r), recipeId: r.id, file, port };
-  const started = await d.servers.start(m);
-  return { port: started.port, managed: { ...m, port: started.port, ...(started.pid !== undefined ? { pid: started.pid } : {}) } };
-}
-
 type Selection = { key: (typeof SELECTION_KEYS)[number]; global: unknown; workspace: unknown }[];
 
 function selection(): Selection {
@@ -173,43 +150,20 @@ async function test(d: SetupDeps, id: string): Promise<TestStep[]> {
   return r.steps;
 }
 
-interface UndoPlan {
-  id: string;
-  recipe: Recipe;
-  /** This backend's managed server before the run. */
-  previous: ManagedServer | undefined;
-  /** The llama-server this run started. */
-  managed: ManagedServer | undefined;
-  /** Settings as they were just before the run wrote any. */
-  before: { backends: unknown; selection: Selection } | undefined;
-  /** Whether the run started a llama-server, which halts the previous one first. */
-  startAttempted: boolean;
-}
-
 /**
- * Takes a failed run back: stops the server it started, restores the backends and the selection, puts the previous
- * record back (or forgets the new one) and starts the previous server again when its backend is still selected.
- * Never throws: a cleanup failure is logged.
+ * Takes a failed run back: restores the backends and the selection, and stops the router when this run started it and
+ * `local` is not selected now. Never throws: a cleanup failure is logged.
  */
-async function undo(d: SetupDeps, u: UndoPlan): Promise<void> {
+async function undo(d: SetupDeps, recipe: Recipe, before: { backends: unknown; selection: Selection } | undefined, startedHere: boolean): Promise<void> {
   try {
-    if (u.managed) await d.servers.stop(u.id);
-    if (u.before) {
-      await config().update('backends', u.before.backends, vscode.ConfigurationTarget.Global);
-      await restoreSelection(u.before.selection);
+    if (before) {
+      await config().update('backends', before.backends, vscode.ConfigurationTarget.Global);
+      await restoreSelection(before.selection);
     }
-    if (u.previous) await d.servers.record(u.previous);
-    else if (u.managed) await d.servers.forget(u.id);
+    if (startedHere && !routerWanted(readSettings().settings)) await d.router.stopHere();
   } catch (err) {
-    d.log.error(`local model setup (${u.recipe.id}): cleaning up after a failure failed`, err);
+    d.log.error(`local model setup (${recipe.id}): cleaning up after a failure failed`, err);
   }
-  const previous = u.previous;
-  if (!previous || !u.startAttempted || serversToStart([previous], readSettings().settings).length === 0) return;
-  // Not awaited: the model may take a while to load, and the error should show now.
-  void d.servers
-    .start(previous)
-    .then((s) => (s.adopted ? undefined : d.servers.record({ ...previous, port: s.port, ...(s.pid !== undefined ? { pid: s.pid } : {}) })))
-    .catch((err: unknown) => d.log.error(`local model "${previous.backendId}" could not start again`, err));
 }
 
 let busy = false;
@@ -237,14 +191,14 @@ export async function setUpLocalModel(d: SetupDeps, arg?: unknown): Promise<Setu
 
 async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
   let recipe: Recipe;
-  let replace = false;
+  // A test argument's `replace` asked to skip the "Replace the backend?" question; `local` is shared, so there is none now.
   const parsed = setupArgument(arg, d.recipes(), d.context.extensionMode === vscode.ExtensionMode.Test);
   if (parsed === 'invalid') {
     void vscode.window.showErrorMessage('AI Autocomplete: unknown local model.');
     return undefined;
   }
   if (parsed !== 'none') {
-    ({ recipe, replace } = parsed);
+    recipe = parsed.recipe;
   } else {
     const r = await pickRecipe(d.recipes());
     if (!r) return undefined;
@@ -257,14 +211,6 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
     return { ok: false, message: text };
   }
 
-  const id = localBackendId(recipe);
-  const exists = (Array.isArray(userBackends()) ? (userBackends() as unknown[]) : []).some((e) => isEntry(e) && e.id === id);
-  if (exists && !replace) {
-    const yes: vscode.MessageItem = { title: 'Yes' };
-    const pick = await vscode.window.showWarningMessage(`Replace the backend ${id}?`, { modal: true }, yes, { title: 'No', isCloseAffordance: true });
-    if (pick !== yes) return undefined;
-  }
-
   const segments = modelPathSegments(recipe);
   if (!segments) {
     const text = `AI Autocomplete: the local model "${recipe.id}" has an invalid file path.`;
@@ -272,30 +218,36 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
     return { ok: false, message: text };
   }
 
-  // A re-run replaces this backend's server: on a failure, the previous record and server come back.
-  const previous = parseManaged(d.context.globalState.get(MANAGED_KEY)).find((e) => e.backendId === id);
-  let managed: ManagedServer | undefined;
+  const id = LOCAL_BACKEND_ID;
   let before: { backends: unknown; selection: Selection } | undefined;
-  let startAttempted = false;
+  let startedHere = false;
   try {
-    const file = join(modelsDir(d.context), ...segments);
+    const file = join(modelsDir(d.context, d.settings()), ...segments);
     const got = await download(d, recipe, file);
     if (got === undefined) {
       void vscode.window.showInformationMessage('The download was cancelled.');
       return undefined;
     }
-    startAttempted = true;
     // Taken before the start: the pool moves the backend's baseUrl when the port is taken, and a failure puts it back.
     before = { backends: userBackends(), selection: selection() };
-    const port = previous?.port ?? PREFERRED_PORT;
-    const started = await busyWith(`Starting ${recipe.label}…`, () => startRuntime(d, recipe, file, port));
-    managed = started.managed;
-    await config().update('backends', upsertBackend(userBackends(), localBackendEntry(recipe, started.port), id), vscode.ConfigurationTarget.Global);
-    if (managed) await d.servers.record(managed);
+    let port = d.router.state() === 'running' ? d.router.port() : undefined;
+    if (port !== undefined) {
+      // The router reads the presets again and serves the new file.
+      await d.router.syncPresets();
+    } else {
+      startedHere = true;
+      port = (await busyWith('Starting the local model server…', () => d.router.start())).port;
+    }
+    const models = {
+      ...(recipe.uses.includes('completions') ? { model: recipe.modelName } : {}),
+      ...(recipe.uses.includes('nextEdit') ? { nextEditModel: recipe.modelName } : {}),
+    };
+    await config().update('backends', upsertLocalEntry(userBackends(), models, port), vscode.ConfigurationTarget.Global);
+    // Selecting `local` loads the model on the router (the warm-up follows the selection).
     if (recipe.uses.includes('completions')) await useBackend(id);
     if (recipe.uses.includes('nextEdit')) await useNextEditBackend(id);
   } catch (err) {
-    await undo(d, { id, recipe, previous, managed, before, startAttempted });
+    await undo(d, recipe, before, startedHere);
     d.log.error(`local model setup (${recipe.id}) failed`, err);
     const text = `Setting up ${recipe.label} failed: ${message(err)}`;
     void vscode.window.showErrorMessage(text);
@@ -305,9 +257,9 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
   const steps = await busyWith(`Testing ${id}…`, () => test(d, id));
   const failed = steps.find((s) => s.state === 'fail');
   if (failed) {
-    void vscode.window.showWarningMessage(`Local model ${id} is set up, but the test failed: ${failed.text}${failed.hint ? ` (${failed.hint})` : ''}`, 'Open Backends').then((c) => c && d.openBackend(id));
+    void vscode.window.showWarningMessage(`Local model ${recipe.label} is set up, but the test failed: ${failed.text}${failed.hint ? ` (${failed.hint})` : ''}`, 'Open Backends').then((c) => c && d.openBackend(id));
   } else {
-    void vscode.window.showInformationMessage(`Local model ready (${id}). Start typing in a code file; press Tab to accept a suggestion.`);
+    void vscode.window.showInformationMessage(`Local model ready (${recipe.label}). Start typing in a code file; press Tab to accept a suggestion.`);
   }
   return { ok: true, backendId: id, steps };
 }
@@ -329,9 +281,9 @@ async function listFiles(dir: string): Promise<{ path: string; bytes: number }[]
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** AI Autocomplete: Remove Downloaded Models. Stops and forgets the managed servers that use a deleted file. */
+/** AI Autocomplete: Remove Downloaded Models. The router's presets drop the deleted files. */
 export async function removeLocalModels(d: SetupDeps): Promise<void> {
-  const dir = modelsDir(d.context);
+  const dir = modelsDir(d.context, d.settings());
   // A partial download that is running now is not offered: deleting it would break that download.
   const files = (await listFiles(dir)).filter((f) => !downloading.has(f.path));
   if (files.length === 0) {
@@ -347,24 +299,21 @@ export async function removeLocalModels(d: SetupDeps): Promise<void> {
   const yes: vscode.MessageItem = { title: 'Delete' };
   const answer = await vscode.window.showWarningMessage(
     `Delete ${picks.length === 1 ? picks[0].label : `${picks.length} files`} (${size(total)})?`,
-    { modal: true, detail: 'A local backend that uses a deleted file stops working until you set it up again.' },
+    { modal: true, detail: 'A local model whose file is deleted stops working until it is downloaded again.' },
     yes,
   );
   if (answer !== yes) return;
-  const managed = parseManaged(d.context.globalState.get(MANAGED_KEY));
   const failed: string[] = [];
   for (const p of picks) {
     try {
-      for (const m of managed.filter((e) => e.file === p.file.path)) {
-        await d.servers.stop(m.backendId);
-        await d.servers.forget(m.backendId);
-      }
       await rm(p.file.path, { force: true });
     } catch (err) {
       d.log.error(`could not delete ${p.file.path}`, err);
       failed.push(p.label);
     }
   }
+  // The presets list downloaded models only: the router stops serving the deleted ones.
+  await d.router.syncPresets();
   if (failed.length > 0) void vscode.window.showErrorMessage(`Could not delete: ${failed.join(', ')}.`);
   else void vscode.window.showInformationMessage(`Deleted ${picks.length === 1 ? picks[0].label : `${picks.length} files`}.`);
 }

@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext): {
   backendsPanel: () => BackendsPanel | undefined;
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
-  /** Test runs only: swaps the recipes setup offers and the servers may start. */
+  /** Test runs only: swaps the recipes setup offers and the router's presets list. */
   local?: { setRecipes(r: Recipe[] | undefined): void };
 } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
@@ -206,7 +206,7 @@ export function activate(context: vscode.ExtensionContext): {
     }),
   );
 
-  // Tests swap in their own recipes, for setup and for the servers it records alike.
+  // Tests swap in their own recipes, for setup and for the presets the router serves alike.
   let testRecipes: readonly Recipe[] | undefined;
   const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
   const servers = new LocalServers({
@@ -224,7 +224,7 @@ export function activate(context: vscode.ExtensionContext): {
   });
   localServers = servers;
   sub(servers);
-  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };
+  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, router: servers.pool, openBackend: (id) => manageBackends({ focus: id }) };
 
   for (const d of registerCommands({
     context,
@@ -267,8 +267,8 @@ export function activate(context: vscode.ExtensionContext): {
     inflight.abortEverything();
     const before = settings;
     const problems = rebuild();
-    // A local backend that became selected starts its server; one no longer selected (or removed) stops it.
-    void servers.selectionChanged(before, settings);
+    // `local` selected starts the router, deselected stops it; a model list change reloads its presets.
+    void servers.settingsChanged(before, settings);
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
@@ -297,8 +297,8 @@ export function activate(context: vscode.ExtensionContext): {
   warnOnce(rebuild());
   migrate();
   status.setLocalLock(settings.privacy.localOnly);
-  // Not awaited: a model can take a minute to load, and activation must not wait for it.
-  void servers.startSelected();
+  // Not awaited: old local backends move to `local`, then the router starts (a model can take a minute to load).
+  void servers.activate();
   warmSoon(vscode.window.activeTextEditor);
   return {
     status,
@@ -318,9 +318,9 @@ export function activate(context: vscode.ExtensionContext): {
   };
 }
 
-/** Stops the llama-servers this window started (windows that adopted one start their own); VS Code waits briefly for the promise. */
+/** Stops the router this window started (windows that adopted it start their own); VS Code waits briefly for the promise. */
 export function deactivate(): Promise<void> | undefined {
   const servers = localServers;
   localServers = undefined;
-  return servers?.stopAll();
+  return servers?.stopHere();
 }

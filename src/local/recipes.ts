@@ -104,7 +104,7 @@ const SAFE_SEGMENT = (s: string): boolean => s !== '' && s !== '.' && s !== '..'
  * Where the recipe's file goes under the models folder: `<owner>/<name>/<file>`. Undefined when a segment is empty,
  * `.` or `..`, or holds a slash, backslash or colon, so the path can never leave that folder.
  */
-export function modelPathSegments(r: Recipe): string[] | undefined {
+export function modelPathSegments(r: Pick<Recipe, 'repo' | 'file'>): string[] | undefined {
   const segments = [...r.repo.split('/'), r.file];
   return segments.length === 3 && segments.every(SAFE_SEGMENT) ? segments : undefined;
 }

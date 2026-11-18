@@ -112,8 +112,11 @@ export class RouterClient {
   }
 }
 
+/** What answers on a port: our router, a llama-server still loading (503), or neither. */
+export type PortState = 'ours' | 'loading' | 'none';
+
 /** `ours` when a router with every name answers on the port, `loading` while /health says 503, else `none`. */
-export async function probeRouter(port: number, names: string[], fetchFn: typeof fetch = fetch): Promise<'ours' | 'loading' | 'none'> {
+export async function probeRouter(port: number, names: string[], fetchFn: typeof fetch = fetch): Promise<PortState> {
   const base = `http://127.0.0.1:${port}`;
   try {
     const health = await fetchFn(`${base}/health`, { signal: AbortSignal.timeout(SHORT_MS) });

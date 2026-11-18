@@ -19,10 +19,12 @@ interface Api {
 const ROOT = join(__dirname, '..', '..', '..');
 const FIXTURE = join(ROOT, 'test', 'integration', 'fixtures', 'fake-llama-server.mjs');
 /** `.vscode-test.mjs` pins the user data folder; the extension's global storage is in it. */
-const MODELS = join(ROOT, '.vscode-test', 'user-data', 'User', 'globalStorage', 'raboo.ai-autocomplete', 'models');
+const STORAGE = join(ROOT, '.vscode-test', 'user-data', 'User', 'globalStorage', 'raboo.ai-autocomplete');
+const MODELS = join(STORAGE, 'models');
+const PRESETS = join(STORAGE, 'presets.ini');
 const FILE_PATH = '/files/test-model.gguf';
 const BYTES = Buffer.from(Array.from({ length: 64 * 1024 }, (_, i) => (i * 31 + 7) % 256));
-const BACKEND_ID = 'local-test';
+const BACKEND_ID = 'local';
 const EXIT_ENV = 'FAKE_LLAMA_SERVER_EXIT';
 const EXIT_ONCE_ENV = 'FAKE_LLAMA_SERVER_EXIT_ONCE';
 const STARTS_ENV = 'FAKE_LLAMA_SERVER_STARTS';
@@ -108,7 +110,7 @@ suite('Local model helper', () => {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   });
 
-  test('setup downloads the model, starts llama-server, writes and selects the backend, and completions work', async () => {
+  test('setup downloads the model, starts the llama-server router, writes and selects local, and completions work', async () => {
     const out = await setUp();
     assert.ok(out?.ok, `setup failed: ${JSON.stringify(out)}`);
     assert.equal(out.backendId, BACKEND_ID);
@@ -122,6 +124,7 @@ suite('Local model helper', () => {
     assert.match(String(e?.baseUrl), /^http:\/\/127\.0\.0\.1:\d+$/);
     assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('completions.backend'), BACKEND_ID);
     assert.equal(await health(portOf(e)), 200);
+    assert.match(readFileSync(PRESETS, 'utf8'), /\[test-coder\]\nmodel = .*test-model\.gguf\nc = 2048\nnp = 1\n/);
 
     await sleep(SETTLE_MS);
     const editor = await showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content: 'function add(a: number, b: number) {\n  return ' }));
@@ -130,29 +133,12 @@ suite('Local model helper', () => {
     assert.ok(editor.document.getText().endsWith('return a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
   });
 
-  test('second run: no download, the server starts again and the backend is replaced', async () => {
+  test('second run: no download, the router keeps running and local is written once', async () => {
     const out = await setUp(true);
     assert.ok(out?.ok, `setup failed: ${JSON.stringify(out)}`);
     assert.equal(downloads().length, 0, `requests: ${JSON.stringify(mock.requests.map((r) => r.path))}`);
     assert.equal(userBackends().filter((b) => b.id === BACKEND_ID).length, 1);
     assert.equal(await health(portOf(entry())), 200);
-  });
-
-  test('a failed re-run keeps the backend and its selection, and starts the previous server again', async () => {
-    const backends = JSON.stringify(userBackends());
-    const flag = join(binDir, 'exit-once');
-    writeFileSync(flag, '');
-    process.env[EXIT_ONCE_ENV] = flag;
-    try {
-      const out = await setUp(true);
-      assert.ok(out && !out.ok, `setup did not fail: ${JSON.stringify(out)}`);
-      assert.equal(JSON.stringify(userBackends()), backends);
-      assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('completions.backend'), BACKEND_ID);
-      // The restart runs the fixture again, which works now that the flag file is gone.
-      assert.ok(await healthyWithin(portOf(entry()), 10_000), `the previous server did not come back (backend ${JSON.stringify(entry())})`);
-    } finally {
-      delete process.env[EXIT_ONCE_ENV];
-    }
   });
 
   test('Stop Local Models stops the server', async () => {
@@ -192,8 +178,8 @@ suite('Local model helper', () => {
     const port = portOf(entry());
     const starts = join(binDir, 'starts-adopt');
     writeFileSync(starts, '');
-    // The "other window": the fixture started by hand on the backend's port, with the recipe's alias.
-    const other: ChildProcess = spawn(join(binDir, 'llama-server'), ['--port', String(port), '--alias', 'test-coder'], { stdio: 'ignore' });
+    // The "other window": the fixture started by hand as a router on the backend's port, with the presets file.
+    const other: ChildProcess = spawn(join(binDir, 'llama-server'), ['--port', String(port), '--models-preset', PRESETS], { stdio: 'ignore' });
     try {
       assert.ok(await healthyWithin(port, 10_000), 'the hand-started server did not come up');
       process.env[STARTS_ENV] = starts;
@@ -237,7 +223,12 @@ suite('Local model helper', () => {
   });
 
   test('fails cleanly: a server that exits at once shows the error and writes no backend', async () => {
+    const port = portOf(entry());
     await unconfigure(['backends', 'completions.backend']);
+    // local is gone: its router stops.
+    let down = false;
+    for (const deadline = Date.now() + 10_000; !down && Date.now() < deadline; await sleep(100)) down = !(await healthy(port));
+    assert.ok(down, 'the router kept running after local was removed');
     process.env[EXIT_ENV] = '1';
     try {
       const out = await setUp();

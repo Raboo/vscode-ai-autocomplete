@@ -55,13 +55,13 @@ export function parseExtraArgs(line: string): { args: string[]; refused?: string
       prevFlag = true;
       if (eq > 0) {
         const value = raw.slice(eq + 1);
-        if (value.startsWith('[')) return { args: [], refused: flag };
+        if (/^[[;]/.test(value)) return { args: [], refused: flag };
         args.push(value);
         prevFlag = false;
       }
     } else {
       if (!prevFlag) return { args: [], refused: raw };
-      if (raw.startsWith('[')) return { args: [], refused: raw };
+      if (/^[[;]/.test(raw)) return { args: [], refused: raw };
       args.push(raw);
       prevFlag = false;
     }

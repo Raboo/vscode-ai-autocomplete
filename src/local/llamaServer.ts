@@ -14,26 +14,6 @@ export class LocalRuntimeError extends Error {
   }
 }
 
-/**
- * llama-server's arguments. A recipe that serves Next Edit gets 2 slots (slot 0 for completions, slot 1 for Next Edit,
- * see LlamaCppBackend) sharing twice its context, so each keeps the recipe's context; a completions-only recipe gets 1.
- */
-export function llamaServerArgs(o: { file: string; modelName: string; port: number; contextTokens: number; nextEdit: boolean }): string[] {
-  const slots = o.nextEdit ? 2 : 1;
-  return [
-    '-m', o.file,
-    '--alias', o.modelName,
-    '--host', '127.0.0.1',
-    '--port', String(o.port),
-    '-c', String(o.contextTokens * slots), // slots share -c: each keeps the recipe's context
-    '-ngl', '99',
-    '-fa', 'on',
-    '-np', String(slots),
-    '--cache-reuse', '256',
-    '--no-webui',
-  ];
-}
-
 function listenOn(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -213,36 +193,5 @@ async function healthy(fetchFn: typeof fetch, url: string): Promise<boolean> {
     return res.status === 200;
   } catch {
     return false;
-  }
-}
-
-/** What answers on a port: our llama-server serving `alias`, a llama-server still loading (503), or neither. */
-export type PortState = 'ours' | 'loading' | 'none';
-
-/** Probes `127.0.0.1:<port>`: `/health` 200 and `/v1/models` (or `/props` `model_alias`) naming `alias` is ours. */
-export async function probePort(port: number, alias: string, fetchFn: typeof fetch = fetch): Promise<PortState> {
-  const base = `http://127.0.0.1:${port}`;
-  const get = async (path: string): Promise<{ status: number; json: unknown }> => {
-    const res = await fetchFn(`${base}${path}`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
-    let json: unknown;
-    try {
-      json = res.status === 200 ? await res.json() : undefined;
-    } catch {
-      json = undefined;
-    }
-    if (json === undefined) await res.body?.cancel().catch(() => undefined);
-    return { status: res.status, json };
-  };
-  try {
-    const health = await get('/health');
-    if (health.status === 503) return 'loading';
-    if (health.status !== 200) return 'none';
-    const models = await get('/v1/models');
-    const data = (models.json as { data?: unknown } | undefined)?.data;
-    if (Array.isArray(data) && data.some((m) => (m as { id?: unknown } | null)?.id === alias)) return 'ours';
-    const props = await get('/props');
-    return (props.json as { model_alias?: unknown } | undefined)?.model_alias === alias ? 'ours' : 'none';
-  } catch {
-    return 'none';
   }
 }

@@ -175,6 +175,15 @@ function ports(states: Record<number, PortState>): ServerPoolDeps['probe'] {
 }
 
 describe('ServerPool', () => {
+  test('a recipe that serves Next Edit gets 2 slots and twice its context; a completions-only recipe 1 slot and its own', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const { pool } = setup({ launch });
+    await pool.start(server('a'));
+    await pool.start({ ...server('b', 8013), recipeId: 'qwen2.5-coder-1.5b' });
+    const flag = (args: string[], f: string): string | undefined => args[args.indexOf(f) + 1];
+    expect([flag(launched[0].o.args, '-np'), flag(launched[0].o.args, '-c')]).toEqual(['2', '16384']);
+    expect([flag(launched[1].o.args, '-np'), flag(launched[1].o.args, '-c')]).toEqual(['1', '8192']);
+  });
   test('concurrent starts for one backend give one process', async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const { pool } = setup({ launch });

@@ -184,7 +184,7 @@ export class ServerPool {
       try {
         proc = await this.d.launch({
           binary,
-          args: llamaServerArgs({ file: m.file, modelName: alias, port, contextTokens: recipe.contextTokens }),
+          args: llamaServerArgs({ file: m.file, modelName: alias, port, contextTokens: recipe.contextTokens, nextEdit: recipe.uses.includes('nextEdit') }),
           port,
           log: (line) => this.d.log.debug(`llama-server ${id}: ${line}`),
           spawned: (child) => {

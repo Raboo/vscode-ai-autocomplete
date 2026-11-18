@@ -19,9 +19,9 @@
 
 ### Task 1: Two llama.cpp slots, one per feature
 
-- [x] The local helper starts llama-server with `-np 2` and `-c` = 2 × the recipe's context (each slot keeps the recipe's context).
+- [x] The local helper starts llama-server with `-np 2` and `-c` = 2 × the recipe's context (each slot keeps the recipe's context) when the recipe serves Next Edit; a completions-only recipe gets `-np 1` and its own context.
 - [x] The llama.cpp backend reads `total_slots` from `/props` (with the model detection it already does); when it is exactly 2 (the layout the local helper starts), FIM requests (`/infill`, `/completion` for completions) send `id_slot: 0` and Next Edit raw requests send `id_slot: 1`. With any other count or unknown, no `id_slot` is sent (a user's own `-np 1` server keeps working). A failed request (HTTP, connection or stream error) forgets the count, so it is read again.
-- [x] Unit tests: args contain `-np 2` and the doubled context; bodies carry `id_slot` only with exactly 2 slots; Next Edit uses slot 1.
+- [x] Unit tests: args contain `-np 2` and the doubled context for a Next Edit recipe, `-np 1` and the recipe's context otherwise; bodies carry `id_slot` only with exactly 2 slots; Next Edit uses slot 1.
 - [x] Commit: `feat: separate llama.cpp slots for completions and Next Edit`
 
 ### Task 2: "Why no suggestion?" and local stats

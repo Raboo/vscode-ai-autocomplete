@@ -4,9 +4,14 @@ import { streamOpenAiChat } from './chat';
 import { parseSse } from './sse';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type FimBackend, type FimRequest, type RouteCaps, type ServerInfo } from './types';
 
+const SLOTS_TIMEOUT_MS = 3000;
+const SLOTS_RETRY_MS = 30_000;
+
 export class LlamaCppBackend implements FimBackend {
   /** `total_slots` from the last `/props` read; undefined until then. */
   private totalSlots: number | undefined;
+  private slotsFetch: Promise<void> | undefined;
+  private slotsFailedAt = 0;
 
   constructor(
     readonly config: BackendConfig,
@@ -37,6 +42,8 @@ export class LlamaCppBackend implements FimBackend {
     })) as { model_alias?: unknown; model_path?: unknown; n_ctx?: unknown; total_slots?: unknown; default_generation_settings?: { n_ctx?: unknown } } | null;
     if (typeof props?.total_slots === 'number') {
       this.totalSlots = props.total_slots;
+    } else {
+      this.slotsFailedAt = Date.now(); // this read had no slot count: streamFim does not ask again for 30 s
     }
     let model: string | undefined;
     if (typeof props?.model_alias === 'string' && props.model_alias) {
@@ -55,6 +62,22 @@ export class LlamaCppBackend implements FimBackend {
     };
   }
 
+  /** Reads `/props` once for `total_slots` when no model detection did (settings name the model). Never awaited by a request; its own short timeout, not the request's signal. */
+  private learnSlots(): void {
+    if (this.totalSlots !== undefined || this.slotsFetch || Date.now() - this.slotsFailedAt < SLOTS_RETRY_MS) {
+      return;
+    }
+    this.slotsFetch = this.listModels(new AbortController().signal, SLOTS_TIMEOUT_MS).then(
+      () => {
+        this.slotsFetch = undefined;
+      },
+      () => {
+        this.slotsFetch = undefined;
+        this.slotsFailedAt = Date.now();
+      },
+    );
+  }
+
   async detectModel(signal: AbortSignal): Promise<string | undefined> {
     try {
       return (await this.listModels(signal)).models[0];
@@ -64,6 +87,7 @@ export class LlamaCppBackend implements FimBackend {
   }
 
   async *streamFim(req: FimRequest): AsyncGenerator<string> {
+    this.learnSlots();
     const { payload, sampling } = req;
     const common = {
       ...(req.model ? { model: req.model } : {}),

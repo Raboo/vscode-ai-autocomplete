@@ -38,6 +38,7 @@ async function collect(it: AsyncIterable<string>): Promise<string[]> {
   return out;
 }
 
+const posts = () => m.requests.filter((r) => r.url !== '/props');
 const SSE = ['{"content":"ret"}', '{"content":"urn a"}', '{"content":"","stop":true}'];
 
 describe('LlamaCppBackend', () => {
@@ -63,8 +64,8 @@ describe('LlamaCppBackend', () => {
       ),
     );
     expect(out.join('')).toBe('return a');
-    expect(m.requests[0].url).toBe('/infill');
-    expect(m.requests[0].body).toMatchObject({
+    expect(posts()[0].url).toBe('/infill');
+    expect(posts()[0].body).toMatchObject({
       input_prefix: 'P',
       input_suffix: 'S',
       input_extra: [{ filename: 'x.ts', text: 'X' }],
@@ -79,7 +80,7 @@ describe('LlamaCppBackend', () => {
       t_max_predict_ms: 500,
       min_p: 0.05,
     });
-    expect(m.requests[0].body).not.toHaveProperty('model');
+    expect(posts()[0].body).not.toHaveProperty('model');
   });
 
   test('template route posts /completion with prompt', async () => {
@@ -89,20 +90,20 @@ describe('LlamaCppBackend', () => {
       b.streamFim(req({ model: 'qwen', payload: { route: 'template', prompt: '<fim>x' } })),
     );
     expect(out.join('')).toBe('return a');
-    expect(m.requests[0].url).toBe('/completion');
-    expect(m.requests[0].body.prompt).toBe('<fim>x');
-    expect(m.requests[0].body.model).toBe('qwen');
-    expect(m.requests[0].body).not.toHaveProperty('input_prefix');
-    expect(m.requests[0].body).not.toHaveProperty('temperature');
+    expect(posts()[0].url).toBe('/completion');
+    expect(posts()[0].body.prompt).toBe('<fim>x');
+    expect(posts()[0].body.model).toBe('qwen');
+    expect(posts()[0].body).not.toHaveProperty('input_prefix');
+    expect(posts()[0].body).not.toHaveProperty('temperature');
   });
 
   test('sends Bearer key when set, omits it otherwise, merges config headers', async () => {
     m = await startMockHttp(() => ({ sse: SSE }));
     await collect(new LlamaCppBackend(cfg(m.url, { 'x-a': '1' }), async () => 'k').streamFim(req()));
-    expect(m.requests[0].headers.authorization).toBe('Bearer k');
-    expect(m.requests[0].headers['x-a']).toBe('1');
+    expect(posts()[0].headers.authorization).toBe('Bearer k');
+    expect(posts()[0].headers['x-a']).toBe('1');
     await collect(new LlamaCppBackend(cfg(m.url), async () => undefined).streamFim(req()));
-    expect(m.requests[1].headers.authorization).toBeUndefined();
+    expect(posts()[1].headers.authorization).toBeUndefined();
   });
 
   test('an error event inside the stream throws StreamError', async () => {
@@ -231,7 +232,8 @@ describe('LlamaCppBackend', () => {
       const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
       if (detect) await b.detectModel(new AbortController().signal);
       await collect(b.streamFim(req(r)));
-      return m.requests[m.requests.length - 1].body as Record<string, unknown>;
+      const all = posts();
+      return all[all.length - 1].body as Record<string, unknown>;
     };
     test('with 2 slots completions use slot 0 (infill and completion) and Next Edit slot 1', async () => {
       expect(await run(2, { payload: native })).toMatchObject({ id_slot: 0 });
@@ -242,6 +244,47 @@ describe('LlamaCppBackend', () => {
       expect(await run(1, { slot: 'nextEdit' })).not.toHaveProperty('id_slot');
       expect(await run(undefined, {})).not.toHaveProperty('id_slot');
       expect(await run(2, {}, false)).not.toHaveProperty('id_slot');
+    });
+    describe('without model detection', () => {
+      const props = (m: Mock) => m.requests.filter((r) => r.url === '/props').length;
+      const settle = () => new Promise((r) => setTimeout(r, 50));
+      test('the first request learns the slots, the second carries id_slot', async () => {
+        m = await startMockHttp(({ url }) => (url === '/props' ? { json: { total_slots: 2 } } : { sse: SSE }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        await collect(b.streamFim(req({ model: 'q' })));
+        await settle();
+        await collect(b.streamFim(req({ model: 'q', slot: 'nextEdit' })));
+        const bodies = m.requests.filter((r) => r.url !== '/props').map((r) => r.body as Record<string, unknown>);
+        expect(bodies[0]).not.toHaveProperty('id_slot');
+        expect(bodies[1]).toMatchObject({ id_slot: 1 });
+      });
+      test('concurrent first requests fetch /props once', async () => {
+        m = await startMockHttp(({ url }) => (url === '/props' ? { json: { total_slots: 2 } } : { sse: SSE }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        await Promise.all([collect(b.streamFim(req())), collect(b.streamFim(req())), collect(b.streamFim(req()))]);
+        await settle();
+        expect(props(m)).toBe(1);
+      });
+      test('a failed fetch is not retried within 30 s', async () => {
+        m = await startMockHttp(({ url }) => (url === '/props' ? { status: 500, json: {} } : { sse: SSE }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        const now = vi.spyOn(Date, 'now');
+        try {
+          now.mockReturnValue(1_000_000);
+          await collect(b.streamFim(req()));
+          await settle();
+          now.mockReturnValue(1_020_000);
+          await collect(b.streamFim(req()));
+          await settle();
+          expect(props(m)).toBe(1);
+          now.mockReturnValue(1_031_000);
+          await collect(b.streamFim(req()));
+          await settle();
+          expect(props(m)).toBe(2);
+        } finally {
+          now.mockRestore();
+        }
+      });
     });
   });
 });

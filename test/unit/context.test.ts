@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildFimWindow, buildFimWindowIn, ExtraContextRing, fimLineRange, type LineSource } from '../../src/completion/context';
+import { buildExtraContext, buildFimWindow, buildFimWindowIn, cursorQuery, ExtraContextRing, fimLineRange, identifierTokens, type LineSource } from '../../src/completion/context';
 import { contextCaps } from '../../src/completion/effective';
 
 const doc = (n: number, w = 10) => Array.from({ length: n }, (_, i) => String(i).padStart(w, '0'));
@@ -315,5 +315,78 @@ describe('ExtraContextRing', () => {
     r.add('d', ['xxxx'], 0);
     expect(r.pick(ex('z', 0, 0), 8).map((c) => c.path)).toEqual(['c', 'd']);
     expect(r.pick(ex('z', 0, 0), 12).map((c) => c.path)).toEqual(['c', 'd', 'b']);
+  });
+});
+
+describe('ranking by similarity', () => {
+  test('identifierTokens: lower-cased identifiers of two or more characters', () => {
+    expect([...identifierTokens('const userName = getUser(x); _id + 42')].sort()).toEqual(['_id', 'const', 'getuser', 'username']);
+  });
+
+  test('cursorQuery takes the last 30 prefix lines and the first 10 suffix lines', () => {
+    const prefix = Array.from({ length: 40 }, (_, i) => `p${i}`).join('\n');
+    const suffix = Array.from({ length: 20 }, (_, i) => `s${i}`).join('\n');
+    const q = cursorQuery(prefix, suffix);
+    expect(q.has('p9')).toBe(false);
+    expect(q.has('p10')).toBe(true);
+    expect(q.has('p39')).toBe(true);
+    expect(q.has('s9')).toBe(true);
+    expect(q.has('s10')).toBe(false);
+  });
+
+  test('picks the overlapping chunk over a newer unrelated one', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('related', ['function parseInvoice(invoiceTotal) {}'], 0);
+    r.add('unrelated', ['let colorPalette = brightness * 3;;'], 0);
+    const budget = 'function parseInvoice(invoiceTotal) {}'.length;
+    expect(r.pick(ex('z', 0, 0), budget, identifierTokens('const t = parseInvoice(invoiceTotal)')).map((c) => c.path)).toEqual(['related']);
+  });
+
+  test('chosen chunks keep ring order, not score order', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('a', ['alpha beta gamma'], 0);
+    r.add('b', ['alpha'], 0);
+    r.add('c', ['zzz yyy'], 0);
+    // b scores lower than a but both are chosen; the ring order (a, b) is kept.
+    expect(r.pick(ex('z', 0, 0), 1e6, identifierTokens('alpha beta gamma')).map((c) => c.path)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('ties break by recency and zero-overlap chunks fill leftover budget newest first', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('old0', ['xxxx'], 0);
+    r.add('hit', ['beta'], 0);
+    r.add('new0', ['yyyy'], 0);
+    r.add('newer0', ['zzzz'], 0);
+    // Room for two: the overlapping chunk, then the newest zero-overlap one.
+    expect(r.pick(ex('z', 0, 0), 8, identifierTokens('beta')).map((c) => c.path)).toEqual(['hit', 'newer0']);
+  });
+
+  test('the budget is respected with a query', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('a', ['alpha alpha'], 0);
+    r.add('b', ['alpha'], 0);
+    const got = r.pick(ex('z', 0, 0), 6, identifierTokens('alpha'));
+    expect(got.map((c) => c.path)).toEqual(['b']);
+    expect(got.reduce((n, c) => n + c.text.length, 0)).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('buildExtraContext', () => {
+  const recent = (text: string) => (maxChars: number) => (text.length <= maxChars ? { path: 'recent-edits.diff', text } : undefined);
+
+  test('recent edits come last and count toward the budget', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('a', ['xxxx'], 0);
+    r.add('b', ['yyyy'], 0);
+    const got = buildExtraContext(r, ex('z', 0, 0), 10, new Set(), recent('+ab'));
+    expect(got.map((c) => c.path)).toEqual(['b', 'recent-edits.diff']);
+    expect(got.reduce((n, c) => n + c.text.length, 0)).toBeLessThanOrEqual(10);
+  });
+
+  test('without recent edits only ring chunks are used', () => {
+    const r = new ExtraContextRing({ chunkLines: 1 });
+    r.add('a', ['xxxx'], 0);
+    expect(buildExtraContext(r, ex('z', 0, 0), 10, new Set(), () => undefined).map((c) => c.path)).toEqual(['a']);
+    expect(buildExtraContext(r, ex('z', 0, 0), 10, new Set()).map((c) => c.path)).toEqual(['a']);
   });
 });

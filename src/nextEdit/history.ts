@@ -1,4 +1,5 @@
 import { structuredPatch, type StructuredPatchHunk } from 'diff';
+import type { ContextFile } from '../types';
 import type { LineSpan } from './region';
 
 /** One zero-context change. The starts are 0-based line indexes where the change begins in the old and new text; an empty side marks where lines would go. */
@@ -80,6 +81,37 @@ function render(path: string, hunks: StructuredPatchHunk[]): string {
 export function renderDiff(path: string, before: string, after: string): string | undefined {
   const hunks = hunksOf(path, before, after);
   return hunks === undefined || hunks.length === 0 ? undefined : render(path, hunks);
+}
+
+/** The path of the recent-edits entry in completion extra context. */
+export const RECENT_EDITS_PATH = 'recent-edits.diff';
+
+function hunkHeader(h: DiffHunk): string {
+  // Standard numbering, 1-based: an empty range names the line before it.
+  const oldStart = h.oldLines.length === 0 ? h.oldStart : h.oldStart + 1;
+  const newStart = h.newLines.length === 0 ? h.newStart : h.newStart + 1;
+  return `@@ -${oldStart},${h.oldLines.length} +${newStart},${h.newLines.length} @@`;
+}
+
+/**
+ * The last `maxHunks` hunks of the entries (oldest first) as one unified diff, newest last, for completion extra context.
+ * The oldest hunks are dropped until it fits `maxChars`; `undefined` when there are no edits or none fits.
+ */
+export function recentEditsFile(entries: DiffEntry[], maxHunks: number, maxChars: number): ContextFile | undefined {
+  const all = entries.flatMap((e, entry) => e.hunks.map((hunk) => ({ entry, path: e.path, hunk })));
+  for (let n = Math.min(maxHunks, all.length); n > 0; n--) {
+    const out: string[] = [];
+    let current = -1;
+    for (const { entry, path, hunk } of all.slice(all.length - n)) {
+      // Each entry's hunks are numbered against that entry's own base text, so every entry gets its own file header.
+      if (entry !== current) out.push(`--- ${path}`, `+++ ${path}`);
+      current = entry;
+      out.push(hunkHeader(hunk), ...hunk.oldLines.map((l) => `-${l}`), ...hunk.newLines.map((l) => `+${l}`));
+    }
+    const text = out.join('\n');
+    if (text.length <= maxChars) return { path: RECENT_EDITS_PATH, text };
+  }
+  return undefined;
 }
 
 interface Entry {

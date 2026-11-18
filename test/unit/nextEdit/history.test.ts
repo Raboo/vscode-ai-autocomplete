@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { EditHistory, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
+import { EditHistory, recentEditsFile, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
 
 test('renderDiff renders zero-context hunks with 1-based numbers', () => {
   expect(renderDiff('f.py', 'a\nb\nc\n', 'a\nB\nc\n')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
@@ -346,4 +346,31 @@ test('maxEntries can be lowered', () => {
   lines[5] = 'L5';
   h.commit('f', lines.join('\n') + '\n');
   expect(h.entries().map((e) => e.text.split('\n')[3])).toEqual(['-l4', '-l5']);
+});
+
+test('recentEditsFile: the last 3 hunks across files, newest last, as one unified diff', () => {
+  const h = new EditHistory({ maxEntries: 10 });
+  h.open('a.ts', 'a1\na2\na3\na4\na5\n');
+  h.commit('a.ts', 'A1\na2\na3\na4\nA5\n'); // two hunks
+  h.open('b.ts', 'b1\nb2\n');
+  h.commit('b.ts', 'b1\nB2\n');
+  h.commit('a.ts', 'A1\na2\nnew\na3\na4\nA5\n'); // insertion
+  const f = recentEditsFile(h.entries(), 3, 1e6);
+  expect(f?.path).toBe('recent-edits.diff');
+  expect(f?.text).toBe(
+    ['--- a.ts', '+++ a.ts', '@@ -5,1 +5,1 @@', '-a5', '+A5', '--- b.ts', '+++ b.ts', '@@ -2,1 +2,1 @@', '-b2', '+B2', '--- a.ts', '+++ a.ts', '@@ -2,0 +3,1 @@', '+new'].join('\n'),
+  );
+});
+
+test('recentEditsFile drops the oldest hunks to fit, and is undefined when nothing fits or there are no edits', () => {
+  const h = new EditHistory();
+  h.open('a', 'x\ny\n');
+  h.commit('a', 'X\ny\n');
+  h.open('b', 'p\n');
+  h.commit('b', 'P\n');
+  const full = recentEditsFile(h.entries(), 3, 1e6)!.text;
+  const last = recentEditsFile(h.entries(), 3, full.length - 1)!.text;
+  expect(last).toBe('--- b\n+++ b\n@@ -1,1 +1,1 @@\n-p\n+P');
+  expect(recentEditsFile(h.entries(), 3, 5)).toBeUndefined();
+  expect(recentEditsFile([], 3, 1e6)).toBeUndefined();
 });

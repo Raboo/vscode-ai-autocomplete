@@ -41,10 +41,10 @@
 
 ### Task 4: Better completion context
 
-- [ ] Extra-context chunks are ranked by token overlap (Jaccard over identifier tokens) with the lines around the cursor; the chosen chunks keep their existing stable order in the prompt.
-- [ ] The last 3 edit hunks of the current file and other workspace files from Next Edit's history (when Next Edit tracking is on, else none) are added as one extra-context entry named `recent-edits.diff`, within the existing extra-context budget, placed last (most volatile).
-- [ ] Unit tests for ranking and the budget; existing prompt-stability tests still pass.
-- [ ] Commit: `feat: rank extra context by similarity and include recent edits`
+- [x] Extra-context chunks are ranked by token overlap (Jaccard over identifier tokens) with the lines around the cursor; the chosen chunks keep their existing stable order in the prompt.
+- [x] The last 3 edit hunks of the current file and other workspace files from Next Edit's history (when Next Edit tracking is on, else none) are added as one extra-context entry named `recent-edits.diff`, within the existing extra-context budget, placed last (most volatile).
+- [x] Unit tests for ranking and the budget; existing prompt-stability tests still pass.
+- [x] Commit: `feat: rank extra context by similarity and include recent edits`
 
 ### Task 5: Rename `fim.*` settings to `completions.*`
 

@@ -12,11 +12,12 @@ import { ThinkingError } from '../../completion/stream';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
+import type { ContextFile } from '../../types';
 import { decorationPlan, displayFor } from '../decorations';
 import { toItemText, type LineEdit } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
 import type { NextEditFormat, NextEditInput } from '../formats/format';
-import { EditHistory, type RecentSnippets } from '../history';
+import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
 import { nextEditBudgets } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
@@ -38,6 +39,9 @@ export interface NextEditDeps {
 }
 
 type Timer = ReturnType<typeof setTimeout>;
+
+/** Edit hunks completions get as extra context. */
+const RECENT_EDIT_HUNKS = 3;
 
 const samePos = (a: { line: number; character: number }, b: { line: number; character: number }): boolean => a.line === b.line && a.character === b.character;
 
@@ -219,6 +223,14 @@ export class NextEditController implements vscode.Disposable {
     this.skipped.clear();
     this.history.clear();
     this.d.snippets.clear();
+  }
+
+  /**
+   * The last edit hunks across workspace files as one extra-context entry for completions, within `maxChars`. `undefined` while
+   * Next Edit is off (no history is kept then). The history only holds files completions may use (see eligible()).
+   */
+  recentEdits(maxChars: number): ContextFile | undefined {
+    return this.tracking() ? recentEditsFile(this.history.entries(), RECENT_EDIT_HUNKS, maxChars) : undefined;
   }
 
   /** Next Edit is on: only then are snapshots, history and idle timers kept (reset() re-snapshots when it is turned on). */

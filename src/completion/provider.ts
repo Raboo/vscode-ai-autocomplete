@@ -12,7 +12,7 @@ import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capab
 import { toItemText, type NextEditShow } from '../nextEdit/diff';
 import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
-import { buildFimWindowIn, type ExtraContextRing, type LineSource } from './context';
+import { buildExtraContext, buildFimWindowIn, cursorQuery, type ExtraContextRing, type LineSource } from './context';
 import { docPath } from './contextTracker';
 import { DetectedModels } from './detectedModels';
 import { contextCaps, resolveFim } from './effective';
@@ -53,7 +53,7 @@ export interface FimDeps {
   /** The last outcomes and the session counts (in memory only). */
   outcomes: OutcomeLog;
   /** Next Edit's result to show instead of FIM, and where FIM's own outcome goes. */
-  nextEdit?: Pick<NextEditController, 'itemFor' | 'fimResult' | 'rejected'>;
+  nextEdit?: Pick<NextEditController, 'itemFor' | 'fimResult' | 'rejected' | 'recentEdits'>;
 }
 
 /** A request that passed every check and is about to be sent. */
@@ -353,7 +353,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
 
     // The extra-context ring names files the same way, so the current file's own chunks are left out.
     const filePath = docPath(doc.uri);
-    const extra = fim.extraContext ? this.d.ring.pick({ path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars) : [];
+    // Ranked by the identifiers around the cursor; Next Edit's recent edits (only while it tracks them) go last.
+    const extra = fim.extraContext
+      ? buildExtraContext(this.d.ring, { path: filePath, startLine: win.startLine, endLine: win.endLine }, caps.extraChars, cursorQuery(win.prefix, win.suffix), (max) => this.d.nextEdit?.recentEdits(max))
+      : [];
     const multiline = shouldCompleteMultiline(fim.multiline, linePrefix, lineSuffix, doc.languageId);
     // Not linked to the VS Code token: a newer keystroke may join this request. It is aborted by a newer request for this uri.
     const ctl = new AbortController();

@@ -12,7 +12,7 @@ import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capab
 import { toItemText, type NextEditShow } from '../nextEdit/diff';
 import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
-import { buildFimWindow, type ExtraContextRing } from './context';
+import { buildFimWindowIn, type ExtraContextRing, type LineSource } from './context';
 import { docPath } from './contextTracker';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
@@ -209,7 +209,13 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     // The window and the cache key use values that do not depend on the model (only a template/preset depends on it).
     const early = resolveFim(backend.config, undefined, s).values;
     const caps = contextCaps(early.contextTokens);
-    const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
+    // Only the lines the window may use are read: not the whole document on every keystroke.
+    const lines: LineSource = {
+      lineCount: doc.lineCount,
+      text: (first, last) => doc.getText(new vscode.Range(first, 0, last, doc.lineAt(last).text.length)),
+      offsetAt: (l, character) => doc.offsetAt(new vscode.Position(l, character)),
+    };
+    const win = buildFimWindowIn(lines, pos.line, pos.character, { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
     // The version the window was read from: FIM's outcome is reported to Next Edit for it.
     const version = doc.version;
     const uri = doc.uri.toString();

@@ -11,7 +11,9 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md) | released in [v0.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.4.0) |
 | 3c. Backend roles | Use for checkboxes per backend (Completions / Next Edit), per-use model fields and pickers, a Next Edit check in Test, Next Edit-only models kept out of ghost text | [Phase 3c plan](superpowers/plans/2026-11-16-backend-roles.md), [design](superpowers/specs/2026-11-16-backend-roles-design.md) | released in [v0.5.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.5.0) |
 | 3d. LM Studio MLX fixes | The leading space MLX drops from completions, the StopIteration error at the token limit | [plan](superpowers/plans/2026-11-16-lmstudio-mlx-fixes.md), [design](superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md) | released in [v0.5.1](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.5.1) |
-| 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | [plan](superpowers/plans/2026-11-16-local-model-helper.md), [design](superpowers/specs/2026-11-16-local-model-helper-design.md) | implemented on `feat/local-models` (not merged or released) |
+| 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | [plan](superpowers/plans/2026-11-16-local-model-helper.md), [design](superpowers/specs/2026-11-16-local-model-helper-design.md) | released in [v0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.6.0) |
+| 4b. Polish before publish | Settings renamed to `completions.*`, status tooltip stats and Why No Suggestion?, Next Edit kept while typing, Get Started walkthrough, local llama.cpp warm-up | [plan](superpowers/plans/2026-11-18-polish-before-publish.md) | released in [v0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.6.0) |
+| 4c. Local Models page | One llama-server router with Models in memory, the Manage Local Models page, Add model from Hugging Face, per-model settings, models folder, token, update checks | [plan](superpowers/plans/2026-11-18-local-models-page.md), [design](superpowers/specs/2026-11-18-local-models-page-design.md) | implemented on `feat/local-models-page` (not merged or released) |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -100,3 +102,23 @@ Phase 4 (check before merging the `feat/local-models` branch; [plan](superpowers
 - Stop Local Models (with two windows open: both lose the server, and neither starts it again).
 - Remove Downloaded Models.
 - A cancelled download resumes.
+
+0.6.0 polish (check on the released `.vsix`):
+
+- Settings moved from `fim.*` to `completions.*` in user settings; the old keys are gone and completions behave the same.
+- The status bar tooltip shows the stats, and **Why No Suggestion?** explains an empty result.
+- Next Edit kept while typing: an edit that is still valid stays shown while you type matching text.
+- The Get Started walkthrough opens and its steps complete.
+- Warm-up on local llama.cpp: switching files and accepting a suggestion makes the next one fast.
+
+Phase 4c (check before merging the `feat/local-models-page` branch; [plan](superpowers/plans/2026-11-18-local-models-page.md)):
+
+- Real llama-server, Sweep 1.5B for both completions and Next Edit.
+- Qwen2.5-Coder 3B for completions with Sweep for Next Edit at Models in memory 1 (the swap warning shows, swaps are visible in the log) and 2 (no swaps).
+- An added model from a gated repo, with and without a token.
+- Moving the models folder (files move, the router keeps working).
+- Two windows sharing the router.
+- Update of an added model: Check for update, then Update; the old file keeps working until the new one is checked.
+- Remove from list and Hide of a model `local` uses: the selection is cleared and the page says so.
+- Restart from the page brings the router back with the same models.
+- Remove Downloaded Models offers leftover files the model list no longer names.

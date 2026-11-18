@@ -69,9 +69,13 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
   - `recipes.ts`: the curated GGUF recipes (Hugging Face repo, pinned revision, file, size, sha256, licence, model name) and the memory check;
   - `runtimes.ts`: finding `llama-server` (settings path, PATH, usual install places) and the install hints;
   - `download.ts`: the resumable, sha256-checked download;
-  - `llamaServer.ts`: llama-server arguments, free port choice, health polling; `serverPool.ts`: the servers VS Code started (start, stop, start again for selected backends);
-  - `backendEntry.ts`: the backend entry a recipe writes, backend ids and the managed-server records kept in global state;
-  - `vscode/servers.ts`: the pool wired to VS Code (global state, user settings); `vscode/setup.ts`: the Set Up Local Model and Remove Downloaded Models flows.
+  - `llamaServer.ts`: free port choice, the llama-server process and health polling; `router.ts`: the router's arguments, presets file rendering and the `RouterClient` (`/models`, load, unload); `serverPool.ts`: the one router VS Code started (start, stop, restart, adopt, models in memory);
+  - `modelList.ts`: merging the built-in recipes with `local.models` (changes, hidden, added) and its problems; `extraArgs.ts`: parsing and refusing extra llama-server arguments; `moveFiles.ts`: moving model files when the models folder changes;
+  - `huggingFace.ts`: Hugging Face API calls (commit, GGUF files, sha256, update check), the token header only for `huggingface.co`;
+  - `backendEntry.ts`: the `local` backend entry, backend ids and the router record kept in global state; `migrate.ts`: the one-time move from `local-<recipe>` backends to `local`;
+  - `page/`: the pure logic of the Local Models page: `protocol.ts` (messages and views), `state.ts` (page state), `edits.ts` (settings edits for save, use, hide/remove, add);
+  - `vscode/servers.ts`: the router wired to VS Code (global state, user settings, migration); `vscode/setup.ts`: downloads, Use, the one-button setup and Remove Downloaded Models; `vscode/localModelsActions.ts`: every message of the page;
+  - `src/ui/localModelsPanel.ts` hosts the page, and `src/webview/localModels/` is the page itself (`main.ts`, pure `render.ts`, `style.css`); design: `docs/superpowers/specs/2026-11-18-local-models-page-design.md`.
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 

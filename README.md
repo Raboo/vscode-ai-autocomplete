@@ -15,6 +15,8 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 - Run **AI Autocomplete: Set Up Local Model** from the Command Palette and pick a runtime and a model, or
 - run **AI Autocomplete: Manage Backends**, press **+ Add backend** and connect a server you already run.
 
+New here? **Get Started with AI Autocomplete** (Command Palette: *Welcome: Open Walkthrough...*) walks through these steps.
+
 Then start typing in a code file and press `Tab` to accept a suggestion.
 
 ## How it looks

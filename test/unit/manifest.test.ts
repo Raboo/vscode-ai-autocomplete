@@ -152,3 +152,26 @@ test('fim.* is renamed to completions.*: the old keys stay registered (so they c
   expect(fields).not.toContain('fim');
   expect(JSON.stringify(pkg.contributes.configuration)).not.toMatch(/#aiAutocomplete\.fim\.|fimModel/);
 });
+
+test('the icon is a PNG and ships', () => {
+  expect(pkg.icon).toBe('images/icon.png');
+  expect(pkg.galleryBanner).toEqual({ color: '#0b1530', theme: 'dark' });
+  expect([...readFileSync(pkg.icon).subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  expect(readFileSync('.vscodeignore', 'utf8')).toMatch(/^!images\/\*\*$/m);
+});
+
+test('the Get started walkthrough: media exists and ships, command links name real commands', () => {
+  const [w] = pkg.contributes.walkthroughs;
+  expect(w.id).toBe('getStarted');
+  expect(w.steps.length).toBeGreaterThanOrEqual(4);
+  const ignore = readFileSync('.vscodeignore', 'utf8');
+  const own = new Set((pkg.contributes.commands as { command: string }[]).map((c) => c.command));
+  const workbench = new Set(['workbench.action.openSettings']);
+  for (const step of w.steps) {
+    const media = step.media.image ?? step.media.markdown;
+    expect(existsSync(media), step.id).toBe(true);
+    expect(ignore, step.id).toContain(`!${media.split('/')[0]}/**`);
+    for (const m of (step.description as string).matchAll(/\(command:([^)?]+)/g)) expect(own.has(m[1]) || workbench.has(m[1]), `${step.id}: ${m[1]}`).toBe(true);
+    for (const e of (step.completionEvents ?? []) as string[]) expect(own.has(e.replace('onCommand:', '')), e).toBe(true);
+  }
+});

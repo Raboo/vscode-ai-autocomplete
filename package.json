@@ -2,6 +2,11 @@
   "name": "ai-autocomplete",
   "displayName": "AI Autocomplete",
   "publisher": "raboo",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0b1530",
+    "theme": "dark"
+  },
   "version": "0.5.1",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
@@ -736,6 +741,60 @@
         "command": "aiAutocomplete.nextEditDismiss",
         "key": "escape",
         "when": "editorTextFocus && aiAutocomplete.nextEditPending && !editorHasMultipleSelections && !suggestWidgetVisible && !inSnippetMode && !inlineSuggestionVisible"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "getStarted",
+        "title": "Get started with AI Autocomplete",
+        "description": "Pick a model, see your first completion and learn how your code stays private.",
+        "steps": [
+          {
+            "id": "chooseModel",
+            "title": "Choose a model",
+            "description": "Run a model on this machine, or connect a server you already run.\n[Set Up Local Model](command:aiAutocomplete.setUpLocalModel)\n[Connect a Server](command:aiAutocomplete.manageBackends?%7B%22add%22%3Atrue%7D)",
+            "media": {
+              "image": "images/backends-page.png",
+              "altText": "The Backends page listing configured backends"
+            },
+            "completionEvents": [
+              "onCommand:aiAutocomplete.setUpLocalModel",
+              "onCommand:aiAutocomplete.manageBackends"
+            ]
+          },
+          {
+            "id": "seeCompletion",
+            "title": "See a completion",
+            "description": "Type in a code file. Grey ghost text appears after the cursor; press Tab to accept it. Press Alt+\\ to ask for a suggestion on demand.",
+            "media": {
+              "image": "images/completion.png",
+              "altText": "Ghost text completing a line of code"
+            },
+            "completionEvents": [
+              "onCommand:aiAutocomplete.accepted"
+            ]
+          },
+          {
+            "id": "tryNextEdit",
+            "title": "Try Next Edit",
+            "description": "Pick a backend for Next Edit, then rename something. The next place that needs the same change is suggested: Tab jumps there and applies it.\n[Select Next Edit Backend](command:aiAutocomplete.selectNextEditBackend)",
+            "media": {
+              "image": "images/next-edit.png",
+              "altText": "A Next Edit suggestion in the editor"
+            },
+            "completionEvents": [
+              "onCommand:aiAutocomplete.selectNextEditBackend"
+            ]
+          },
+          {
+            "id": "keepPrivate",
+            "title": "Keep code private",
+            "description": "Nothing leaves your machine except requests to the backends you configure, and there is no telemetry.\n[Local-only mode](command:workbench.action.openSettings?%22aiAutocomplete.privacy.localOnly%22)\n[Excluded files](command:workbench.action.openSettings?%22aiAutocomplete.completions.disableInFiles%22)",
+            "media": {
+              "markdown": "media/walkthrough/privacy.md"
+            }
+          }
+        ]
       }
     ]
   },

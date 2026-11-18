@@ -77,9 +77,11 @@ export async function useNextEditBackend(id: string): Promise<void> {
 export function offerFirstBackend(message: string): void {
   const local = 'Set Up Local Model';
   const server = 'Connect a Server';
-  void vscode.window.showInformationMessage(message, local, server).then((c) => {
+  const start = 'Get Started';
+  void vscode.window.showInformationMessage(message, local, server, start).then((c) => {
     if (c === local) return vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
     if (c === server) return vscode.commands.executeCommand('aiAutocomplete.manageBackends', { add: true });
+    if (c === start) return vscode.commands.executeCommand('workbench.action.openWalkthrough', `${EXTENSION_ID}#getStarted`, false);
     return undefined;
   });
 }

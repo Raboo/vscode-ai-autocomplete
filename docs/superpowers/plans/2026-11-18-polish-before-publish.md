@@ -55,14 +55,14 @@
 
 ### Task 6: Icon
 
-- [ ] `images/icon.png` 256×256: a rounded square in a deep blue, a text cursor with a faded ghost-text line after it, drawn with a small CoreGraphics script kept in `scripts/icon/`. `package.json` `icon`, `galleryBanner` `{ color: "#0b1530", theme: "dark" }`, and `.vscodeignore` ships it.
-- [ ] Commit: `docs: extension icon`
+- [x] `images/icon.png` 256×256: a rounded square in a deep blue, a text cursor with a faded ghost-text line after it, drawn with a small CoreGraphics script kept in `scripts/icon/`. `package.json` `icon`, `galleryBanner` `{ color: "#0b1530", theme: "dark" }`, and `.vscodeignore` ships it.
+- [x] Commit: `docs: extension icon`
 
 ### Task 7: Get started walkthrough
 
-- [ ] `contributes.walkthroughs` "Get started with AI Autocomplete": set up a local model (button runs Set Up Local Model) or connect a server (opens the Backends page); see a completion (image `images/completion.png`); try Next Edit (image `images/next-edit.png`, button Select Next Edit Backend); privacy (local only setting, excluded files).
-- [ ] The first-run notice gets a third button "Get Started" that opens the walkthrough.
-- [ ] Commit: `feat: Get started walkthrough`
+- [x] `contributes.walkthroughs` "Get started with AI Autocomplete": set up a local model (button runs Set Up Local Model) or connect a server (opens the Backends page); see a completion (image `images/completion.png`); try Next Edit (image `images/next-edit.png`, button Select Next Edit Backend); privacy (local only setting, excluded files).
+- [x] The first-run notice gets a third button "Get Started" that opens the walkthrough.
+- [x] Commit: `feat: Get started walkthrough`
 
 ### Task 8: Next Edit keeps its suggestion while you type it
 

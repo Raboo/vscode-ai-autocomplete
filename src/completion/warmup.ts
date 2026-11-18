@@ -77,6 +77,16 @@ export class WarmLimiter {
     return this.at.get(uri);
   }
 
+  /** A closed document's prompt cache is gone from the server's point of view; a document reopened under the same URI is warmed again. */
+  forget(uri: string): void {
+    this.at.delete(uri);
+  }
+
+  /** New settings may mean another backend or model, whose cache holds none of these documents. */
+  clear(): void {
+    this.at.clear();
+  }
+
   mark(uri: string): void {
     const t = this.now();
     for (const [k, v] of this.at) if (t - v > WARM_INTERVAL_MS) this.at.delete(k);

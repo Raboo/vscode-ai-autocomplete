@@ -176,6 +176,7 @@ export function activate(context: vscode.ExtensionContext): {
   };
   sub(vscode.window.onDidChangeActiveTextEditor(warmSoon));
   sub({ dispose: () => clearTimeout(warmTimer) });
+  sub(vscode.workspace.onDidCloseTextDocument((doc) => provider.documentClosed(doc.uri.toString())));
 
   const panelDeps: BackendsPanelDeps = {
     context,
@@ -275,6 +276,7 @@ export function activate(context: vscode.ExtensionContext): {
     // The shown outcome (e.g. "no completion template", "retrying in N s") belongs to the old settings.
     provider.clearError();
     provider.forgetLogged();
+    provider.forgetWarmed();
     status.setLocalLock(settings.privacy.localOnly);
     status.refresh();
     warnOnce(problems);

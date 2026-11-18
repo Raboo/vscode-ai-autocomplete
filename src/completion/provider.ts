@@ -128,6 +128,16 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     this.logged.clear();
   }
 
+  /** Settings changed: the backend may be another one, so every document can be warmed again. */
+  forgetWarmed(): void {
+    this.warmed.clear();
+  }
+
+  /** A closed document can be warmed again when it is reopened (an untitled one reuses its URI). */
+  documentClosed(uri: string): void {
+    this.warmed.forget(uri);
+  }
+
   /** The model detected for the backend's current instance, if any; read-only, never fetches. */
   detectedModel(backendId: string): string | undefined {
     const backend = this.d.getBackend(backendId);

@@ -73,6 +73,16 @@ describe('shouldPrefetch', () => {
 });
 
 describe('WarmLimiter', () => {
+  test('forget and clear let a document be warmed again', () => {
+    const l = new WarmLimiter(() => 0);
+    l.mark('a');
+    l.mark('b');
+    l.forget('a');
+    expect(l.last('a')).toBeUndefined();
+    expect(l.last('b')).toBe(0);
+    l.clear();
+    expect(l.last('b')).toBeUndefined();
+  });
   test('remembers when each document was warmed', () => {
     let now = 0;
     const l = new WarmLimiter(() => now);

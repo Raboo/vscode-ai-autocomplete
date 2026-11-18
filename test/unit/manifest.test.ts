@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { FIM_LIMITS, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
+import { DEFAULT_DISABLE_IN_FILES, FIM_LIMITS, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+/** Every setting, from one configuration object or from titled sections. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const settingProps: Record<string, any> = Object.assign({}, ...[pkg.contributes.configuration].flat().map((s: { properties: object }) => s.properties));
 test('identity', () => {
   expect(pkg.publisher).toBe('raboo'); expect(pkg.name).toBe('ai-autocomplete');
   expect(pkg.license).toBe('Apache-2.0'); expect(pkg.author.name).toBe('Elias Abacioglu');
@@ -49,13 +52,13 @@ test('Tab and Esc act on a pending Next Edit decoration only, never over a sugge
   ]);
 });
 test('the backends setting links to the Backends page', () => {
-  const backends = pkg.contributes.configuration.properties['aiAutocomplete.backends'];
+  const backends = settingProps['aiAutocomplete.backends'];
   expect(backends.markdownDescription.startsWith('[Manage backends](command:aiAutocomplete.manageBackends)')).toBe(true);
   const manage = (pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.manageBackends');
   expect(manage?.title).toBe('Manage Backends');
 });
 test('backends schema fim limits match FIM_LIMITS', () => {
-  const props = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.fim.properties;
+  const props = settingProps['aiAutocomplete.backends'].items.properties.fim.properties;
   for (const [key, lim] of Object.entries(FIM_LIMITS)) {
     const p = props[key];
     expect(p, key).toBeDefined();
@@ -65,16 +68,22 @@ test('backends schema fim limits match FIM_LIMITS', () => {
   }
 });
 test('fim.thinking schema enum equals THINKING_STRATEGIES; modelOverrides description names thinking', () => {
-  const props = pkg.contributes.configuration.properties;
+  const props = settingProps;
   expect(props['aiAutocomplete.backends'].items.properties.fim.properties.thinking.enum).toEqual([...THINKING_STRATEGIES]);
   expect(props['aiAutocomplete.modelOverrides'].markdownDescription).toContain('`thinking`');
 });
 test('nextEdit format and display enums match the code', () => {
-  const props = pkg.contributes.configuration.properties;
+  const props = settingProps;
   expect(props['aiAutocomplete.nextEdit.format'].enum).toEqual([...NEXT_EDIT_FORMATS]);
   expect(props['aiAutocomplete.nextEdit.display'].enum).toEqual([...NEXT_EDIT_DISPLAYS]);
 });
 test('backends entries declare use', () => {
-  const use = pkg.contributes.configuration.properties['aiAutocomplete.backends'].items.properties.use;
+  const use = settingProps['aiAutocomplete.backends'].items.properties.use;
   expect(use.items.enum).toEqual(['completions', 'nextEdit']);
+});
+test('fim.disableInFiles default matches the code and covers common credential files', () => {
+  expect(settingProps['aiAutocomplete.fim.disableInFiles'].default).toEqual([...DEFAULT_DISABLE_IN_FILES]);
+  for (const p of ['**/.env', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*']) {
+    expect(DEFAULT_DISABLE_IN_FILES).toContain(p);
+  }
 });

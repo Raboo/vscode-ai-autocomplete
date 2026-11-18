@@ -34,6 +34,9 @@ export interface Settings {
   local: { llamaServerPath?: string; lmsPath?: string };
 }
 
+/** Files whose content is never sent by default: environment files, keys and credential stores. */
+export const DEFAULT_DISABLE_IN_FILES: readonly string[] = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*'];
+
 export interface Inspected<T> {
   defaultValue?: T;
   globalValue?: T;
@@ -348,7 +351,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       suffixLines: num('fim.suffixLines', 60),
       extraContext: resource('fim.extraContext', true),
       disableInLanguages: strs('fim.disableInLanguages', ['plaintext']),
-      disableInFiles: unionStrs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
+      disableInFiles: unionStrs('fim.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),
       skipMidWord: resource('fim.skipMidWord', true),
     },
     nextEdit: {

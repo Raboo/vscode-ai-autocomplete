@@ -120,7 +120,7 @@ describe('parseSettings', () => {
       enabled: true, backendId: 'a', debounceMs: null, multiline: 'auto', maxTokens: 128,
       prefixLines: 200, suffixLines: 60, extraContext: true,
       disableInLanguages: ['plaintext'],
-      disableInFiles: ['**/.env', '**/.env.*', '**/*.pem', '**/*.key'],
+      disableInFiles: ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*'],
       skipMidWord: true,
     });
     expect(settings.privacy.localOnly).toBe(false);

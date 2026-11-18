@@ -346,7 +346,7 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
   if (failed) {
     void vscode.window.showWarningMessage(`Local model ${id} is set up, but the test failed: ${failed.text}${failed.hint ? ` (${failed.hint})` : ''}`, 'Open Backends').then((c) => c && d.openBackend(id));
   } else {
-    void vscode.window.showInformationMessage(`Local model ready: ${id}`);
+    void vscode.window.showInformationMessage(`Local model ready (${id}). Start typing in a code file; press Tab to accept a suggestion.`);
   }
   return { ok: true, backendId: id, steps };
 }

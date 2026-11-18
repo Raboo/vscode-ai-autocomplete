@@ -66,6 +66,17 @@ export async function useNextEditBackend(id: string): Promise<void> {
   if (!readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
 }
 
+/** Tells the user there is no backend yet, with the two ways to get one: a local model, or a server they already run. */
+export function offerFirstBackend(message: string): void {
+  const local = 'Set Up Local Model';
+  const server = 'Connect a Server';
+  void vscode.window.showInformationMessage(message, local, server).then((c) => {
+    if (c === local) return vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
+    if (c === server) return vscode.commands.executeCommand('aiAutocomplete.manageBackends', { add: true });
+    return undefined;
+  });
+}
+
 /** The command argument as OpenOptions; anything else opens the page as it is. */
 function openOptions(arg: unknown): OpenOptions {
   if (typeof arg !== 'object' || arg === null) return {};
@@ -79,7 +90,7 @@ const USE_NAMES: Record<BackendUse, string> = { completions: 'completions', next
 function pickableBackends(use?: BackendUse): string[] | undefined {
   const all = readSettings().settings.backends;
   if (all.length === 0) {
-    void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
+    offerFirstBackend('AI Autocomplete: no backends yet.');
     return undefined;
   }
   const ids = all.filter((b) => use === undefined || usesFor(b, use)).map((b) => b.id);

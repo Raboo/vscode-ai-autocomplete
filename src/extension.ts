@@ -19,7 +19,7 @@ import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
-import { registerCommands, SNOOZE_KEY } from './ui/commands';
+import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
 import { activity } from './ui/statusModel';
 
@@ -68,10 +68,7 @@ export function activate(context: vscode.ExtensionContext): {
     }
     if (settings.backends.length === 0 && !warnedNoBackends) {
       warnedNoBackends = true;
-      void vscode.window.showInformationMessage('AI Autocomplete: no backends configured.', 'Add Backend', 'Open Settings').then((c) => {
-        if (c === 'Add Backend') manageBackends({ add: true });
-        else if (c) openSettings();
-      });
+      offerFirstBackend('AI Autocomplete needs a model to complete code. Set up a local model, or connect a server you already run.');
     }
   };
 

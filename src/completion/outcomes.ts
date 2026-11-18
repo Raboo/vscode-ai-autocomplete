@@ -70,11 +70,11 @@ const SKIPPED: Record<string, string> = {
   disabled: 'completions are turned off',
   snoozed: 'AI Autocomplete is snoozed',
   scheme: 'this kind of document is not supported',
-  language: 'completions are disabled for this language (fim.disableInLanguages)',
-  'excluded file': 'this file is excluded (fim.disableInFiles)',
+  language: 'completions are disabled for this language (completions.disableInLanguages)',
+  'excluded file': 'this file is excluded (completions.disableInFiles)',
   'multi-cursor': 'there are several cursors',
   'suggest widget': 'the suggest widget is open',
-  'mid-word': 'the cursor is inside a word (fim.skipMidWord)',
+  'mid-word': 'the cursor is inside a word (completions.skipMidWord)',
 };
 
 const BLOCKED: Record<string, string> = {
@@ -86,7 +86,7 @@ const BLOCKED: Record<string, string> = {
   backoff: 'the backend failed recently and is paused before the next try',
 };
 
-/** The outcome in plain language, e.g. "Skipped: the cursor is inside a word (fim.skipMidWord)". */
+/** The outcome in plain language, e.g. "Skipped: the cursor is inside a word (completions.skipMidWord)". */
 export function describeOutcome(o: CompletionOutcome): string {
   const d = o.detail ?? '';
   switch (o.kind) {

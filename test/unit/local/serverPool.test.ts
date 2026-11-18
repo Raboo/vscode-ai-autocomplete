@@ -73,7 +73,7 @@ const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 function settings(): Settings {
   const inspected: Record<string, Inspected<unknown>> = {
     backends: { globalValue: ['a', 'b'].map((id) => ({ id, kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' })) },
-    'fim.backend': { globalValue: 'a' },
+    'completions.backend': { globalValue: 'a' },
     'nextEdit.enabled': { globalValue: true },
     'nextEdit.backend': { globalValue: 'b' },
   };
@@ -494,7 +494,7 @@ describe('ServerPool.selectionChanged', () => {
   function selecting(fim: string | undefined, ids = ['a', 'b']): Settings {
     const inspected: Record<string, Inspected<unknown>> = {
       backends: { globalValue: ids.map((id) => ({ id, kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012' })) },
-      ...(fim ? { 'fim.backend': { globalValue: fim } } : {}),
+      ...(fim ? { 'completions.backend': { globalValue: fim } } : {}),
     };
     return parseSettings({ inspect: <T>(key: string) => inspected[key] as Inspected<T> | undefined }).settings;
   }

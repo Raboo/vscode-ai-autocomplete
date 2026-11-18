@@ -25,7 +25,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'enabled', 'completions.backend', 'completions.enabled', 'completions.extraContext', 'completions.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display', 'privacy.localOnly'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -134,8 +134,8 @@ async function withNextEdit(nextEdit: MockOptions['nextEdit'], fn: (m: MockServe
   const m = await startMockServer({ alias: MODEL, chat: EMPTY_FIM, nextEdit });
   try {
     await configure({
-      backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, fimModel: MODEL }],
-      'fim.backend': BACKEND_ID,
+      backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, model: MODEL }],
+      'completions.backend': BACKEND_ID,
       'nextEdit.backend': BACKEND_ID,
       ...settings,
     });
@@ -159,7 +159,7 @@ async function withRawNextEdit(
   try {
     await configure({
       backends: [{ id: BACKEND_ID, ...backend(m) }],
-      'fim.enabled': false,
+      'completions.enabled': false,
       'nextEdit.backend': BACKEND_ID,
       'nextEdit.format': 'auto',
       ...settings,
@@ -354,10 +354,10 @@ suite('Next Edit', () => {
     try {
       await configure({
         backends: [
-          { id: 'hosted', kind: 'openai', baseUrl: 'http://203.0.113.1/v1', fimModel: MODEL, use: 'completions' },
-          { id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, fimModel: MODEL, use: 'nextEdit' },
+          { id: 'hosted', kind: 'openai', baseUrl: 'http://203.0.113.1/v1', model: MODEL, use: 'completions' },
+          { id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, model: MODEL, use: 'nextEdit' },
         ],
-        'fim.backend': 'hosted',
+        'completions.backend': 'hosted',
         'nextEdit.backend': BACKEND_ID,
         'privacy.localOnly': true,
       });
@@ -387,7 +387,7 @@ suite('Next Edit', () => {
       const user = userMessage(nextEdits(m)[0].body);
       assert.ok(user.includes(`current_file_path: ${pathOf(other.document)}\n`), user);
       assert.ok(!user.includes(pathOf(env.document)) && !user.includes('API_KEY'), user);
-    }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
+    }, { 'completions.enabled': false, 'completions.disableInLanguages': [] });
   });
 
   test('the AI Autocomplete switch off sends no Next Edit request; turned on again, Next Edit asks', async () => {
@@ -402,7 +402,7 @@ suite('Next Edit', () => {
       await vscode.commands.executeCommand('aiAutocomplete.toggleEnabled');
       await typeKeys(editor, '1');
       assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
-    }, { enabled: false, 'fim.enabled': false });
+    }, { enabled: false, 'completions.enabled': false });
   });
 
   test('a region with a Markdown code block sends no Next Edit request', async () => {
@@ -419,7 +419,7 @@ suite('Next Edit', () => {
       const plain = await markdown(['# Install', '', 'Then run the tes']);
       await typeKeys(plain, 't');
       assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
-    }, { 'fim.enabled': false, 'fim.disableInLanguages': [] });
+    }, { 'completions.enabled': false, 'completions.disableInLanguages': [] });
   });
 
   test('typing fast sends one Next Edit request', async () => {
@@ -512,7 +512,7 @@ suite('Next Edit', () => {
       const on = await editAThenB();
       assert.ok(on.user.includes(`--- ${pathOf(on.a)}\n`), on.user);
 
-      await configure({ 'fim.extraContext': false });
+      await configure({ 'completions.extraContext': false });
       const off = await editAThenB();
       assert.ok(!off.user.includes(`--- ${pathOf(off.a)}\n`), off.user);
       assert.ok(!off.user.includes(`code_snippet_file_path: ${pathOf(off.a)}\n`), off.user);

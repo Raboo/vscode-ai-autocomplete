@@ -60,7 +60,7 @@ describe('form model', () => {
   });
 
   test('form maps nextEditModel both ways', () => {
-    const entry = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'zeta', nextEditModel: 'edit-1' };
+    const entry = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'zeta', nextEditModel: 'edit-1' };
     const f = entryToForm(entry);
     expect(f.nextEditModel).toBe('edit-1');
     expect(formToEntry(f, entry)).toEqual(entry);
@@ -71,8 +71,8 @@ describe('form model', () => {
 
   test('entryToForm → formToEntry round-trips a full entry', () => {
     const entry = {
-      id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', fimModel: 'zeta', fimMode: 'template', headers: { 'X-A': 'b' },
-      fim: { template: 'seed-coder', contextTokens: 8000, prefixLines: 100, suffixLines: 20, extraContext: false, multiline: 'never', maxTokens: 64, temperature: 0.05,
+      id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', model: 'zeta', mode: 'template', headers: { 'X-A': 'b' },
+      completions: { template: 'seed-coder', contextTokens: 8000, prefixLines: 100, suffixLines: 20, extraContext: false, multiline: 'never', maxTokens: 64, temperature: 0.05,
         topP: 0.9, topK: 20, debounceMs: 100, timeoutMs: 9000, stop: ['a', 'b'], extraBody: { x: 1 } },
     };
     const f = entryToForm(entry);
@@ -83,28 +83,36 @@ describe('form model', () => {
   });
 
   test('formToEntry keeps unknown fields of the original', () => {
-    const original = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://x/v1', futureKey: 'zeta', custom: 1, fim: { temperature: 0.1, future: true } };
+    const original = { id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://x/v1', futureKey: 'zeta', custom: 1, completions: { temperature: 0.1, future: true } };
     const out = formToEntry(form({ baseUrl: 'http://x/v1', originalId: 'lm', changed: { temperature: '0.05' } }), original);
-    expect(out).toMatchObject({ futureKey: 'zeta', custom: 1, fim: { temperature: 0.05, future: true } });
+    expect(out).toMatchObject({ futureKey: 'zeta', custom: 1, completions: { temperature: 0.05, future: true } });
   });
 
-  test('formToEntry drops a reset field but keeps unknown fim keys', () => {
-    const original = { id: 'lm', kind: 'openai', baseUrl: 'http://x/v1', fim: { temperature: 0.1, future: true }, headers: { A: 'b' }, fimMode: 'native' };
+  test('formToEntry drops a reset field but keeps unknown completions keys', () => {
+    const original = { id: 'lm', kind: 'openai', baseUrl: 'http://x/v1', completions: { temperature: 0.1, future: true }, headers: { A: 'b' }, mode: 'native' };
     const out = formToEntry(form({ changed: {} }), original);
-    expect(out.fim).toEqual({ future: true });
+    expect(out.completions).toEqual({ future: true });
     expect(out).not.toHaveProperty('headers');
-    expect(out).not.toHaveProperty('fimMode');
+    expect(out).not.toHaveProperty('mode');
+  });
+
+  test('old field names of the original are read and written under their new names, in place', () => {
+    const original = { id: 'lm', kind: 'openai', baseUrl: 'http://x/v1', fimModel: 'zeta', fimMode: 'native', fim: { temperature: 0.1, future: true } };
+    const f = entryToForm(original);
+    expect(f).toMatchObject({ model: 'zeta', changed: { fimMode: 'native', temperature: '0.1' } });
+    const out = formToEntry(f, original);
+    expect(out).toEqual({ id: 'lm', kind: 'openai', baseUrl: 'http://x/v1', model: 'zeta', mode: 'native', completions: { temperature: 0.1, future: true } });
   });
 
   test('formToEntry writes only changed fields', () => {
     const out = formToEntry(form());
     expect(out).toEqual({ id: 'lm', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1' });
-    expect(out).not.toHaveProperty('fim');
+    expect(out).not.toHaveProperty('completions');
   });
 
   test('formToEntry omits hostFlavor for llama.cpp and Mistral, and an empty model', () => {
     expect(formToEntry(form({ type: 'llamacpp' }))).toEqual({ id: 'lm', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:1234/v1' });
-    expect(formToEntry(form({ type: 'mistral', model: 'codestral-latest' }))).toMatchObject({ kind: 'mistral', fimModel: 'codestral-latest' });
+    expect(formToEntry(form({ type: 'mistral', model: 'codestral-latest' }))).toMatchObject({ kind: 'mistral', model: 'codestral-latest' });
     expect(formToEntry(form({ type: 'mistral' }))).not.toHaveProperty('hostFlavor');
   });
 
@@ -119,8 +127,8 @@ describe('form model', () => {
 
   test('formToEntry converts text to types; blank values are not written', () => {
     const out = formToEntry(form({ changed: { stop: 'a\n\nb', headers: 'X-K: v: w\nY:z', extraBody: '{"a":1}', topK: '', extraContext: 'true', maxTokens: '32' } }));
-    expect(out).toMatchObject({ headers: { 'X-K': 'v: w', Y: 'z' }, fim: { stop: ['a', 'b'], extraBody: { a: 1 }, extraContext: true, maxTokens: 32 } });
-    expect(out.fim).not.toHaveProperty('topK');
+    expect(out).toMatchObject({ headers: { 'X-K': 'v: w', Y: 'z' }, completions: { stop: ['a', 'b'], extraBody: { a: 1 }, extraContext: true, maxTokens: 32 } });
+    expect(out.completions).not.toHaveProperty('topK');
   });
 
   test('formToConfig parses through the settings parser', () => {
@@ -156,9 +164,9 @@ describe('form model', () => {
 
   const or = (o: Partial<BackendForm> = {}): BackendForm => ({ type: 'openrouter', id: 'or', baseUrl: 'https://openrouter.ai/api/v1', model: '', nextEditModel: '', use: { completions: true, nextEdit: true }, changed: { fimMode: 'chat' }, ...o });
 
-  test('thinking round-trips through fim.thinking and validates', () => {
+  test('thinking round-trips through completions.thinking and validates', () => {
     const f = form({ changed: { thinking: 'reasoningEffortNone' } });
-    expect(formToEntry(f)).toMatchObject({ fim: { thinking: 'reasoningEffortNone' } });
+    expect(formToEntry(f)).toMatchObject({ completions: { thinking: 'reasoningEffortNone' } });
     expect(entryToForm(formToEntry(f)).changed.thinking).toBe('reasoningEffortNone');
     expect(validateForm(f, [])).toEqual([]);
     expect(validateForm(form({ changed: { thinking: 'bogus' } }), [])).toEqual([{ field: 'thinking', message: 'unknown thinking switch' }]);
@@ -299,12 +307,12 @@ describe('uses in the form', () => {
     expect(both.use).toBeUndefined();
     const ne = formToEntry({ ...form(), model: 'coder', nextEditModel: 'zeta', use: { completions: false, nextEdit: true } });
     expect(ne.use).toEqual(['nextEdit']);
-    expect(ne.fimModel).toBeUndefined();
+    expect(ne.model).toBeUndefined();
     expect(ne.nextEditModel).toBe('zeta');
     const c = formToEntry({ ...form(), model: 'coder', nextEditModel: 'zeta', use: { completions: true, nextEdit: false } });
     expect(c.use).toEqual(['completions']);
     expect(c.nextEditModel).toBeUndefined();
-    expect(c.fimModel).toBe('coder');
+    expect(c.model).toBe('coder');
     // ticking both again removes a stored use list
     expect(formToEntry(form(), { id: 'lm', use: ['nextEdit'] }).use).toBeUndefined();
     expect(formToConfig(form({ use: { completions: false, nextEdit: true } }))?.use).toEqual({ completions: false, nextEdit: true });

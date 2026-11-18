@@ -32,7 +32,7 @@ export interface NextEditDeps {
   log: Log;
   snoozedUntil(): number;
   snippets: RecentSnippets;
-  /** Files completions may not use (fim.disableInFiles, fim.disableInLanguages): no history, snippet or request. */
+  /** Files completions may not use (completions.disableInFiles, completions.disableInLanguages): no history, snippet or request. */
   isExcluded(doc: vscode.TextDocument): boolean;
   /** The model a backend without a configured one serves. */
   detectedModel(backend: FimBackend, signal: AbortSignal): Promise<string | undefined>;

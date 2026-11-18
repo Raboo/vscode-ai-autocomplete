@@ -50,18 +50,21 @@ export interface CommandDeps {
 /** Writes `key` where its value comes from: the workspace when it sets one, otherwise user settings. */
 async function update(key: string, value: unknown): Promise<void> {
   const config = vscode.workspace.getConfiguration('aiAutocomplete');
-  await config.update(key, value, writesToWorkspace(config.inspect(key)) ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
+  // A workspace still on the old fim.* name (not moved: untrusted) sets the value too.
+  const old = key.startsWith('completions.') ? config.inspect(`fim.${key.slice('completions.'.length)}`) : undefined;
+  const inWorkspace = writesToWorkspace(config.inspect(key)) || writesToWorkspace(old);
+  await config.update(key, value, inWorkspace ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
 }
 
 /** Turns a switch on or off where its value comes from. */
-async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+async function setSwitch(key: 'enabled' | 'completions.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
   await update(key, on);
 }
 
 /** Selects the completion backend in user settings, or in the workspace when it already selects one. Completions turned off are turned back on. */
 export async function useBackend(id: string): Promise<void> {
-  await update('fim.backend', id);
-  if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
+  await update('completions.backend', id);
+  if (!readSettings().settings.fim.enabled) await setSwitch('completions.enabled', true);
 }
 
 /** Selects the Next Edit backend, by the same rule as `useBackend`. Next Edit turned off is turned back on. */
@@ -170,7 +173,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       const { fim } = readSettings().settings;
       const pick = await pickBackendOrOff('Select the completion backend', 'completions', fim.backendId, !fim.enabled);
       if (pick === undefined) return;
-      await (pick === OFF ? setSwitch('fim.enabled', false) : useBackend(pick));
+      await (pick === OFF ? setSwitch('completions.enabled', false) : useBackend(pick));
     }),
     reg('selectNextEditBackend', async () => {
       const { nextEdit } = readSettings().settings;

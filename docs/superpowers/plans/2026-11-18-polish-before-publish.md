@@ -48,10 +48,10 @@
 
 ### Task 5: Rename `fim.*` settings to `completions.*`
 
-- [ ] Setting keys `aiAutocomplete.fim.*` become `aiAutocomplete.completions.*`; backend fields `fimModel`, `fimMode` and `fim` become `model`, `mode` and `completions` (`nextEditModel` stays).
-- [ ] On activation, a one-time migration copies old keys to new ones at every level they are set (user, workspace, folder) and removes the old ones, then logs what moved; backend entries in user settings are rewritten. The reader still accepts old names (with a deprecation note in the problems list) until 1.0.
-- [ ] README, AGENTS.md, specs' settings tables and the manifest follow.
-- [ ] Commit: `feat!: rename fim settings to completions`
+- [x] Setting keys `aiAutocomplete.fim.*` become `aiAutocomplete.completions.*`; backend fields `fimModel`, `fimMode` and `fim` become `model`, `mode` and `completions` (`nextEditModel` stays).
+- [x] On activation, a one-time migration copies old keys to new ones in user settings and a trusted workspace (folder levels keep working through the reader) and removes the old ones, then logs what moved; backend entries in user settings are rewritten. The reader still accepts old names (with a deprecation note in the problems list) until 1.0.
+- [x] README, AGENTS.md, specs' settings tables and the manifest follow.
+- [x] Commit: `feat!: rename fim settings to completions`
 
 ### Task 6: Icon
 

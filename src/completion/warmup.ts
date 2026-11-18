@@ -26,7 +26,7 @@ export interface SpeculateInput {
   /** The completion backend's kind and URL; undefined without a completion backend. */
   kind: BackendKind | undefined;
   baseUrl: string | undefined;
-  /** Completions on (`enabled` and `fim.enabled`). */
+  /** Completions on (`enabled` and `completions.enabled`). */
   enabled: boolean;
   snoozedUntil: number;
   now: number;

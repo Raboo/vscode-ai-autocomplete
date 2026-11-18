@@ -48,7 +48,7 @@ test('median', () => {
 
 describe('wording', () => {
   test('skipped and blocked reasons', () => {
-    expect(describeOutcome(o(1, { kind: 'skipped', detail: 'mid-word' }))).toBe('Skipped: the cursor is inside a word (fim.skipMidWord)');
+    expect(describeOutcome(o(1, { kind: 'skipped', detail: 'mid-word' }))).toBe('Skipped: the cursor is inside a word (completions.skipMidWord)');
     expect(describeOutcome(o(1, { kind: 'skipped', detail: 'multi-cursor' }))).toBe('Skipped: there are several cursors');
     expect(describeOutcome(o(1, { kind: 'blocked', detail: 'thinking' }))).toContain('keeps thinking');
   });

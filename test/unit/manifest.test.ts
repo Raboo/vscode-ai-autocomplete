@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { DEFAULT_DISABLE_IN_FILES, FIM_LIMITS, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
+import { COMPLETIONS_KEYS } from '../../src/config/rename';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 /** Every setting, from one configuration object or from titled sections. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,8 +58,8 @@ test('the backends setting links to the Backends page', () => {
   const manage = (pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.manageBackends');
   expect(manage?.title).toBe('Manage Backends');
 });
-test('backends schema fim limits match FIM_LIMITS', () => {
-  const props = settingProps['aiAutocomplete.backends'].items.properties.fim.properties;
+test('backends schema completions limits match FIM_LIMITS', () => {
+  const props = settingProps['aiAutocomplete.backends'].items.properties.completions.properties;
   for (const [key, lim] of Object.entries(FIM_LIMITS)) {
     const p = props[key];
     expect(p, key).toBeDefined();
@@ -67,9 +68,9 @@ test('backends schema fim limits match FIM_LIMITS', () => {
     expect(p.type === 'integer', key).toBe(lim.integer);
   }
 });
-test('fim.thinking schema enum equals THINKING_STRATEGIES; modelOverrides description names thinking', () => {
+test('completions.thinking schema enum equals THINKING_STRATEGIES; modelOverrides description names thinking', () => {
   const props = settingProps;
-  expect(props['aiAutocomplete.backends'].items.properties.fim.properties.thinking.enum).toEqual([...THINKING_STRATEGIES]);
+  expect(props['aiAutocomplete.backends'].items.properties.completions.properties.thinking.enum).toEqual([...THINKING_STRATEGIES]);
   expect(props['aiAutocomplete.modelOverrides'].markdownDescription).toContain('`thinking`');
 });
 test('nextEdit format and display enums match the code', () => {
@@ -81,8 +82,8 @@ test('backends entries declare use', () => {
   const use = settingProps['aiAutocomplete.backends'].items.properties.use;
   expect(use.items.enum).toEqual(['completions', 'nextEdit']);
 });
-test('fim.disableInFiles default matches the code and covers common credential files', () => {
-  expect(settingProps['aiAutocomplete.fim.disableInFiles'].default).toEqual([...DEFAULT_DISABLE_IN_FILES]);
+test('completions.disableInFiles default matches the code and covers common credential files', () => {
+  expect(settingProps['aiAutocomplete.completions.disableInFiles'].default).toEqual([...DEFAULT_DISABLE_IN_FILES]);
   for (const p of ['**/.env', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*']) {
     expect(DEFAULT_DISABLE_IN_FILES).toContain(p);
   }
@@ -97,7 +98,7 @@ test('settings come in titled sections, each setting ordered', () => {
   expect(sections.map((s) => s.title)).toEqual(['General', 'Completions', 'Next Edit', 'Local models', 'Advanced']);
   const keys = (title: string) => Object.keys(sections.find((s) => s.title === title)!.properties);
   expect(keys('General').sort()).toEqual(['aiAutocomplete.backends', 'aiAutocomplete.enabled', 'aiAutocomplete.privacy.localOnly']);
-  expect(keys('Completions').every((k) => k.startsWith('aiAutocomplete.fim.'))).toBe(true);
+  expect(keys('Completions').every((k) => k.startsWith('aiAutocomplete.completions.') || k.startsWith('aiAutocomplete.fim.'))).toBe(true);
   expect(keys('Next Edit').every((k) => k.startsWith('aiAutocomplete.nextEdit.'))).toBe(true);
   expect(keys('Local models').every((k) => k.startsWith('aiAutocomplete.local.'))).toBe(true);
   expect(keys('Advanced').sort()).toEqual(['aiAutocomplete.debug.logPrompts', 'aiAutocomplete.modelOverrides']);
@@ -108,18 +109,18 @@ test('settings come in titled sections, each setting ordered', () => {
   }
   const order = (k: string) => settingProps[`aiAutocomplete.${k}`].order as number;
   expect(order('enabled')).toBeLessThan(order('backends'));
-  expect(order('fim.enabled')).toBeLessThan(order('fim.backend'));
-  expect(order('fim.backend')).toBeLessThan(order('fim.debounceMs'));
+  expect(order('completions.enabled')).toBeLessThan(order('completions.backend'));
+  expect(order('completions.backend')).toBeLessThan(order('completions.debounceMs'));
   expect(order('nextEdit.enabled')).toBeLessThan(order('nextEdit.backend'));
   expect(order('nextEdit.backend')).toBeLessThan(order('nextEdit.timeoutMs'));
 });
 test('setting descriptions without jargon', () => {
-  expect(settingProps['aiAutocomplete.fim.enabled'].markdownDescription ?? settingProps['aiAutocomplete.fim.enabled'].description).toBe('Show inline code completions (ghost text).');
+  expect(settingProps['aiAutocomplete.completions.enabled'].markdownDescription ?? settingProps['aiAutocomplete.completions.enabled'].description).toBe('Show inline code completions (ghost text).');
   const format = settingProps['aiAutocomplete.nextEdit.format'];
   expect(format.enumDescriptions[format.enum.indexOf('chatXtab')]).toBe('Chat prompt, for general chat models such as Qwen on Strata.');
   const display = settingProps['aiAutocomplete.nextEdit.display'];
   expect(display.markdownEnumDescriptions[display.enum.indexOf('native')]).toBe("VS Code's own inline-edit view. Needs **Enable Native Next Edit UI** and a VS Code restart.");
-  expect(settingProps['aiAutocomplete.fim.backend'].default).toBe('');
+  expect(settingProps['aiAutocomplete.completions.backend'].default).toBe('');
   expect(settingProps['aiAutocomplete.nextEdit.backend'].default).toBe('');
 });
 
@@ -132,4 +133,22 @@ test('machine-scoped settings stay machine-scoped (a workspace must never redire
     'aiAutocomplete.local.lmsPath',
     'aiAutocomplete.modelOverrides',
   ]);
+});
+
+test('fim.* is renamed to completions.*: the old keys stay registered (so they can be moved), deprecated, without defaults', () => {
+  for (const k of COMPLETIONS_KEYS) {
+    const now = settingProps[`aiAutocomplete.completions.${k}`];
+    const old = settingProps[`aiAutocomplete.fim.${k}`];
+    expect(now, k).toBeDefined();
+    expect(old.markdownDeprecationMessage, k).toContain(`#aiAutocomplete.completions.${k}#`);
+    expect(old.scope, k).toBe(now.scope);
+    expect(old, k).not.toHaveProperty('default');
+    expect(old.order, k).toBeGreaterThan(100);
+  }
+  const fields = Object.keys(settingProps['aiAutocomplete.backends'].items.properties);
+  expect(fields).toEqual(expect.arrayContaining(['model', 'mode', 'completions', 'nextEditModel']));
+  expect(fields).not.toEqual(expect.arrayContaining(['fimModel']));
+  expect(fields).not.toContain('fimMode');
+  expect(fields).not.toContain('fim');
+  expect(JSON.stringify(pkg.contributes.configuration)).not.toMatch(/#aiAutocomplete\.fim\.|fimModel/);
 });

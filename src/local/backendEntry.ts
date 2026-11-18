@@ -32,7 +32,7 @@ export function localBackendEntry(r: Recipe, runtime: LocalRuntime, port: number
     ? { id: localBackendId(r, runtime), kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${host}/v1` }
     : { id: localBackendId(r, runtime), kind: 'llamacpp', baseUrl: host };
   entry.use = [...r.uses];
-  if (r.uses.includes('completions')) entry.fimModel = r.modelName;
+  if (r.uses.includes('completions')) entry.model = r.modelName;
   if (r.uses.includes('nextEdit')) entry.nextEditModel = r.modelName;
   return entry;
 }

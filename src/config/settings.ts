@@ -1,5 +1,6 @@
 import { DEFAULT_NEXT_EDIT_TIMEOUT_MS } from '../completion/effective';
 import { TEMPLATES } from '../models/templates';
+import { BACKEND_FIELD_RENAMES, COMPLETIONS_KEYS, inspectRenamed, OLD_NAME_NOTE, oldKeyProblem, renameBackendEntry, type CompletionsKey } from './rename';
 import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
 
 export const NEXT_EDIT_FORMATS = ['auto', 'chatXtab', 'sweep', 'zeta21'] as const;
@@ -80,7 +81,7 @@ const SAMPLING_KEYS: readonly (keyof Sampling)[] = ['temperature', 'topP', 'topK
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
-/** Allowed range of each numeric `fim` setting; the package.json schema and the Backends page use the same values. */
+/** Allowed range of each numeric completion setting (global and per backend); the package.json schema and the Backends page use the same values. */
 export const FIM_LIMITS: Record<'temperature' | 'topP' | 'topK' | 'maxTokens' | 'prefixLines' | 'suffixLines' | 'contextTokens' | 'debounceMs' | 'timeoutMs',
   { min: number; max?: number; integer: boolean; exclusiveMin?: boolean }> = {
   temperature: { min: 0, max: 2, integer: false },
@@ -108,17 +109,17 @@ function limitText(l: { min: number; max?: number; integer: boolean; exclusiveMi
   return `${l.integer ? 'an integer ' : 'a number '}${range}`;
 }
 
-/** Keeps the valid keys of one backend's `fim` object; each dropped key adds a problem. */
-function parseBackendFim(raw: unknown, at: string, problems: string[]): BackendFimSettings | undefined {
+/** Keeps the valid keys of one backend's `completions` object; each dropped key adds a problem. */
+function parseBackendFim(raw: unknown, at: string, problems: string[], name = 'completions'): BackendFimSettings | undefined {
   if (raw === undefined) return undefined;
   if (!isObj(raw)) {
-    problems.push(`${at}.fim: not an object, ignored`);
+    problems.push(`${at}.${name}: not an object, ignored`);
     return undefined;
   }
   const out: BackendFimSettings = {};
   for (const [k, v] of Object.entries(raw)) {
     if (v === undefined) continue;
-    const bad = (why: string): void => void problems.push(`${at}.fim.${k}: ${why}, ignored`);
+    const bad = (why: string): void => void problems.push(`${at}.${name}.${k}: ${why}, ignored`);
     if (Object.hasOwn(FIM_LIMITS, k)) {
       const key = k as keyof typeof FIM_LIMITS;
       const l = FIM_LIMITS[key];
@@ -168,11 +169,15 @@ function parseUse(raw: unknown, where: string, problems: string[]): BackendConfi
   return { completions: kept.has('completions'), nextEdit: kept.has('nextEdit') };
 }
 
+const NEW_FIELD = new Map(BACKEND_FIELD_RENAMES);
+
 /** Parses one raw backends entry; pushes every problem; undefined when the entry is unusable. `seen` collects ids for duplicate checks. */
-export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, problems: string[]): BackendConfig | undefined {
+export function parseBackendEntry(given: unknown, i: number, seen: Set<string>, problems: string[]): BackendConfig | undefined {
   const fail = (problem: string): undefined => void problems.push(problem);
   const at = `aiAutocomplete.backends[${i}]`;
-  if (!isObj(raw)) return fail(`${at}: not an object, ignored`);
+  if (!isObj(given)) return fail(`${at}: not an object, ignored`);
+  // Old field names (fimModel, fimMode, fim) are read until 1.0, each with a note.
+  const { entry: raw, renamed } = renameBackendEntry(given);
   const id = raw.id;
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return fail(`${at}: invalid id ${JSON.stringify(id)} (use lowercase letters, digits and dashes), ignored`);
   if (seen.has(id)) return fail(`${at}: duplicate id "${id}", ignored`);
@@ -185,8 +190,9 @@ export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, pr
   } catch {
     return fail(`${at} ("${id}"): baseUrl "${baseUrl}" is not a valid http(s) URL, ignored`);
   }
-  const fimMode = raw.fimMode === undefined ? 'auto' : raw.fimMode;
-  if (typeof fimMode !== 'string' || !FIM_MODES.includes(fimMode as FimMode)) return fail(`${at} ("${id}"): invalid fimMode ${JSON.stringify(fimMode)}, ignored`);
+  const usedOld = (field: string): boolean => renamed.includes(field) && !Object.hasOwn(given, NEW_FIELD.get(field) as string);
+  const fimMode = raw.mode === undefined ? 'auto' : raw.mode;
+  if (typeof fimMode !== 'string' || !FIM_MODES.includes(fimMode as FimMode)) return fail(`${at} ("${id}"): invalid ${usedOld('fimMode') ? 'fimMode' : 'mode'} ${JSON.stringify(fimMode)}, ignored`);
   const headers: Record<string, string> = {};
   if (isObj(raw.headers)) {
     for (const [k, v] of Object.entries(raw.headers)) if (typeof v === 'string') headers[k] = v;
@@ -194,12 +200,15 @@ export function parseBackendEntry(raw: unknown, i: number, seen: Set<string>, pr
   seen.add(id);
   const backend: BackendConfig = { id, kind: raw.kind as BackendKind, baseUrl, fimMode: fimMode as FimMode, headers, use: parseUse(raw.use, `${at} ("${id}")`, problems) };
   if (typeof raw.hostFlavor === 'string' && HOST_FLAVORS.includes(raw.hostFlavor as HostFlavor)) backend.hostFlavor = raw.hostFlavor as HostFlavor;
-  const fimModel = str(raw.fimModel);
+  const fimModel = str(raw.model);
   if (fimModel) backend.fimModel = fimModel;
   const nextEditModel = str(raw.nextEditModel);
   if (nextEditModel) backend.nextEditModel = nextEditModel;
-  const fim = parseBackendFim(raw.fim, `${at} ("${id}")`, problems);
+  const fim = parseBackendFim(raw.completions, `${at} ("${id}")`, problems, usedOld('fim') ? 'fim' : 'completions');
   if (fim) backend.fim = fim;
+  for (const [from, to] of BACKEND_FIELD_RENAMES) {
+    if (renamed.includes(from)) problems.push(`${at} ("${id}"): ${from} is now ${to}${usedOld(from) ? '' : ` (${from} is ignored, ${to} is set)`}; ${OLD_NAME_NOTE}`);
+  }
   return backend;
 }
 
@@ -237,8 +246,23 @@ function parseOverride(pattern: string, body: Record<string, unknown>, problems:
   return out;
 }
 
-export function parseSettings(src: RawSettingsSource): { settings: Settings; problems: string[] } {
+export function parseSettings(given: RawSettingsSource): { settings: Settings; problems: string[] } {
   const problems: string[] = [];
+  // completions.* falls back to the old fim.* name at each level, with a note per old key read.
+  const renamedKeys = new Map<string, CompletionsKey>(COMPLETIONS_KEYS.map((k) => [`completions.${k}`, k]));
+  const noted = new Set<CompletionsKey>();
+  const src: RawSettingsSource = {
+    inspect: <T>(key: string) => {
+      const k = renamedKeys.get(key);
+      if (k === undefined) return given.inspect<T>(key);
+      const { inspected, usedOld } = inspectRenamed<T>(given, k);
+      if (usedOld && !noted.has(k)) {
+        noted.add(k);
+        problems.push(oldKeyProblem(k));
+      }
+      return inspected;
+    },
+  };
   // Machine-scoped: never read workspace values (a repo must not redirect code to another host).
   const machine = <T>(key: string, fallback: T): T => {
     const i = src.inspect<T>(key);
@@ -296,18 +320,18 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     }
   }
 
-  const requested = resource<unknown>('fim.backend', undefined);
+  const requested = resource<unknown>('completions.backend', undefined);
   let backendId: string | undefined = backends.find((b) => usesFor(b, 'completions'))?.id;
   if (typeof requested === 'string' && requested !== '') {
     const found = backends.find((b) => b.id === requested);
     if (found && !usesFor(found, 'completions')) {
       backendId = undefined;
-      problems.push(`aiAutocomplete.fim.backend: backend "${requested}" is not used for completions; completions have no backend`);
+      problems.push(`aiAutocomplete.completions.backend: backend "${requested}" is not used for completions; completions have no backend`);
     } else if (found) backendId = requested;
-    else problems.push(`aiAutocomplete.fim.backend: no backend with id "${requested}"${backendId ? `, using "${backendId}"` : ''}`);
+    else problems.push(`aiAutocomplete.completions.backend: no backend with id "${requested}"${backendId ? `, using "${backendId}"` : ''}`);
   }
 
-  // Unlike fim.backend, no fallback: Next Edit stays off until a backend is chosen.
+  // Unlike completions.backend, no fallback: Next Edit stays off until a backend is chosen.
   const nextEditRequested = resource<unknown>('nextEdit.backend', undefined);
   let nextEditBackendId: string | undefined;
   if (typeof nextEditRequested === 'string' && nextEditRequested !== '') {
@@ -335,7 +359,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     return l.default;
   };
 
-  const multiline = resource<string>('fim.multiline', 'auto');
+  const multiline = resource<string>('completions.multiline', 'auto');
   const num = (key: string, d: number): number => {
     const v = resource<unknown>(key, d);
     return typeof v === 'number' && Number.isFinite(v) ? v : d;
@@ -344,23 +368,23 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     const v = resource<unknown>(key, d);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : d;
   };
-  const debounce = resource<unknown>('fim.debounceMs', null);
+  const debounce = resource<unknown>('completions.debounceMs', null);
 
   const settings: Settings = {
     enabled: resource('enabled', true),
     backends,
     fim: {
-      enabled: resource('fim.enabled', true),
+      enabled: resource('completions.enabled', true),
       backendId,
       debounceMs: typeof debounce === 'number' && Number.isFinite(debounce) ? debounce : null,
       multiline: (MULTILINE as readonly string[]).includes(multiline) ? (multiline as Multiline) : 'auto',
-      maxTokens: num('fim.maxTokens', 128),
-      prefixLines: num('fim.prefixLines', 200),
-      suffixLines: num('fim.suffixLines', 60),
-      extraContext: resource('fim.extraContext', true),
-      disableInLanguages: strs('fim.disableInLanguages', ['plaintext']),
-      disableInFiles: unionStrs('fim.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),
-      skipMidWord: resource('fim.skipMidWord', true),
+      maxTokens: num('completions.maxTokens', 128),
+      prefixLines: num('completions.prefixLines', 200),
+      suffixLines: num('completions.suffixLines', 60),
+      extraContext: resource('completions.extraContext', true),
+      disableInLanguages: strs('completions.disableInLanguages', ['plaintext']),
+      disableInFiles: unionStrs('completions.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),
+      skipMidWord: resource('completions.skipMidWord', true),
     },
     nextEdit: {
       enabled: resource('nextEdit.enabled', true),

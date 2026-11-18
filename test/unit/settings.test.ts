@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, writesToWorkspace, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { isOldNameProblem } from '../../src/config/rename';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -36,21 +37,21 @@ describe('parseSettings', () => {
     expect(r.settings.fim.enabled).toBe(true);
     expect(r.settings.fim.backendId).toBe('a');
   });
-  test('fim.backend may be chosen per workspace among configured ids', () => {
-    const { settings } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'a', workspaceValue: 'b' } }));
+  test('completions.backend may be chosen per workspace among configured ids', () => {
+    const { settings } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'completions.backend': { globalValue: 'a', workspaceValue: 'b' } }));
     expect(settings.fim.backendId).toBe('b');
   });
   test('workspaceFolderValue wins for resource keys', () => {
-    const { settings } = parseSettings(src({ 'fim.maxTokens': { globalValue: 1, workspaceValue: 2, workspaceFolderValue: 3 } }));
+    const { settings } = parseSettings(src({ 'completions.maxTokens': { globalValue: 1, workspaceValue: 2, workspaceFolderValue: 3 } }));
     expect(settings.fim.maxTokens).toBe(3);
   });
-  test('fim.backend default "" means the first completion backend, without a problem', () => {
-    const { settings, problems } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { defaultValue: '' } }));
+  test('completions.backend default "" means the first completion backend, without a problem', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'completions.backend': { defaultValue: '' } }));
     expect(settings.fim.backendId).toBe('a');
     expect(problems).toEqual([]);
   });
-  test('unknown fim.backend falls back to first backend with a problem', () => {
-    const r = parseSettings(src({ backends: { globalValue: [B('a')] }, 'fim.backend': { workspaceValue: 'nope' } }));
+  test('unknown completions.backend falls back to first backend with a problem', () => {
+    const r = parseSettings(src({ backends: { globalValue: [B('a')] }, 'completions.backend': { workspaceValue: 'nope' } }));
     expect(r.settings.fim.backendId).toBe('a');
     expect(r.problems[0]).toMatch(/nope/);
   });
@@ -149,9 +150,9 @@ describe('parseSettings', () => {
     // Shaped like vscode.WorkspaceConfiguration: the window-level one has no workspaceFolderValue,
     // a folder-scoped one has that folder's value.
     const cfg = (values: Record<string, Inspected<unknown>>) => ({ inspect: <T>(key: string) => values[key] as Inspected<T> | undefined });
-    const root = cfg({ 'privacy.localOnly': { defaultValue: false }, 'fim.disableInFiles': { defaultValue: ['**/.env'] }, 'fim.maxTokens': { defaultValue: 128 } });
-    const folderA = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: false }, 'fim.disableInFiles': { defaultValue: ['**/.env'] } });
-    const folderB = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: true }, 'fim.disableInFiles': { defaultValue: ['**/.env'], workspaceFolderValue: ['**/secrets/**'] } });
+    const root = cfg({ 'privacy.localOnly': { defaultValue: false }, 'completions.disableInFiles': { defaultValue: ['**/.env'] }, 'completions.maxTokens': { defaultValue: 128 } });
+    const folderA = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: false }, 'completions.disableInFiles': { defaultValue: ['**/.env'] } });
+    const folderB = cfg({ 'privacy.localOnly': { defaultValue: false, workspaceFolderValue: true }, 'completions.disableInFiles': { defaultValue: ['**/.env'], workspaceFolderValue: ['**/secrets/**'] } });
     const { settings } = parseSettings(withFolderValues(root, [folderA, folderB]));
     expect(settings.privacy.localOnly).toBe(true);
     expect(settings.fim.disableInFiles).toEqual(['**/.env', '**/secrets/**']);
@@ -159,8 +160,8 @@ describe('parseSettings', () => {
     expect(withFolderValues(root, [folderA, folderB]).inspect('privacy.localOnly')).toEqual({ defaultValue: false, folderValues: [false, true] });
     expect(withFolderValues(root, []).inspect('privacy.localOnly')).toEqual({ defaultValue: false });
   });
-  test('fim.disableInFiles: a workspace can add patterns but not remove the user or default ones', () => {
-    const files = (v: Inspected<unknown>) => parseSettings(src({ 'fim.disableInFiles': { defaultValue: ['**/.env', '**/*.key'], ...v } })).settings.fim.disableInFiles;
+  test('completions.disableInFiles: a workspace can add patterns but not remove the user or default ones', () => {
+    const files = (v: Inspected<unknown>) => parseSettings(src({ 'completions.disableInFiles': { defaultValue: ['**/.env', '**/*.key'], ...v } })).settings.fim.disableInFiles;
     expect(files({ workspaceValue: [] })).toEqual(['**/.env', '**/*.key']);
     expect(files({ workspaceValue: ['**/secret.txt'] })).toEqual(['**/.env', '**/*.key', '**/secret.txt']);
     expect(files({ globalValue: [] })).toEqual([]);
@@ -175,27 +176,27 @@ describe('parseSettings', () => {
   });
 });
 
-describe('backend fim', () => {
-  const withFim = (fim: unknown) => parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fim }] } }));
-  test('backend fim keeps valid keys', () => {
+describe('backend completions', () => {
+  const withFim = (fim: unknown) => parseSettings(src({ backends: { globalValue: [{ ...B('lm'), completions: fim }] } }));
+  test('backend completions keeps valid keys', () => {
     const fim = { template: 'seed-coder', temperature: 0.05, prefixLines: 300, extraContext: false, multiline: 'never', stop: ['</s>'], extraBody: { a: 1 }, debounceMs: 120, timeoutMs: 9000, contextTokens: 8000 };
     const { settings, problems } = withFim(fim);
     expect(settings.backends[0].fim).toEqual(fim);
     expect(problems).toEqual([]);
   });
-  test('backend fim drops invalid keys and reports each', () => {
+  test('backend completions drops invalid keys and reports each', () => {
     const { settings, problems } = withFim({ temperature: '0.2', topP: 0, topK: 1.5, maxTokens: 5000, template: 'nope', multiline: 'x', stop: [1], extraBody: [], bogus: 1 });
     expect(settings.backends).toHaveLength(1);
     expect(settings.backends[0].fim).toBeUndefined();
     expect(problems).toHaveLength(9);
     for (const k of ['temperature', 'topP', 'topK', 'maxTokens', 'template', 'multiline', 'stop', 'extraBody', 'bogus']) {
-      expect(problems.filter((p) => p.startsWith(`aiAutocomplete.backends[0] ("lm").fim.${k}: `) && p.endsWith(', ignored'))).toHaveLength(1);
+      expect(problems.filter((p) => p.startsWith(`aiAutocomplete.backends[0] ("lm").completions.${k}: `) && p.endsWith(', ignored'))).toHaveLength(1);
     }
   });
-  test('a non-object fim is one problem', () => {
+  test('a non-object completions is one problem', () => {
     const { settings, problems } = withFim('x');
     expect(settings.backends[0].fim).toBeUndefined();
-    expect(problems).toEqual(['aiAutocomplete.backends[0] ("lm").fim: not an object, ignored']);
+    expect(problems).toEqual(['aiAutocomplete.backends[0] ("lm").completions: not an object, ignored']);
   });
   test('range edges', () => {
     const { settings, problems } = withFim({ temperature: 2.01, topP: 0, contextTokens: 255, timeoutMs: 499 });
@@ -210,7 +211,7 @@ describe('backend fim', () => {
   });
   test('parseBackendEntry is the parser parseSettings uses', () => {
     const problems: string[] = [];
-    expect(parseBackendEntry({ id: 'x', kind: 'openai', baseUrl: 'http://h/v1', fim: { topK: 20 } }, 0, new Set(), problems)?.fim).toEqual({ topK: 20 });
+    expect(parseBackendEntry({ id: 'x', kind: 'openai', baseUrl: 'http://h/v1', completions: { topK: 20 } }, 0, new Set(), problems)?.fim).toEqual({ topK: 20 });
     expect(problems).toEqual([]);
     expect(parseBackendEntry(5, 1, new Set(), problems)).toBeUndefined();
     expect(problems).toEqual(['aiAutocomplete.backends[1]: not an object, ignored']);
@@ -218,14 +219,14 @@ describe('backend fim', () => {
 });
 
 describe('thinking and localOnly strings', () => {
-  test('backend fim.thinking keeps a known strategy and reports an unknown one', () => {
+  test('backend completions.thinking keeps a known strategy and reports an unknown one', () => {
     const ok: string[] = [];
-    expect(parseBackendEntry({ ...B('lm'), fim: { thinking: 'cannotDisable' } }, 0, new Set(), ok)?.fim?.thinking).toBe('cannotDisable');
+    expect(parseBackendEntry({ ...B('lm'), completions: { thinking: 'cannotDisable' } }, 0, new Set(), ok)?.fim?.thinking).toBe('cannotDisable');
     expect(ok).toEqual([]);
     const problems: string[] = [];
-    const b = parseBackendEntry({ ...B('lm'), fim: { thinking: 'off' } }, 0, new Set(), problems);
+    const b = parseBackendEntry({ ...B('lm'), completions: { thinking: 'off' } }, 0, new Set(), problems);
     expect(b?.fim).toBeUndefined();
-    expect(problems).toEqual([`aiAutocomplete.backends[0] ("lm").fim.thinking: unknown thinking switch "off" (use one of ${THINKING_STRATEGIES.join(', ')}), ignored`]);
+    expect(problems).toEqual([`aiAutocomplete.backends[0] ("lm").completions.thinking: unknown thinking switch "off" (use one of ${THINKING_STRATEGIES.join(', ')}), ignored`]);
   });
   test('modelOverrides thinking is parsed like fimTemplate', () => {
     const r = parseSettings(src({ modelOverrides: { globalValue: { a: { thinking: 'none' }, b: { thinking: 'off' } } } }));
@@ -305,17 +306,17 @@ describe('backend use', () => {
     expect(parseBackendEntry({ ...B('a'), use: ['nextEdit', 'chat'] }, 0, new Set(), problems)?.use).toEqual({ completions: false, nextEdit: true });
     expect(problems.join()).toMatch(/"chat"/);
   });
-  test('fim.backend unset falls back to the first backend with completions', () => {
+  test('completions.backend unset falls back to the first backend with completions', () => {
     const { settings } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] } }));
     expect(settings.fim.backendId).toBe('c');
   });
-  test('fim.backend naming a Next Edit-only backend gives completions no backend', () => {
-    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'fim.backend': { globalValue: 'z' } }));
+  test('completions.backend naming a Next Edit-only backend gives completions no backend', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'completions.backend': { globalValue: 'z' } }));
     expect(settings.fim.backendId).toBeUndefined();
-    expect(problems.join()).toMatch(/fim\.backend: backend "z" is not used for completions/);
+    expect(problems.join()).toMatch(/completions\.backend: backend "z" is not used for completions/);
   });
-  test('an unknown fim.backend falls back to the first completions backend', () => {
-    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'fim.backend': { globalValue: 'nope' } }));
+  test('an unknown completions.backend falls back to the first completions backend', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('z'), use: ['nextEdit'] }, B('c')] }, 'completions.backend': { globalValue: 'nope' } }));
     expect(settings.fim.backendId).toBe('c');
     expect(problems.join()).toMatch(/no backend with id "nope", using "c"/);
   });
@@ -333,5 +334,51 @@ describe('writesToWorkspace', () => {
     expect(writesToWorkspace({ workspaceFolderValue: 'a' })).toBe(false);
     expect(writesToWorkspace({ globalValue: 'a', workspaceValue: 'b' })).toBe(true);
     expect(writesToWorkspace({ workspaceValue: false })).toBe(true);
+  });
+});
+
+describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
+  test('an old key set alone is read, with one note', () => {
+    const r = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'b' }, 'fim.maxTokens': { workspaceValue: 64 } }));
+    expect(r.settings.fim.backendId).toBe('b');
+    expect(r.settings.fim.maxTokens).toBe(64);
+    expect(r.problems).toEqual([
+      'aiAutocomplete.fim.backend is now aiAutocomplete.completions.backend; the old name still works until 1.0',
+      'aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0',
+    ]);
+    expect(r.problems.every(isOldNameProblem)).toBe(true);
+  });
+  test('at each level the new key wins over the old one; an old value at a closer level still wins', () => {
+    const same = parseSettings(src({ 'completions.maxTokens': { defaultValue: 128, globalValue: 32 }, 'fim.maxTokens': { globalValue: 16 } }));
+    expect(same.settings.fim.maxTokens).toBe(32);
+    expect(same.problems).toEqual([]);
+    const closer = parseSettings(src({ 'completions.maxTokens': { defaultValue: 128, globalValue: 32 }, 'fim.maxTokens': { workspaceFolderValue: 16 } }));
+    expect(closer.settings.fim.maxTokens).toBe(16);
+    expect(closer.problems).toEqual(['aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0']);
+  });
+  test('old folder lists of disableInFiles are added like new ones', () => {
+    const r = parseSettings(src({ 'completions.disableInFiles': { defaultValue: ['**/.env'] }, 'fim.disableInFiles': { folderValues: [['**/old/**']] } }));
+    expect(r.settings.fim.disableInFiles).toEqual(['**/.env', '**/old/**']);
+    expect(r.problems).toHaveLength(1);
+  });
+  test('old backend fields are read, each with a note naming the backend', () => {
+    const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } }] } }));
+    expect(r.settings.backends[0]).toMatchObject({ fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } });
+    expect(r.problems).toEqual([
+      'aiAutocomplete.backends[0] ("lm"): fimModel is now model; the old name still works until 1.0',
+      'aiAutocomplete.backends[0] ("lm"): fimMode is now mode; the old name still works until 1.0',
+      'aiAutocomplete.backends[0] ("lm"): fim is now completions; the old name still works until 1.0',
+    ]);
+  });
+  test('an old backend field next to its new one is ignored, with a note', () => {
+    const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), model: 'new', fimModel: 'old' }] } }));
+    expect(r.settings.backends[0].fimModel).toBe('new');
+    expect(r.problems).toEqual(['aiAutocomplete.backends[0] ("lm"): fimModel is now model (fimModel is ignored, model is set); the old name still works until 1.0']);
+  });
+  test('problems inside an old fim object name the old field', () => {
+    const problems: string[] = [];
+    parseBackendEntry({ ...B('lm'), fim: { topK: -1 } }, 0, new Set(), problems);
+    expect(problems[0]).toMatch(/^aiAutocomplete\.backends\[0\] \("lm"\)\.fim\.topK: /);
+    expect(isOldNameProblem(problems[0])).toBe(false);
   });
 });

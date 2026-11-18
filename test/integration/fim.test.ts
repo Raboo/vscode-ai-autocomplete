@@ -15,13 +15,13 @@ interface Api {
 const SOURCE = 'function add(a: number, b: number) {\n  return ';
 const BACKEND_ID = 'test';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.disableInLanguages', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'enabled', 'completions.backend', 'completions.disableInLanguages', 'privacy.localOnly'];
 
 const useStrata = (baseUrl: string, model: string): Promise<void> =>
-  configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${baseUrl}/v1`, fimModel: model }], 'fim.backend': BACKEND_ID });
+  configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${baseUrl}/v1`, model }], 'completions.backend': BACKEND_ID });
 
 const useLlamaCpp = (baseUrl: string, extra: Record<string, unknown> = {}): Promise<void> =>
-  configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl }], 'fim.backend': BACKEND_ID, ...extra });
+  configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl }], 'completions.backend': BACKEND_ID, ...extra });
 
 /** A warm-up: an /infill that generates nothing, so llama.cpp only fills its prompt cache. */
 const isWarmUp = (r: RecordedRequest): boolean => r.body?.n_predict === 0;
@@ -163,7 +163,7 @@ suite('FIM inline completion', () => {
     let lm: MockServer | undefined;
     const lmStudio = async (content: string[]): Promise<MockServer> => {
       lm = await startMockServer({ mlx: { content } });
-      await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1`, fimModel: 'qwen2.5-coder-1.5b' }], 'fim.backend': BACKEND_ID });
+      await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1`, model: 'qwen2.5-coder-1.5b' }], 'completions.backend': BACKEND_ID });
       return lm;
     };
     const completions = (m: MockServer) => m.requests.filter((r) => r.path === '/v1/completions');
@@ -197,7 +197,7 @@ suite('FIM inline completion', () => {
 
   test('excluded file gets no request', async () => {
     // No language is disabled, so only the `**/.env` entry of fim.disableInFiles can stop the request.
-    await useLlamaCpp(mock.baseUrl, { 'fim.disableInLanguages': [] });
+    await useLlamaCpp(mock.baseUrl, { 'completions.disableInLanguages': [] });
     tempDir = mkdtempSync(join(tmpdir(), 'ai-autocomplete-'));
     const file = join(tempDir, '.env');
     writeFileSync(file, 'API_KEY=');
@@ -214,7 +214,7 @@ suite('FIM inline completion', () => {
     try {
       await configure({
         backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` }],
-        'fim.backend': BACKEND_ID,
+        'completions.backend': BACKEND_ID,
       });
       const editor = await openSource();
 
@@ -231,13 +231,13 @@ suite('FIM inline completion', () => {
     const lm = await startMockServer({ alias: 'zeta-2.1' });
     try {
       const entry = { id: BACKEND_ID, kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${lm.baseUrl}/v1` };
-      await configure({ backends: [entry], 'fim.backend': BACKEND_ID });
+      await configure({ backends: [entry], 'completions.backend': BACKEND_ID });
       const editor = await openSource();
       await trigger(editor);
       assert.ok(await waitFor(() => api.status.current().includes('no completion template'), 5000), `status: ${api.status.current()}`);
 
       // What Save on the Backends page writes for the Zeta fix.
-      await configure({ backends: [{ ...entry, fim: { template: 'seed-coder' } }] });
+      await configure({ backends: [{ ...entry, completions: { template: 'seed-coder' } }] });
 
       assert.ok(await waitFor(() => api.status.current() === 'idle', 2000), `status: ${api.status.current()}`);
       const posts = lm.requests.filter((r) => r.method === 'POST');
@@ -326,7 +326,7 @@ suite('FIM inline completion', () => {
     await withMock({ alias: 'google/gemini-2.5-pro', rejectField: 'reasoning', chat: { reasoning: ['Let me think.'] } }, async (m) => {
       await api.secrets.set(BACKEND_ID, 'test-key'); // OpenRouter sends no code without a key
       try {
-        await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.baseUrl}/v1`, fimModel: 'google/gemini-2.5-pro' }], 'fim.backend': BACKEND_ID });
+        await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${m.baseUrl}/v1`, model: 'google/gemini-2.5-pro' }], 'completions.backend': BACKEND_ID });
         const editor = await openSource();
 
         // The first trigger already says so: the server rejected turning reasoning off, so no other switch can help.
@@ -349,7 +349,7 @@ suite('FIM inline completion', () => {
   });
 
   test('OpenRouter without a model sends nothing', async () => {
-    await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${mock.baseUrl}/v1` }], 'fim.backend': BACKEND_ID });
+    await configure({ backends: [{ id: BACKEND_ID, kind: 'openai', hostFlavor: 'openrouter', baseUrl: `${mock.baseUrl}/v1` }], 'completions.backend': BACKEND_ID });
     const editor = await openSource();
 
     await trigger(editor);
@@ -420,7 +420,7 @@ suite('FIM inline completion', () => {
 
   test('a missing route without a fallback is an ordinary error with backoff', async () => {
     await withMock({ infill501: true }, async (m) => {
-      await configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl: m.baseUrl, fimMode: 'native' }], 'fim.backend': BACKEND_ID });
+      await configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl: m.baseUrl, mode: 'native' }], 'completions.backend': BACKEND_ID });
       const editor = await openSource();
 
       await trigger(editor);

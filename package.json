@@ -62,7 +62,7 @@
             "type": "array",
             "default": [],
             "scope": "machine",
-            "markdownDescription": "[Manage backends](command:aiAutocomplete.manageBackends)\n\nCompletion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
+            "markdownDescription": "[Manage backends](command:aiAutocomplete.manageBackends)\n\nCompletion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"model\": \"codestral-latest\" }\n```",
             "items": {
               "type": "object",
               "required": [
@@ -107,7 +107,7 @@
                   ],
                   "description": "Server software, used to pick server-specific request options."
                 },
-                "fimModel": {
+                "model": {
                   "type": "string",
                   "description": "Model name for fill-in-the-middle completions."
                 },
@@ -127,7 +127,7 @@
                   "uniqueItems": true,
                   "description": "What the backend is used for. Missing means both."
                 },
-                "fimMode": {
+                "mode": {
                   "type": "string",
                   "enum": [
                     "auto",
@@ -145,7 +145,7 @@
                   },
                   "description": "Extra HTTP headers."
                 },
-                "fim": {
+                "completions": {
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Completion settings for this backend; each key overrides the matching global setting.",
@@ -276,21 +276,21 @@
       {
         "title": "Completions",
         "properties": {
-          "aiAutocomplete.fim.enabled": {
+          "aiAutocomplete.completions.enabled": {
             "type": "boolean",
             "default": true,
             "scope": "resource",
             "markdownDescription": "Show inline code completions (ghost text).",
             "order": 1
           },
-          "aiAutocomplete.fim.backend": {
+          "aiAutocomplete.completions.backend": {
             "type": "string",
             "scope": "resource",
             "default": "",
             "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend used for completions. May be set per workspace.",
             "order": 2
           },
-          "aiAutocomplete.fim.multiline": {
+          "aiAutocomplete.completions.multiline": {
             "type": "string",
             "enum": [
               "auto",
@@ -302,7 +302,7 @@
             "markdownDescription": "Whether completions may span multiple lines. `auto` decides from the cursor position.",
             "order": 3
           },
-          "aiAutocomplete.fim.disableInLanguages": {
+          "aiAutocomplete.completions.disableInLanguages": {
             "type": "array",
             "items": {
               "type": "string"
@@ -314,7 +314,7 @@
             "markdownDescription": "Language ids in which completions are disabled.",
             "order": 4
           },
-          "aiAutocomplete.fim.disableInFiles": {
+          "aiAutocomplete.completions.disableInFiles": {
             "type": "array",
             "items": {
               "type": "string"
@@ -338,21 +338,21 @@
             "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled. Workspace and folder settings add patterns to this list; they cannot remove the ones from your user settings (or the defaults).",
             "order": 5
           },
-          "aiAutocomplete.fim.skipMidWord": {
+          "aiAutocomplete.completions.skipMidWord": {
             "type": "boolean",
             "default": true,
             "scope": "resource",
             "markdownDescription": "Do not trigger a completion when the cursor is in the middle of a word.",
             "order": 6
           },
-          "aiAutocomplete.fim.extraContext": {
+          "aiAutocomplete.completions.extraContext": {
             "type": "boolean",
             "default": true,
             "scope": "resource",
             "markdownDescription": "Include snippets from other open and recently edited files as extra context.",
             "order": 7
           },
-          "aiAutocomplete.fim.debounceMs": {
+          "aiAutocomplete.completions.debounceMs": {
             "type": [
               "number",
               "null"
@@ -362,26 +362,106 @@
             "markdownDescription": "Delay in milliseconds before requesting a completion after typing. `null` picks a default based on whether the backend is local.",
             "order": 8
           },
-          "aiAutocomplete.fim.maxTokens": {
+          "aiAutocomplete.completions.maxTokens": {
             "type": "number",
             "default": 128,
             "scope": "resource",
             "markdownDescription": "Maximum number of tokens to generate per completion. A `sampling.maxTokens` in `#aiAutocomplete.modelOverrides#` replaces it for matching models.",
             "order": 9
           },
-          "aiAutocomplete.fim.prefixLines": {
+          "aiAutocomplete.completions.prefixLines": {
             "type": "number",
             "default": 200,
             "scope": "resource",
             "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent.",
             "order": 10
           },
-          "aiAutocomplete.fim.suffixLines": {
+          "aiAutocomplete.completions.suffixLines": {
             "type": "number",
             "default": 60,
             "scope": "resource",
             "markdownDescription": "Number of lines after the cursor sent as context.",
             "order": 11
+          },
+          "aiAutocomplete.fim.enabled": {
+            "type": "boolean",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.enabled#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 101
+          },
+          "aiAutocomplete.fim.backend": {
+            "type": "string",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.backend#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 102
+          },
+          "aiAutocomplete.fim.multiline": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.multiline#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 103
+          },
+          "aiAutocomplete.fim.disableInLanguages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInLanguages#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 104
+          },
+          "aiAutocomplete.fim.disableInFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInFiles#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 105
+          },
+          "aiAutocomplete.fim.skipMidWord": {
+            "type": "boolean",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.skipMidWord#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 106
+          },
+          "aiAutocomplete.fim.extraContext": {
+            "type": "boolean",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.extraContext#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 107
+          },
+          "aiAutocomplete.fim.debounceMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.debounceMs#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 108
+          },
+          "aiAutocomplete.fim.maxTokens": {
+            "type": "number",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.maxTokens#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 109
+          },
+          "aiAutocomplete.fim.prefixLines": {
+            "type": "number",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.prefixLines#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 110
+          },
+          "aiAutocomplete.fim.suffixLines": {
+            "type": "number",
+            "scope": "resource",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.suffixLines#`; moved automatically on start. The old name still works until 1.0.",
+            "order": 111
           }
         }
       },

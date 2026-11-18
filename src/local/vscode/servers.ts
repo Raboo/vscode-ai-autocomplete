@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { renameBackendEntry } from '../../config/rename';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import { upsertBackend } from '../../manage/form';
@@ -58,7 +59,7 @@ async function moveBackend(backendId: string, port: number): Promise<void> {
       // not a URL: write the plain local one
     }
   }
-  await config.update('backends', upsertBackend(list, { ...entry, baseUrl }, backendId), vscode.ConfigurationTarget.Global);
+  await config.update('backends', upsertBackend(list, { ...renameBackendEntry(entry).entry, baseUrl }, backendId), vscode.ConfigurationTarget.Global);
 }
 
 /** Whether a process with this pid exists and this user may signal it (signal 0 sends nothing). */

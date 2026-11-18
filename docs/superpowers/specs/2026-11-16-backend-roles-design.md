@@ -20,7 +20,7 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
 
 - Hiding the per-backend completion settings (template, sampling, context) when Completions is unticked: some of them (timeout, thinking, extra context, extra body) also apply to Next Edit.
 - Per-use API keys, URLs or headers: one backend is still one server.
-- Changing the names in settings keys (`fim.*` stays).
+- Changing the names in settings keys (`fim.*` stayed here; it became `completions.*` later, see the main spec's settings table).
 
 ## Approaches
 
@@ -31,7 +31,7 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
 ## Decisions
 
 - **Setting:** `aiAutocomplete.backends[].use`, an array of `"completions"` and `"nextEdit"`. Missing means both, so existing settings behave exactly as today and nobody has to migrate. An empty array or unknown values are a problem (the usual `aiAutocomplete.backends[i] ("id"): …` text) and count as both.
-- **Selection:** `fim.backend` unset falls back to the first backend **with the Completions use** (today: the first backend). A selected backend without the use gives that feature no backend, with a problem entry; there is no fallback to another backend. `nextEdit.backend` keeps its "no fallback" rule and also needs the Next Edit use.
+- **Selection:** `completions.backend` unset falls back to the first backend **with the Completions use** (today: the first backend). A selected backend without the use gives that feature no backend, with a problem entry; there is no fallback to another backend. `nextEdit.backend` keeps its "no fallback" rule and also needs the Next Edit use.
 - **Models:** with both uses, an empty Next Edit model still means "same as the completion model" (a chat model such as Qwen3.8 on Strata does both). On a Next Edit-only backend the completion model never feeds Next Edit: the Next Edit model, else the detected one. Saving the form removes the model of an unticked use.
 - **Page:**
   - The **Use for** checkboxes sit in the Connection section; at least one must be ticked (a form error otherwise).
@@ -56,7 +56,7 @@ During the Phase 3b smoke test the user loaded Zeta 2.1 in LM Studio and pressed
 
 The user asked for the completion entry to match "Next Edit: <backend>", for completions to be turned off from it, and for one switch that stops both.
 
-- **Completions: <backend>** replaces "Select backend..." and "Toggle completions on/off" in the menu. It lists the Completions backends plus **Off**, the current one marked. Off sets `fim.enabled` false and keeps `fim.backend`; picking a backend sets it and turns completions back on. The command keeps its id (`aiAutocomplete.selectBackend`, now titled "Select Completion Backend"); the "Toggle Completions" command is removed (the user is its only user so far).
+- **Completions: <backend>** replaces "Select backend..." and "Toggle completions on/off" in the menu. It lists the Completions backends plus **Off**, the current one marked. Off sets `completions.enabled` false and keeps `completions.backend`; picking a backend sets it and turns completions back on. The command keeps its id (`aiAutocomplete.selectBackend`, now titled "Select Completion Backend"); the "Toggle Completions" command is removed (the user is its only user so far).
 - **Next Edit: <backend>** works the same way: Off sets `nextEdit.enabled` false and keeps `nextEdit.backend` (before, Off cleared the backend); picking a backend sets it and turns Next Edit back on. The page's "Use for" buttons turn their feature back on too. A picker marks Off as current only when the feature is off, so "Completions: none" marks nothing.
 - **Turn off / Turn on AI Autocomplete** (first entry; command `aiAutocomplete.toggleEnabled`, "Turn On/Off") flips a new setting, `aiAutocomplete.enabled` (default true, resource scope). Off stops completions and Next Edit and keeps both backend choices. Snooze stays for a timed pause.
 - While the switch is off, the Completions and Next Edit entries still name their backends: what **Turn on** brings back. With completions on but no backend serving them, the entry reads **Completions: none**. The palette's "Snooze Completions" is now "Snooze", since it pauses both.

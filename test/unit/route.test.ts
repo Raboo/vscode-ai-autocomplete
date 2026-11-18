@@ -159,7 +159,7 @@ describe('explainUnsupported', () => {
   test('a model that could not be detected is reported as such, with an error status', () => {
     expect(explainUnsupported('vllm', undefined, 'auto', 'template', false)).toEqual({
       onceKey: 'detect:vllm',
-      log: 'backend "vllm": could not detect its model (server unreachable or several models listed); set fimModel',
+      log: 'backend "vllm": could not detect its model (server unreachable or several models listed); set its model',
       status: 'vllm: model not detected',
     });
   });
@@ -192,7 +192,7 @@ describe('explainUnsupported', () => {
     const action = { command: 'aiAutocomplete.manageBackends', args: [{ focus: 'lm' }] };
     expect(explainUnsupported('lm', 'qwen2.5-coder-7b', 'native', 'mode', false)).toEqual({
       onceKey: 'route:lm:qwen2.5-coder-7b',
-      log: 'backend "lm": prompt mode (fimMode) "native" does not work with this server: set it to auto in AI Autocomplete: Manage Backends',
+      log: 'backend "lm": prompt mode "native" does not work with this server: set it to auto in AI Autocomplete: Manage Backends',
       status: 'lm: prompt mode "native" does not work with this server',
       action,
     });

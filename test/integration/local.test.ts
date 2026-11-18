@@ -27,7 +27,7 @@ const EXIT_ENV = 'FAKE_LLAMA_SERVER_EXIT';
 const EXIT_ONCE_ENV = 'FAKE_LLAMA_SERVER_EXIT_ONCE';
 const STARTS_ENV = 'FAKE_LLAMA_SERVER_STARTS';
 /** Every setting a test may write; teardown resets them. */
-const TOUCHED = ['backends', 'fim.backend', 'fim.enabled', 'fim.debounceMs', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
+const TOUCHED = ['backends', 'completions.backend', 'completions.enabled', 'completions.debounceMs', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
 
 const userBackends = (): Record<string, unknown>[] => {
   const list = vscode.workspace.getConfiguration('aiAutocomplete').inspect('backends')?.globalValue;
@@ -118,9 +118,9 @@ suite('Local model helper', () => {
 
     const e = entry();
     assert.equal(e?.kind, 'llamacpp');
-    assert.equal(e?.fimModel, 'test-coder');
+    assert.equal(e?.model, 'test-coder');
     assert.match(String(e?.baseUrl), /^http:\/\/127\.0\.0\.1:\d+$/);
-    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('fim.backend'), BACKEND_ID);
+    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('completions.backend'), BACKEND_ID);
     assert.equal(await health(portOf(e)), 200);
 
     await sleep(SETTLE_MS);
@@ -147,7 +147,7 @@ suite('Local model helper', () => {
       const out = await setUp(true);
       assert.ok(out && !out.ok, `setup did not fail: ${JSON.stringify(out)}`);
       assert.equal(JSON.stringify(userBackends()), backends);
-      assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('fim.backend'), BACKEND_ID);
+      assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('completions.backend'), BACKEND_ID);
       // The restart runs the fixture again, which works now that the flag file is gone.
       assert.ok(await healthyWithin(portOf(entry()), 10_000), `the previous server did not come back (backend ${JSON.stringify(entry())})`);
     } finally {
@@ -168,22 +168,22 @@ suite('Local model helper', () => {
     process.env[STARTS_ENV] = starts;
     try {
       // Stopped with Stop Local Models: a change that keeps the selection leaves it stopped.
-      await configure({ 'fim.debounceMs': 120 });
+      await configure({ 'completions.debounceMs': 120 });
       await sleep(1000);
       assert.equal(readFileSync(starts, 'utf8'), '', 'an unrelated settings change started the server');
-      await configure({ 'fim.enabled': false });
-      await configure({ 'fim.enabled': true });
+      await configure({ 'completions.enabled': false });
+      await configure({ 'completions.enabled': true });
       assert.ok(await healthyWithin(port, 10_000), 'the server did not start when its backend was selected again');
       assert.equal(readFileSync(starts, 'utf8').trim().split('\n').length, 1);
       // Deselecting it stops it.
-      await configure({ 'fim.enabled': false });
+      await configure({ 'completions.enabled': false });
       let down = false;
       for (const deadline = Date.now() + 10_000; !down && Date.now() < deadline; await sleep(100)) down = !(await healthy(port));
       assert.ok(down, 'the server kept running after its backend was deselected');
     } finally {
       delete process.env[STARTS_ENV];
-      await unconfigure(['fim.debounceMs']);
-      await configure({ 'fim.enabled': true });
+      await unconfigure(['completions.debounceMs']);
+      await configure({ 'completions.enabled': true });
     }
   });
 
@@ -197,8 +197,8 @@ suite('Local model helper', () => {
     try {
       assert.ok(await healthyWithin(port, 10_000), 'the hand-started server did not come up');
       process.env[STARTS_ENV] = starts;
-      await configure({ 'fim.enabled': false });
-      await configure({ 'fim.enabled': true });
+      await configure({ 'completions.enabled': false });
+      await configure({ 'completions.enabled': true });
       await sleep(1500);
       assert.equal(readFileSync(starts, 'utf8'), '', 'the extension started its own server');
       assert.equal(portOf(entry()), port, 'the backend moved to another port');
@@ -224,7 +224,7 @@ suite('Local model helper', () => {
     process.env[EXIT_ONCE_ENV] = flag;
     try {
       // Completions off, so the failed run does not start the previous server again (which would move the backend too).
-      await configure({ 'fim.enabled': false });
+      await configure({ 'completions.enabled': false });
       const out = await setUp(true);
       assert.ok(out && !out.ok, `setup did not fail: ${JSON.stringify(out)}`);
       assert.equal(JSON.stringify(userBackends()), backends);
@@ -232,12 +232,12 @@ suite('Local model helper', () => {
       delete process.env[EXIT_ONCE_ENV];
       blocker.closeAllConnections();
       await new Promise<void>((r) => blocker.close(() => r()));
-      await configure({ 'fim.enabled': true });
+      await configure({ 'completions.enabled': true });
     }
   });
 
   test('fails cleanly: a server that exits at once shows the error and writes no backend', async () => {
-    await unconfigure(['backends', 'fim.backend']);
+    await unconfigure(['backends', 'completions.backend']);
     process.env[EXIT_ENV] = '1';
     try {
       const out = await setUp();

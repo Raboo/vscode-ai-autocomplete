@@ -3,6 +3,7 @@ import { inferHostFlavor, isHostedFlavor } from '../backends/hostFlavor';
 import { resolveFim, templateMismatch, type ValueSource } from '../completion/effective';
 import { chatStops, planRoute } from '../completion/route';
 import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
+import { renameBackendEntry } from '../config/rename';
 import { TEMPLATES } from '../models/templates';
 import { nextEditOnlyNote } from '../nextEdit/formats';
 import { THINKING_LABELS } from '../models/thinking';
@@ -20,7 +21,7 @@ export interface FieldError { field: ErrorField; message: string }
 type Limited = keyof typeof FIM_LIMITS;
 const FIELDS: readonly FormField[] = ['template', 'fimMode', 'thinking', 'multiline', 'contextTokens', 'prefixLines', 'suffixLines', 'extraContext',
   'temperature', 'topP', 'topK', 'maxTokens', 'debounceMs', 'timeoutMs', 'stop', 'headers', 'extraBody'];
-/** The fields stored under `fim`; `fimMode` and `headers` live at the top level of the entry. */
+/** The fields stored under `completions`; `fimMode` (stored as `mode`) and `headers` live at the top level of the entry. */
 const FIM_KEYS = FIELDS.filter((f) => f !== 'fimMode' && f !== 'headers');
 const NUMERIC = Object.keys(FIM_LIMITS) as Limited[];
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -79,26 +80,27 @@ function usesOf(raw: unknown): BackendForm['use'] {
   return completions || nextEdit ? { completions, nextEdit } : { completions: true, nextEdit: true };
 }
 
-export function entryToForm(raw: Record<string, unknown>): BackendForm {
+export function entryToForm(given: Record<string, unknown>): BackendForm {
+  const raw = renameBackendEntry(given).entry;
   const kind = (raw.kind === 'llamacpp' || raw.kind === 'openai' || raw.kind === 'mistral' ? raw.kind : 'openai') as BackendKind;
   const baseUrl = typeof raw.baseUrl === 'string' ? raw.baseUrl : '';
   const id = typeof raw.id === 'string' ? raw.id : '';
   const flavor = typeof raw.hostFlavor === 'string' ? (raw.hostFlavor as HostFlavor) : undefined;
   const changed: BackendForm['changed'] = {};
-  if (isObj(raw.fim)) {
+  if (isObj(raw.completions)) {
     for (const k of FIM_KEYS) {
-      const v = raw.fim[k];
+      const v = raw.completions[k];
       if (v === undefined) continue;
       changed[k] = Array.isArray(v) ? v.join('\n') : isObj(v) ? JSON.stringify(v) : String(v);
     }
   }
-  if (typeof raw.fimMode === 'string') changed.fimMode = raw.fimMode;
+  if (typeof raw.mode === 'string') changed.fimMode = raw.mode;
   if (isObj(raw.headers)) {
     const hs = Object.entries(raw.headers).filter(([, v]) => typeof v === 'string').map(([k, v]) => `${k}: ${v as string}`);
     if (hs.length > 0) changed.headers = hs.join('\n');
   }
   return { ...(id ? { originalId: id } : {}), type: serverTypeOf({ kind, ...(flavor ? { hostFlavor: flavor } : {}), baseUrl }), id, baseUrl,
-    model: typeof raw.fimModel === 'string' ? raw.fimModel : '',
+    model: typeof raw.model === 'string' ? raw.model : '',
     nextEditModel: typeof raw.nextEditModel === 'string' ? raw.nextEditModel : '', use: usesOf(raw.use), changed };
 }
 
@@ -164,8 +166,12 @@ export function validateForm(f: BackendForm, taken: readonly string[]): FieldErr
   return errors;
 }
 
-/** The entry to store. Keeps every key of `original` that the form does not own, including unknown keys inside `original.fim`. */
-export function formToEntry(f: BackendForm, original?: Record<string, unknown>): Record<string, unknown> {
+/**
+ * The entry to store. Keeps every key of `original` that the form does not own, including unknown keys inside
+ * `original.completions`; old field names of `original` (fimModel, fimMode, fim) are written under their new names.
+ */
+export function formToEntry(f: BackendForm, given?: Record<string, unknown>): Record<string, unknown> {
+  const original = given === undefined ? undefined : renameBackendEntry(given).entry;
   const out: Record<string, unknown> = { ...original };
   const t = typeInfo(f.type);
   // An unlisted kind/flavor pair of the original stays as it was.
@@ -180,22 +186,22 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
   }
   out.baseUrl = f.baseUrl.trim();
   // The model of an unticked use is dropped; both uses is the default and is stored as no `use` at all.
-  if (f.use.completions && f.model.trim() !== '') out.fimModel = f.model.trim();
-  else delete out.fimModel;
+  if (f.use.completions && f.model.trim() !== '') out.model = f.model.trim();
+  else delete out.model;
   if (f.use.nextEdit && f.nextEditModel.trim() !== '') out.nextEditModel = f.nextEditModel.trim();
   else delete out.nextEditModel;
   if (f.use.completions && !f.use.nextEdit) out.use = ['completions'];
   else if (f.use.nextEdit && !f.use.completions) out.use = ['nextEdit'];
   else delete out.use;
 
-  const fim: Record<string, unknown> = isObj(original?.fim) ? { ...original.fim } : {};
+  const fim: Record<string, unknown> = isObj(original?.completions) ? { ...original.completions } : {};
   for (const k of FIM_KEYS) delete fim[k];
-  delete out.fimMode;
+  delete out.mode;
   delete out.headers;
   for (const k of FIELDS) {
     const text = typed(f, k);
     if (text === undefined) continue;
-    if (k === 'fimMode') out.fimMode = text;
+    if (k === 'fimMode') out.mode = text;
     else if (k === 'headers') {
       const { headers } = parseHeaders(text);
       if (Object.keys(headers).length > 0) out.headers = headers;
@@ -210,8 +216,8 @@ export function formToEntry(f: BackendForm, original?: Record<string, unknown>):
       if (Number.isFinite(n)) fim[k] = n;
     }
   }
-  if (Object.keys(fim).length > 0) out.fim = fim;
-  else delete out.fim;
+  if (Object.keys(fim).length > 0) out.completions = fim;
+  else delete out.completions;
   return out;
 }
 

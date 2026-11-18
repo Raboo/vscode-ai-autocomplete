@@ -194,7 +194,7 @@ There is no universal switch, so this is a table, not scattered `if`s.
   - `reasoningEffortNone` (Mistral Small 4 / Medium 3.5; users can pick it for others);
   - `systemSoftSwitch:/no_think` (Nemotron Nano v2; the suffix goes in the system prompt);
   - `cannotDisable` (gpt-oss, DeepSeek R1, MiniMax M2.x and M3.1, GLM-5.3, Kimi K3, K2.7 and K2 Thinking, Qwen3 Thinking, Qwen3.8 2.4T, Mistral Large 4).
-  - A backend's `fim.thinking`, or a `modelOverrides` entry's `thinking`, replaces the family's choice (the Backends page's Thinking switch).
+  - A backend's `completions.thinking`, or a `modelOverrides` entry's `thinking`, replaces the family's choice (the Backends page's Thinking switch).
   - Reassigned from the first draft: Qwen3-2504 moved from `systemSoftSwitch` to `templateKwarg:enable_thinking` (row `qwen3`), and MiniMax M3 moved from `vendorThinkingDisabled` to `templateKwarg:thinking_mode=disabled` (row `minimax-m3`).
   - Dropped from the first draft on purpose: the GPT-5.x, Gemini 2.5/3+, Z.ai and Moonshot rows. They have no preset. Through OpenRouter they get `reasoning:{effort:"none"}` whatever the family (and the "must reason" handling below); their own APIs work through an "Other OpenAI-compatible" backend with the Thinking switch (`vendorThinkingDisabled` sends `thinking:{type:"disabled"}`).
 - **Host flavor envelope** (host facts verified 2026-11-15; sources: llama.cpp `5c008e0`, vLLM `a16bfee`, SGLang `7b5fb39`, Ollama `a5864fc`, Strata `13eedf5`, LM Studio docs `8c7159b`, OpenRouter docs, DeepSeek docs):
@@ -241,7 +241,7 @@ There is no universal switch, so this is a table, not scattered `if`s.
 
 Mistral rule: set either `temperature` or `top_p`, not both. The `mistral` backend preset therefore omits `top_p`. Twinny notes that some hosted completion endpoints reject more than 4 stop sequences, so the stop list is capped per backend.
 
-Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS`). A backend's `fim.timeoutMs` (the page's Timeout field) replaces it. The chat route has no longer deadline for thinking models: they fail instead.
+Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS`). A backend's `completions.timeoutMs` (the page's Timeout field) replaces it. The chat route has no longer deadline for thinking models: they fail instead.
 
 ### FIM pipeline (`completion/`)
 
@@ -347,9 +347,9 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
   - After an accept, chain the next prediction (re-trigger after ~60 ms) so repeated Tabs walk through a refactor.
 - **Arbitration with FIM**: one registered provider returns a fresh NES result for the current document version if there is one, otherwise the FIM result. While the user is typing mid-line, FIM wins.
 - **Phase 3a decisions** (2026-11-15, plan `docs/superpowers/plans/2026-11-15-phase3a-next-edit.md`, rulings 2, 3, 5, 6 and 9 to 13):
-  - Next Edit is off until `aiAutocomplete.nextEdit.backend` is set; it has no default, unlike `fim.backend`, so FIM-only users send no extra requests.
+  - Next Edit is off until `aiAutocomplete.nextEdit.backend` is set; it has no default, unlike `completions.backend`, so FIM-only users send no extra requests.
   - FIM wins: after typing, Next Edit asks only when FIM's result for that document version was empty or FIM is not active for the document. A cursor move within 10 s of an edit asks Next Edit directly.
-  - The Next Edit model is the backend's `nextEditModel`, else its `fimModel`, else the detected model. A separate Next Edit model keeps the backend-level values of the backend's `fim` block, `extraBody` and the `extraContext` restriction; its thinking switch and other model values come from the model's preset and `modelOverrides`.
+  - The Next Edit model is the backend's `nextEditModel`, else its `model`, else the detected model. A separate Next Edit model keeps the backend-level values of the backend's `completions` block, `extraBody` and the `extraContext` restriction; its thinking switch and other model values come from the model's preset and `modelOverrides`.
   - The deadline is `aiAutocomplete.nextEdit.timeoutMs`, default 10 000 ms (500 to 60 000), because Next Edit runs in the background and a late answer for an old version is dropped anyway.
   - A fresh result is shown by running `editor.action.inlineSuggest.trigger` in both modes, not the proposed `onDidChange`, so there is one code path.
   - The edit-pause delay is 400 ms after the last change; selection triggers are not debounced, and the same-line cooldown limits them.
@@ -362,11 +362,12 @@ Deadline: one default of 5 s for every route, chat included (`DEFAULT_TIMEOUT_MS
 
 | Setting | Scope / notes |
 |---|---|
-| `aiAutocomplete.backends` | **machine** scope: `[{id, kind, baseUrl, hostFlavor?, fimModel?, nextEditModel?, fimMode?, headers?, use?}]`. `use` is a list of `"completions"` and `"nextEdit"` saying what the backend serves (Phase 3c; missing means both; see the [backend roles design](2026-11-16-backend-roles-design.md)). Keys go in SecretStorage through the "Set API key" command. A workspace can never add or edit endpoints. Machine scope keeps `localhost` endpoints from syncing into remote/SSH windows, where `localhost` is a different machine. |
-| `aiAutocomplete.fim.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
+| `aiAutocomplete.backends` | **machine** scope: `[{id, kind, baseUrl, hostFlavor?, model?, nextEditModel?, mode?, headers?, use?}]`. `use` is a list of `"completions"` and `"nextEdit"` saying what the backend serves (Phase 3c; missing means both; see the [backend roles design](2026-11-16-backend-roles-design.md)). Keys go in SecretStorage through the "Set API key" command. A workspace can never add or edit endpoints. Machine scope keeps `localhost` endpoints from syncing into remote/SSH windows, where `localhost` is a different machine. |
+| `aiAutocomplete.completions.backend`, `aiAutocomplete.nextEdit.backend` | Workspace-overridable, but only to choose among configured backend ids. |
 | `aiAutocomplete.privacy.localOnly` | Workspace-settable (it can only restrict). Refuses non-loopback, non-private backends, and shows a lock icon in the status bar. |
 | `aiAutocomplete.enabled` | Workspace-settable. Off stops completions and Next Edit together and keeps both backend choices; the status bar menu's **Turn off/on AI Autocomplete** sets it ([backend roles design](2026-11-16-backend-roles-design.md)). |
-| `aiAutocomplete.fim.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
+| `aiAutocomplete.completions.*` | `enabled`, `debounceMs`, `multiline`, `maxTokens`, `prefixLines`/`suffixLines`, `extraContext`, `disableInLanguages`, `disableInFiles` |
+| Renamed (polish, before 1.0) | `aiAutocomplete.fim.*` became `aiAutocomplete.completions.*`; backend fields `fimModel`, `fimMode`, `fim` became `model`, `mode`, `completions`. On start, old names in user settings (and a trusted workspace) move to the new ones; the reader still accepts old names, each with a log note, until 1.0 (`src/config/rename.ts`). |
 | `aiAutocomplete.nextEdit.*` | Phase 3a: `enabled`, `backend` (row above), `timeoutMs`. Phase 3b, all resource scope: `format` (`auto`, `chatXtab`, `sweep`, `zeta21`; `instinct` is not built), `display` (`auto`, `native`, `decorations`), `regionLinesAbove` (integer 0 to 20, default 5), `regionLinesBelow` (0 to 40, default 10), `historySize` (0 to 10, default 5) and `contextBudget` (1000 to 16000 tokens, default 3500). A value out of range is ignored with a warning. |
 | `aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath` | **machine** scope (Phase 4): path to `llama-server` and to LM Studio's `lms`. Empty means look on PATH and in the usual install places. See the [local model helper design](2026-11-16-local-model-helper-design.md). |
 | `aiAutocomplete.modelOverrides` | machine scope: regex → `{fimTemplate, stop, sampling, extraBody, thinking}` |

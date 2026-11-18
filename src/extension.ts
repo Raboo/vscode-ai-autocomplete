@@ -11,6 +11,7 @@ import { resolveFim } from './completion/effective';
 import { FimProvider } from './completion/provider';
 import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
+import { isOldNameProblem } from './config/rename';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
@@ -21,6 +22,7 @@ import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
+import { migrationRunner } from './ui/migrateSettings';
 import { StatusBar } from './ui/statusBar';
 import { activity, menuInputs } from './ui/statusModel';
 
@@ -63,7 +65,10 @@ export function activate(context: vscode.ExtensionContext): {
   let warnedProblems = false;
   let warnedNoBackends = false;
   const openSettings = (): void => void vscode.commands.executeCommand('workbench.action.openSettings', 'aiAutocomplete');
-  const warnOnce = (problems: string[]): void => {
+  const warnOnce = (all: string[]): void => {
+    // Old setting names are moved on start; what is left (folder settings, an untrusted workspace) is only logged.
+    for (const p of all.filter(isOldNameProblem)) log.info(`settings: ${p}`);
+    const problems = all.filter((p) => !isOldNameProblem(p));
     if (problems.length > 0 && !warnedProblems) {
       warnedProblems = true;
       void vscode.window.showWarningMessage(`AI Autocomplete settings: ${problems.join('; ')}`, 'Open Settings').then((c) => c && openSettings());
@@ -274,15 +279,22 @@ export function activate(context: vscode.ExtensionContext): {
     status.refresh();
     warnOnce(problems);
   };
+  // Old setting names (fim.*, fimModel, fimMode, fim) move to the new ones on start, after each settings change and when
+  // the workspace becomes trusted; a run that finds nothing old writes nothing.
+  const migrate = migrationRunner(log);
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('aiAutocomplete')) onSettingsChanged();
+      if (!e.affectsConfiguration('aiAutocomplete')) return;
+      onSettingsChanged();
+      migrate();
     }),
   );
-  // An added folder of a multi-root workspace may bring its own privacy.localOnly or fim.disableInFiles.
+  sub(vscode.workspace.onDidGrantWorkspaceTrust(migrate));
+  // An added folder of a multi-root workspace may bring its own privacy.localOnly or completions.disableInFiles.
   sub(vscode.workspace.onDidChangeWorkspaceFolders(onSettingsChanged));
 
   warnOnce(rebuild());
+  migrate();
   status.setLocalLock(settings.privacy.localOnly);
   // Not awaited: a model can take a minute to load, and activation must not wait for it.
   void servers.startSelected();

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { clearAsked, commit, commitWhen, configure, registerProbe, showAtEnd, sleep, trigger, unconfigure, waitFor } from './helpers';
-import { startMockServer, type MockServer } from './mockServer';
+import { startMockServer, type MockServer, type RecordedRequest } from './mockServer';
 
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
@@ -23,6 +23,9 @@ const useStrata = (baseUrl: string, model: string): Promise<void> =>
 const useLlamaCpp = (baseUrl: string, extra: Record<string, unknown> = {}): Promise<void> =>
   configure({ backends: [{ id: BACKEND_ID, kind: 'llamacpp', baseUrl }], 'fim.backend': BACKEND_ID, ...extra });
 
+/** A warm-up: an /infill that generates nothing, so llama.cpp only fills its prompt cache. */
+const isWarmUp = (r: RecordedRequest): boolean => r.body?.n_predict === 0;
+
 const openSource = async (content = SOURCE): Promise<vscode.TextEditor> => showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content }));
 
 suite('FIM inline completion', () => {
@@ -31,7 +34,9 @@ suite('FIM inline completion', () => {
   let tempDir: string | undefined;
   let probe: vscode.Disposable;
 
-  const infillRequests = () => mock.requests.filter((r) => r.path === '/infill');
+  /** Completion requests to /infill; warm-ups (n_predict 0, sent when an editor becomes active) are left out. */
+  const infillRequests = () => mock.requests.filter((r) => r.path === '/infill' && !isWarmUp(r));
+  const warmUps = () => mock.requests.filter((r) => r.path === '/infill' && isWarmUp(r));
 
   suiteSetup(async () => {
     mock = await startMockServer();
@@ -72,6 +77,40 @@ suite('FIM inline completion', () => {
     const prefix = infillRequests()[0].body?.input_prefix;
     assert.equal(typeof prefix, 'string');
     assert.ok((prefix as string).endsWith('return '), `input_prefix: ${JSON.stringify(prefix)}`);
+  });
+
+  test('an editor that becomes active warms llama.cpp with n_predict 0 and the window at the cursor', async () => {
+    await useLlamaCpp(mock.baseUrl);
+    await openSource();
+
+    assert.ok(await waitFor(() => warmUps().length >= 1, 3000), `no warm-up; mock saw ${JSON.stringify(mock.requests.map((r) => r.path))}`);
+    const body = warmUps()[0].body;
+    assert.equal(body?.n_predict, 0);
+    assert.ok(String(body?.input_prefix).endsWith('return '), `input_prefix: ${JSON.stringify(body?.input_prefix)}`);
+    assert.equal(infillRequests().length, 0, 'a warm-up is the only /infill');
+  });
+
+  test('after an accepted completion, the next one at the cursor comes from the prefetch cache', async () => {
+    await useLlamaCpp(mock.baseUrl);
+    const editor = await openSource();
+    await trigger(editor);
+    assert.ok(await waitFor(() => infillRequests().length >= 1, 5000), `no /infill request; mock saw ${JSON.stringify(mock.requests)}`);
+    await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+    assert.ok(editor.document.getText().endsWith('return a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
+
+    // The completion at the new cursor was asked for without a trigger, and cached.
+    const atCursor = () => infillRequests().filter((r) => String(r.body?.input_prefix).endsWith('return a + b;'));
+    assert.ok(await waitFor(() => atCursor().length >= 1, 3000), `no prefetch; mock saw ${JSON.stringify(mock.requests.map((r) => r.body?.input_prefix))}`);
+    await sleep(300);
+
+    // Typing the start of the cached suggestion shows the rest without asking the server (accepting it prefetches again, at the new end).
+    await vscode.commands.executeCommand('type', { text: 'a' });
+    await commitWhen(editor, (t) => t.endsWith('return a + b;a + b;'));
+    assert.ok(editor.document.getText().endsWith('return a + b;a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
+    await sleep(300);
+    const prefixes = infillRequests().map((r) => String(r.body?.input_prefix));
+    assert.equal(prefixes.filter((p) => p.endsWith('return a + b;')).length, 1, `mock saw ${JSON.stringify(prefixes)}`);
+    assert.equal(prefixes.filter((p) => p.endsWith('return a + b;a')).length, 0, `mock saw ${JSON.stringify(prefixes)}`);
   });
 
   test('localOnly blocks a non-local backend', async () => {
@@ -208,7 +247,7 @@ suite('FIM inline completion', () => {
     }
   });
 
-  const posts = (m: MockServer, path: string) => m.requests.filter((r) => r.method === 'POST' && r.path === path);
+  const posts = (m: MockServer, path: string) => m.requests.filter((r) => r.method === 'POST' && r.path === path && !isWarmUp(r));
   const withMock = async (opts: Parameters<typeof startMockServer>[0], fn: (m: MockServer) => Promise<void>): Promise<void> => {
     const m = await startMockServer(opts);
     try {

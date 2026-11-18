@@ -33,6 +33,8 @@ export interface CommandDeps {
   manageBackends(o: OpenOptions): void;
   /** Whether VS Code's native Next Edit UI is available (the proposed API is enabled for this extension). */
   nativeNextEdit(): boolean;
+  /** A completion was accepted (after the stats are counted): prefetches the next one on local llama.cpp. */
+  completionAccepted(): void;
   /** A Next Edit item was accepted. */
   nextEditAccepted(): void;
   /** Tab on a Next Edit shown as decorations: jump to it, or apply it. */
@@ -217,6 +219,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       accepted++;
       d.outcomes.accepted();
       d.status.setStats(accepted);
+      d.completionAccepted();
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),
     reg('nextEditTab', () => d.nextEditTab()),

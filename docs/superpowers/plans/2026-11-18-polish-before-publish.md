@@ -34,10 +34,10 @@
 
 ### Task 3: Warm-up and prefetch for local llama.cpp
 
-- [ ] Warm-up: when a document becomes active and the completion backend is llama.cpp on a loopback host, send one `/infill` with `n_predict: 0` and the current window (debounced to once per document per 30 s), so the prompt cache is filled before the first keystroke.
-- [ ] Prefetch: after a completion is accepted (the `accepted` command), request the completion at the new cursor position for the same document and store it in the cache, without showing anything; only for loopback llama.cpp backends; skipped when another request is running.
-- [ ] Unit tests for the decisions (loopback only, rate limits); integration test on the mock: after accepting, the next trigger is a cache hit.
-- [ ] Commit: `feat: warm up and prefetch on local llama.cpp`
+- [x] Warm-up: when a document becomes active and the completion backend is llama.cpp on a loopback host, send one `/infill` with `n_predict: 0` and the current window (debounced to once per document per 30 s), so the prompt cache is filled before the first keystroke.
+- [x] Prefetch: after a completion is accepted (the `accepted` command), request the completion at the new cursor position for the same document and store it in the cache, without showing anything; only for loopback llama.cpp backends; skipped when another request is running.
+- [x] Unit tests for the decisions (loopback only, rate limits); integration test on the mock: after accepting, the next trigger is a cache hit.
+- [x] Commit: `feat: warm up and prefetch on local llama.cpp`
 
 ### Task 4: Better completion context
 

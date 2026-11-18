@@ -46,6 +46,8 @@ llama-server --fim-qwen-3b-default --port 8012
 
 On Linux and Windows, download a build from the [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) instead. The `--fim-qwen-3b-default` preset downloads Qwen2.5-Coder 3B the first time it runs.
 
+With llama.cpp on this machine (`localhost` or `127.0.0.1`), the extension warms the server up: when you switch to a file it sends the code around the cursor once (at most every 30 s per file, generating nothing) so llama.cpp has it cached before you type, and after you accept a suggestion it asks for the next one at once and keeps it ready for your next keystroke. Neither shows anything by itself, and neither runs for remote servers.
+
 ### 2. Point the extension at it
 
 Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Connect a Server** button of the first-run notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, say what it is used for, pick its models from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends built-in samples, never your code.

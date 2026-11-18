@@ -29,6 +29,7 @@ const REMOTE_DEBOUNCE_MS = 250;
 const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
+const WARM_DELAY_MS = 250;
 
 /** Kept for deactivate(), which has no context to reach the manager through. */
 let localServers: LocalServers | undefined;
@@ -158,6 +159,19 @@ export function activate(context: vscode.ExtensionContext): {
   nextEdit.native = native;
   log.info(native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)");
 
+  // Warm-up: a document that becomes active fills local llama.cpp's prompt cache with the window at the cursor. Shortly after
+  // the switch, so a cursor placed right after opening (go to definition, a search result) is the one used.
+  let warmTimer: ReturnType<typeof setTimeout> | undefined;
+  const warmSoon = (editor: vscode.TextEditor | undefined): void => {
+    clearTimeout(warmTimer);
+    if (!editor) return;
+    warmTimer = setTimeout(() => {
+      if (vscode.window.activeTextEditor === editor) provider.warm(editor.document, editor.selection.active);
+    }, WARM_DELAY_MS);
+  };
+  sub(vscode.window.onDidChangeActiveTextEditor(warmSoon));
+  sub({ dispose: () => clearTimeout(warmTimer) });
+
   const panelDeps: BackendsPanelDeps = {
     context,
     secrets,
@@ -217,6 +231,11 @@ export function activate(context: vscode.ExtensionContext): {
     log,
     manageBackends,
     nativeNextEdit: () => native,
+    completionAccepted: () => {
+      // The accepted text is in the document now: the cursor sits where the next completion would be asked.
+      const editor = vscode.window.activeTextEditor;
+      if (editor) provider.prefetch(editor.document, editor.selection.active);
+    },
     nextEditAccepted: () => nextEdit.accepted(),
     nextEditTab: () => nextEdit.nextEditTab(),
     nextEditDismiss: () => nextEdit.nextEditDismiss(),
@@ -267,6 +286,7 @@ export function activate(context: vscode.ExtensionContext): {
   status.setLocalLock(settings.privacy.localOnly);
   // Not awaited: a model can take a minute to load, and activation must not wait for it.
   void servers.startSelected();
+  warmSoon(vscode.window.activeTextEditor);
   return {
     status,
     secrets,

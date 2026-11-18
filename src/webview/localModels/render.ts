@@ -32,7 +32,7 @@ function server(s: LocalPageState): string {
     ? button('stop', 'Stop') + button('restart', 'Restart')
     : button('start', 'Start', undefined, { cls: 'btn primary' });
   const log = v.log.length > 0
-    ? `<details class="log"><summary>Server log (${v.log.length} lines)</summary><pre>${v.log.map(e).join('\n')}</pre>${button('openLog', 'Open full log')}</details>` : '';
+    ? `<details class="log" id="server-log"><summary>Server log (${v.log.length} lines)</summary><pre>${v.log.map(e).join('\n')}</pre>${button('openLog', 'Open full log')}</details>` : '';
   return `<section class="section" aria-labelledby="h-server"><h2 id="h-server">Server</h2>`
     + `<p class="line"><span class="status ${e(v.state)}">${e(status)}</span>${actions}</p>`
     + `<p class="muted">${v.binary !== undefined ? `llama-server: ${e(v.binary)}${v.version !== undefined ? ` (${e(v.version)})` : ''}` : 'llama-server not found'}</p>`
@@ -53,6 +53,17 @@ function updateText(u: UpdateView | undefined): string {
   return `Update available (${formatBytes(u.available.bytes)}${u.available.date ? `, ${u.available.date}` : ''})`;
 }
 
+/** Use for... only offers what the model supports. */
+function useButtons(m: ModelRow): string[] {
+  const c = m.uses.includes('completions');
+  const n = m.uses.includes('nextEdit');
+  return [
+    ...(c ? [button('use', 'Use for completions', m.name, { extra: ' data-uses="completions"' })] : []),
+    ...(n ? [button('use', 'Use for Next Edit', m.name, { extra: ' data-uses="nextEdit"' })] : []),
+    ...(c && n ? [button('use', 'Use for both', m.name, { extra: ' data-uses="completions,nextEdit"' })] : []),
+  ];
+}
+
 function modelRow(m: ModelRow): string {
   const d = m.download;
   const progress = d.kind === 'running' ? `Downloading ${formatBytes(d.received ?? 0)} of ${formatBytes(m.bytes)}`
@@ -63,8 +74,7 @@ function modelRow(m: ModelRow): string {
       : d.kind === 'done' ? [button('removeFile', 'Remove file', m.name)]
         : [button('download', d.kind === 'failed' ? 'Retry download' : 'Download', m.name)]),
     ...(d.kind === 'done' && m.load !== 'n/a' ? [m.load === 'loaded' || m.load === 'sleeping' ? button('unload', 'Unload', m.name) : button('load', 'Load', m.name, { disabled: m.load === 'loading' })] : []),
-    ...(d.kind === 'done' ? [button('use', 'Use for completions', m.name, { extra: ' data-uses="completions"' }),
-      button('use', 'Use for Next Edit', m.name, { extra: ' data-uses="nextEdit"' }), button('use', 'Use for both', m.name, { extra: ' data-uses="completions,nextEdit"' })] : []),
+    ...(d.kind === 'done' ? useButtons(m) : []),
     button('edit', 'Edit', m.name),
     ...(m.builtIn ? [m.hidden ? button('unhide', 'Unhide', m.name) : button('hide', 'Hide', m.name)]
       : [button('checkUpdate', 'Check for update', m.name), button('removeModel', 'Remove from list', m.name, { cls: 'btn link danger' })]),
@@ -95,7 +105,7 @@ function modelForm(f: ModelForm): string {
     + field('f-topP', 'top_p', num(f.sampling.topP), { type: 'number', step: 'any' })
     + field('f-topK', 'top_k', num(f.sampling.topK), { type: 'number' })
     + field('f-maxTokens', 'Max tokens', num(f.sampling.maxTokens), { type: 'number' })
-    + (f.otherOverridesMatch ? '' : `<p class="hint">The Next Edit and completions sampling differ; saving sets both to these values.</p>`)
+    + (f.otherOverridesMatch ? `<p class="hint">other overrides also match this model</p>` : '')
     + (f.error ? `<p class="card-warning warn" role="alert">${e(f.error)}</p>` : '')
     + `<div class="actions">${button('saveModel', 'Save', undefined, { cls: 'btn primary' })}${button('cancel', 'Cancel')}</div></form></section>`;
 }
@@ -112,7 +122,7 @@ function addSection(a: AddState | undefined): string {
       + field('add-context', 'Context size (tokens)', num(a?.contextTokens ?? 8192), { type: 'number' })
       + `<div class="actions">${button('addFile', 'Add model', undefined, { cls: 'btn primary', disabled: a?.busy })}</div>` : '';
   return `<section class="section" aria-labelledby="h-add"><h2 id="h-add">Add model</h2>`
-    + `<p class="line">${field('add-repo', 'Hugging Face repo (owner/name)', repo)}${button('addRepo', 'List files', undefined, { disabled: a?.busy })}${a ? button('cancel', 'Cancel') : ''}</p>`
+    + `<div class="line">${field('add-repo', 'Hugging Face repo (owner/name)', repo)}${button('addRepo', 'List files', undefined, { disabled: a?.busy })}${a ? button('cancel', 'Cancel') : ''}</div>`
     + (a?.busy ? `<p class="muted" role="status">Working...</p>` : '') + (a?.error ? `<p class="card-warning warn" role="alert">${e(a.error)}</p>` : '') + list + `</section>`;
 }
 

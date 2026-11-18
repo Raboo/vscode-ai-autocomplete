@@ -13,6 +13,9 @@ const post = (message: PageMessage): void => vscode.postMessage(message);
 let root: HTMLElement;
 let state: LocalPageState | undefined;
 const typed = new Map<string, string>();
+/** Checkbox and <details> state is client-side: it is replayed after each render. */
+const checked = new Map<string, boolean>();
+let logOpen = false;
 
 type Control = HTMLInputElement | HTMLTextAreaElement;
 const isText = (el: unknown): el is Control =>
@@ -34,6 +37,12 @@ function render(): void {
   const focusId = active instanceof HTMLElement && root.contains(active) ? active.id : '';
   const caret = isText(active) ? { start: active.selectionStart, end: active.selectionEnd } : undefined;
   root.innerHTML = renderPage(state);
+  for (const c of root.querySelectorAll<HTMLInputElement>('input.add-use')) {
+    const v = checked.get(c.value);
+    if (v !== undefined) c.checked = v;
+  }
+  const log = document.getElementById('server-log');
+  if (log instanceof HTMLDetailsElement) log.open = logOpen;
   for (const [id, v] of typed) {
     const el = byId(id);
     if (el && el.value !== v) el.value = v;
@@ -58,10 +67,12 @@ function onClick(ev: MouseEvent): void {
   switch (target.dataset.action) {
     case 'start': case 'stop': case 'restart': case 'changeModelsDir': case 'setToken': case 'removeToken': case 'openLog':
       return post({ type: target.dataset.action });
-    case 'cancel': typed.clear(); return post({ type: 'cancel' });
+    case 'cancel': typed.clear(); checked.clear(); return post({ type: 'cancel' });
     case 'setModelsInMemory': {
       const n = Math.floor(Number(value('models-in-memory')));
-      return Number.isFinite(n) && n >= 1 ? post({ type: 'setModelsInMemory', n }) : undefined;
+      if (!Number.isFinite(n) || n < 1) return;
+      typed.delete('models-in-memory');
+      return post({ type: 'setModelsInMemory', n });
     }
     case 'download': case 'cancelDownload': case 'removeFile': case 'load': case 'unload': case 'edit': case 'hide': case 'unhide':
     case 'removeModel': case 'checkUpdate': case 'update':
@@ -76,15 +87,20 @@ function onClick(ev: MouseEvent): void {
         sampling: Object.fromEntries(Object.entries(sampling).filter(([, v]) => v !== undefined)), otherOverridesMatch: state.form.otherOverridesMatch,
       } });
     }
-    case 'addRepo': return post({ type: 'addRepo', repo: value('add-repo').trim() });
+    case 'addRepo': typed.delete('add-repo'); return post({ type: 'addRepo', repo: value('add-repo').trim() });
     case 'addFile': {
       const picked = document.querySelector<HTMLInputElement>('input[name="add-file"]:checked');
       const repo = state?.add?.repo ?? value('add-repo').trim();
       if (!picked) return;
       typed.clear();
+      checked.clear();
       return post({ type: 'addFile', repo, path: picked.value, name: value('add-name').trim(), uses: pickedUses(), contextTokens: Math.floor(optionalNumber('add-context') ?? 8192) });
     }
   }
+}
+
+function onToggle(ev: Event): void {
+  if (ev.target instanceof HTMLDetailsElement && ev.target.id === 'server-log') logOpen = ev.target.open;
 }
 
 function onInput(ev: Event): void {
@@ -92,14 +108,14 @@ function onInput(ev: Event): void {
   if (isText(el) && el.id) typed.set(el.id, el.value);
 }
 
-// Picking a file suggests its name from the file name unless the user typed one.
+// The host owns the picked file and its suggested name; checkboxes are replayed client-side.
 function onChange(ev: Event): void {
   const el = ev.target;
-  if (!(el instanceof HTMLInputElement) || el.name !== 'add-file') return;
-  const name = byId('add-name');
-  if (name && !typed.has('add-name')) {
-    name.value = (el.value.split('/').pop() ?? el.value).replace(/\.gguf$/i, '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').replace(/-+$/, '');
-  }
+  if (!(el instanceof HTMLInputElement)) return;
+  if (el.name === 'add-file') {
+    typed.delete('add-name');
+    post({ type: 'pickFile', path: el.value });
+  } else if (el.classList.contains('add-use')) checked.set(el.value, el.checked);
 }
 
 function onMessage(ev: MessageEvent<HostMessage>): void {
@@ -116,6 +132,7 @@ function start(): void {
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
+  root.addEventListener('toggle', onToggle, true);
   window.addEventListener('message', onMessage);
   post({ type: 'ready' });
 }

@@ -27,7 +27,7 @@ export interface ModelForm {
   contextTokens: number;
   extraArgs: string;
   sampling: { temperature?: number; topP?: number; topK?: number; maxTokens?: number };
-  /** Whether the Next Edit overrides for this model match the completion ones (when not, saving sets both). */
+  /** Whether another `modelOverrides` key also matches this model name (the form says so). */
   otherOverridesMatch: boolean;
   error?: string;
 }
@@ -74,7 +74,7 @@ export type PageMessage =
   | { type: 'use'; name: string; uses: BackendUse[] }
   | { type: 'edit'; name: string } | { type: 'saveModel'; form: ModelForm }
   | { type: 'hide'; name: string } | { type: 'unhide'; name: string } | { type: 'removeModel'; name: string }
-  | { type: 'addRepo'; repo: string }
+  | { type: 'addRepo'; repo: string } | { type: 'pickFile'; path: string }
   | { type: 'addFile'; repo: string; path: string; name: string; uses: BackendUse[]; contextTokens: number }
   | { type: 'checkUpdate'; name: string } | { type: 'update'; name: string }
   | { type: 'changeModelsDir' } | { type: 'setToken' } | { type: 'removeToken' } | { type: 'openLog' }

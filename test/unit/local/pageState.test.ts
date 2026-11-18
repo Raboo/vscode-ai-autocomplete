@@ -35,9 +35,11 @@ describe('local page state', () => {
   test('memoryWarning when the largest downloaded models pass 75% of memory', () => {
     const done = { a: { kind: 'done' as const }, b: { kind: 'done' as const } };
     const big = [model('a', 13), model('b', 1)];
-    expect(pageState(input({ models: big, downloads: done })).server.memoryWarning).toBeDefined();
+    // one model in memory: no warning (the spec warns for more than one)
+    expect(pageState(input({ models: big, downloads: done })).server.memoryWarning).toBeUndefined();
     // not downloaded: nothing to warn about
-    expect(pageState(input({ models: big })).server.memoryWarning).toBeUndefined();
+    expect(pageState(input({ models: big, settings: settings({ inMemory: 2 }) })).server.memoryWarning).toBeUndefined();
+    expect(pageState(input({ models: big, downloads: done, settings: settings({ inMemory: 2 }) })).server.memoryWarning).toBeDefined();
     // 2 in memory: 13 + 1 = 14 of 16 passes, 8 + 1 does not
     expect(pageState(input({ models: [model('a', 8), model('b', 1)], downloads: done, settings: settings({ inMemory: 2 }) })).server.memoryWarning).toBeUndefined();
     expect(pageState(input({ models: [model('a', 8), model('b', 5)], downloads: done, settings: settings({ inMemory: 2 }) })).server.memoryWarning).toBeDefined();
@@ -61,6 +63,10 @@ describe('local page state', () => {
     expect(s.problems).toEqual(['p']);
     expect(s.settings).toEqual({ modelsDir: '/m', tokenSet: true });
     expect(JSON.stringify(s)).not.toMatch(/token":/i);
+    // a token value in the environment of the input never reaches the state
+    const SENTINEL = 'hf_SENTINEL_TOKEN_VALUE';
+    const withToken = pageState({ ...input({ tokenSet: true }), token: SENTINEL } as PageStateInput);
+    expect(JSON.stringify(withToken)).not.toContain(SENTINEL);
   });
 
   test('download and update pass through', () => {

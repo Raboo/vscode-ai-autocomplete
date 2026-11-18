@@ -79,4 +79,41 @@ describe('local models page render', () => {
     expect(html).not.toMatch(/value="ok\.gguf"[^>]*disabled/);
     expect(html).toContain('data-action="addFile"');
   });
+
+  test('Use for offers only the uses the model supports', () => {
+    const at = (uses: ModelRow['uses']): string => only(renderPage(state({}, [row({ download: { kind: 'done' }, uses })])), 'm1');
+    expect(at(['completions'])).toContain('data-uses="completions"');
+    expect(at(['completions'])).not.toContain('data-uses="nextEdit"');
+    expect(at(['completions'])).not.toContain('completions,nextEdit');
+    expect(at(['completions', 'nextEdit'])).toContain('completions,nextEdit');
+  });
+
+  test('swap warning text is exact and absent when off', () => {
+    const on = renderPage(state({ server: { state: 'stopped', modelsInMemory: 1, log: [], swapWarning: true } }));
+    expect(on).toContain('Completions and Next Edit use different models; with 1 model in memory the server swaps between them (seconds each). Use one model for both, or set Models in memory to 2.');
+    expect(renderPage(state())).not.toContain('use different models');
+  });
+
+  test('override note shows only when another override matches', () => {
+    const form = (otherOverridesMatch: boolean) => renderPage(state({ form: { name: 'm1', contextTokens: 1, extraArgs: '', sampling: {}, otherOverridesMatch } }));
+    expect(form(true)).toContain('other overrides also match this model');
+    expect(form(false)).not.toContain('other overrides also match this model');
+  });
+
+  test('a picked file and its name survive a render', () => {
+    const html = renderPage(state({ add: { repo: 'o/r', files: [{ path: 'a.gguf', bytes: 1, supported: true }, { path: 'b.gguf', bytes: 1, supported: true }], picked: 'b.gguf', name: 'b', uses: ['nextEdit'], contextTokens: 4096 } }));
+    expect(html).toMatch(/value="b\.gguf" checked/);
+    expect(html).not.toMatch(/value="a\.gguf"[^>]*checked/);
+    expect(html).toContain('value="b"');
+    expect(html).toContain('value="4096"');
+    expect(html).toMatch(/class="add-use" value="nextEdit" checked/);
+    expect(html).not.toMatch(/class="add-use" value="completions" checked/);
+  });
+
+  test('no block element inside a paragraph, no token in the page', () => {
+    const html = renderPage(state({ settings: { modelsDir: '/m', tokenSet: true } }, []));
+    expect(html).not.toMatch(/<p class="line"><div/);
+    expect(html).toContain('token: set');
+  });
 });
+

@@ -52,7 +52,7 @@ export function pageState(o: PageStateInput): LocalPageState {
 
   const downloadedSizes = models.filter((m) => m.download.kind === 'done').map((m) => m.bytes).sort((a, b) => b - a).slice(0, Math.max(1, inMemory));
   const largest = downloadedSizes.reduce((a, b) => a + b, 0);
-  const memoryWarning = largest > 0.75 * o.totalMem
+  const memoryWarning = inMemory > 1 && largest > 0.75 * o.totalMem
     ? `The ${downloadedSizes.length === 1 ? 'largest model' : `${downloadedSizes.length} largest downloaded models`} together take more than 75% of this computer's memory; loading ${downloadedSizes.length === 1 ? 'it' : 'them'} may slow everything down.`
     : undefined;
 

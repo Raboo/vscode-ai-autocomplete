@@ -576,6 +576,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.whyNoSuggestion",
+        "title": "Why No Suggestion?",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.about",
         "title": "About",
         "category": "AI Autocomplete"

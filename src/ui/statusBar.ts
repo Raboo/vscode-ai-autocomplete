@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { SessionStats } from '../completion/outcomes';
 import type { RequestState, StatusAction, StatusSink, StatusState } from '../completion/requestStatus';
 import { displayState, tooltipLines, type LastStatus, type MenuInputs } from './statusModel';
 
@@ -18,6 +19,8 @@ export interface StatusBarInputs {
   menu(): MenuInputs;
   snoozedUntil(): number;
   localOnly(): boolean;
+  /** Requests, shown and median latency of this session; the accepted count is set with setStats. */
+  stats(): Omit<SessionStats, 'accepted'>;
 }
 
 export class StatusBar implements StatusSink, vscode.Disposable {
@@ -72,7 +75,7 @@ export class StatusBar implements StatusSink, vscode.Disposable {
     const action = this.shown.state === 'error' && this.last.state === 'error' ? this.last.action : undefined;
     this.item.command = action ? { command: action.command, arguments: action.args, title: 'Open' } : 'aiAutocomplete.menu';
     this.item.text = (this.locked ? '$(lock) ' : '') + TEXT[this.shown.state];
-    this.item.tooltip = tooltipLines({ shown: this.shown, snoozedUntil: until, locked: this.locked, accepted: this.accepted, menu: this.inputs.menu() }).join('\n');
+    this.item.tooltip = tooltipLines({ shown: this.shown, snoozedUntil: until, locked: this.locked, session: { ...this.inputs.stats(), accepted: this.accepted }, menu: this.inputs.menu() }).join('\n');
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     const wait = until - now;

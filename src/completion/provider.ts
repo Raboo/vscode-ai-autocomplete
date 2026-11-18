@@ -18,6 +18,7 @@ import { DetectedModels } from './detectedModels';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
+import type { CompletionOutcome, OutcomeLog } from './outcomes';
 import { collectCompletion, ThinkingError, type PlannedRequest } from './stream';
 import { postprocess, toInsertion, type PostCtx } from './postprocess';
 import { recordBackendFailure, RequestStatus, retryHint, type Outcome, type StatusSink } from './requestStatus';
@@ -42,6 +43,8 @@ export interface FimDeps {
   log: Log;
   snoozedUntil(): number;
   capabilities: Capabilities;
+  /** The last outcomes and the session counts (in memory only). */
+  outcomes: OutcomeLog;
   /** Next Edit's result to show instead of FIM, and where FIM's own outcome goes. */
   nextEdit?: Pick<NextEditController, 'itemFor' | 'fimResult' | 'rejected'>;
 }
@@ -152,6 +155,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if ((reason.kind as number) === 1 && this.nextEditItems.has(item)) this.d.nextEdit?.rejected();
   }
 
+  private note(uri: string, kind: CompletionOutcome['kind'], extra: Partial<Pick<CompletionOutcome, 'detail' | 'ms' | 'chars'>> = {}): void {
+    this.d.outcomes.record({ at: Date.now(), uri, kind, ...extra });
+  }
+
   private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal, call: Call): Promise<vscode.InlineCompletionItem[]> {
     if (signal.aborted) return [];
     // A Next Edit result for this document version is shown alone; the controller already applied the gate when it asked.
@@ -183,6 +190,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if (!g.ok) {
       // The status bar shows disabled/snoozed from the settings itself; status.set takes request outcomes only.
       this.d.log.debug(`fim skipped: ${g.reason}`);
+      this.note(doc.uri.toString(), 'skipped', { detail: g.reason });
       return [];
     }
 
@@ -191,12 +199,14 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       // Backends that are all Next Edit-only are a valid setup: completions are not configured, which is not an error.
       const none = noCompletionBackend(s.backends.length);
       this.d.status.set(none.state, none.detail);
+      this.note(doc.uri.toString(), 'blocked', { detail: 'no-backend' });
       if (none.state === 'idle') this.once('no-completion-backend', () => this.d.log.info('no backend is used for completions; Next Edit is unaffected'));
       return [];
     }
     const id = backend.config.id;
     if (s.privacy.localOnly && !(await this.d.isLocal(backend.config.baseUrl))) {
       this.d.status.set('error', 'Blocked: backend is not local');
+      this.note(doc.uri.toString(), 'blocked', { detail: 'local-only' });
       this.once(`local:${id}:${backend.config.baseUrl}`, () => this.d.log.warn(`blocked: backend "${id}" (${backend.config.baseUrl}) is not local and privacy.localOnly is on`));
       return [];
     }
@@ -205,6 +215,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       // Refresh the countdown in the error detail.
       const failure = this.failing.get(id);
       if (failure !== undefined) this.requests.report({ state: 'error', detail: withRetry(failure, backoff) });
+      this.note(doc.uri.toString(), 'blocked', { detail: 'backoff' });
       return [];
     }
 
@@ -224,7 +235,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const spot: Spot = { doc, pos, lineSuffix, backendId: id, call };
     // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
     const cached = invoked ? undefined : this.d.cache.find(uri, win.prefix, win.suffix);
-    if (cached !== undefined) return this.reported(cached, spot, version);
+    if (cached !== undefined) {
+      this.note(uri, 'cache', { chars: cached.length });
+      return this.reported(cached, spot, version);
+    }
 
     const join = this.d.inflight.find(uri, win.prefix, win.suffix);
     if (join) {
@@ -233,7 +247,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       if (!finished || signal.aborted) return [];
       // The finished flight is cached under its own prefix, so the cache derives what is left after the text typed since.
       const hit = this.d.cache.find(uri, win.prefix, win.suffix);
-      if (hit !== undefined) return this.reported(hit, spot, version);
+      if (hit !== undefined) {
+        this.note(uri, 'joined', { chars: hit.length });
+        return this.reported(hit, spot, version);
+      }
       // The suggestion does not continue what was typed since: request a fresh one.
     }
 
@@ -246,6 +263,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       // OpenRouter would pick the payer's default model, so code would go to a model the user never chose.
       this.once(`model:${id}`, () => this.d.log.warn(`backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
       this.requests.report({ state: 'error', detail: `${id}: choose a model`, action: { command: 'aiAutocomplete.manageBackends', args: [{ focus: id }] } });
+      this.note(uri, 'blocked', { detail: 'no-model' });
       return [];
     }
     const fim = resolveFim(backend.config, model, s).values;
@@ -257,6 +275,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       // Only a detected model id is remembered, so an undetected one is probed again on the next request.
       const why = explainUnsupported(id, model, fimMode, whyNoRoute(routeCaps, fimMode), backend.routes().chat, kind);
       this.once(why.onceKey, () => this.d.log.warn(why.log));
+      this.note(uri, 'blocked', { detail: 'no-route' });
       if (why.status) this.requests.report({ state: 'error', detail: why.status, ...(why.action ? { action: why.action } : {}) });
       return [];
     }
@@ -275,6 +294,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       const blocked = thinkingBlocked(fim.thinking, flavor, learned);
       if (blocked) {
         this.requests.report(this.reportThinking(id, model, blocked, fim.thinking));
+        this.note(uri, 'blocked', { detail: 'thinking' });
         return [];
       }
       const req = buildChatRequest({
@@ -317,6 +337,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const started = Date.now();
     try {
       this.requests.begin();
+      this.d.outcomes.requestSent();
       // Client-side stops are the request's own list (the full preset list on FIM routes; backends may cap what they send, ruling R2).
       const acc = new CompletionAccumulator({ stop: j.stop, multiline: j.multiline, maxLines: MAX_LINES, suffix: j.suffix });
       const collected = await collectCompletion(j.backend, j.planned, acc, j.ctl, { failOnThinking: j.planned.route === 'chat' });
@@ -325,6 +346,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       const completion = postprocess(collected.text, j.post);
       const text = completion === undefined ? '' : planInsertion(completion, j.eol);
       this.d.cache.add(j.uri, j.prefix, j.suffix, text);
+      if (text !== '') this.note(j.uri, 'shown', { chars: text.length, ms });
+      else this.note(j.uri, collected.text.trim() === '' ? 'empty' : 'filtered', { ms });
       j.debouncer.recordLatency(ms);
       j.backoff.recordSuccess();
       if (this.failing.delete(id)) this.d.log.info(`backend "${id}" is responding again`);
@@ -354,18 +377,24 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       // An OpenRouter model that rejected effort "none" during this request must reason: no other switch can help.
       const why = thinkingBlocked(j.thinking, inferHostFlavor(j.backend.config), this.d.capabilities.get(id, j.model)) ?? 'keepsThinking';
       if (why === 'keepsThinking') this.d.capabilities.sawThinking(id, j.model);
+      this.note(j.uri, 'blocked', { detail: 'thinking' });
       return this.reportThinking(id, j.model, why, j.thinking);
     }
     // Our own controller is only aborted by a newer request or an early stop: that is a cancel, never a failure.
     const cls: ErrorClass = j.ctl.signal.aborted ? { kind: 'abort' } : classifyError(err);
-    if (cls.kind === 'abort') return undefined;
+    if (cls.kind === 'abort') {
+      this.note(j.uri, 'cancelled');
+      return undefined;
+    }
     if (err instanceof MissingApiKeyError) {
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
+      this.note(j.uri, 'error', { detail: `Set API key for ${id}` });
       return { state: 'error', detail: `Set API key for ${id}` };
     }
     if (j.mode === 'auto' && j.planned.route !== 'chat' && err instanceof HttpError && isRouteMissing(err) && j.hasFallback) {
       // A server without this endpoint is not failing: the next request takes the next prompt route.
       const status = err.status;
+      this.note(j.uri, 'error', { detail: `no ${j.planned.route} endpoint (HTTP ${status}); trying the next route` });
       this.models.delete(j.backend); // the server may have restarted with another model
       this.d.capabilities.failRoute(id, j.model, j.planned.route);
       this.once(`missing:${id}:${j.model ?? ''}:${j.planned.route}`, () =>
@@ -379,6 +408,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     // Error messages can quote server output, so the raw one is logged only with logPrompts.
     if (j.logPrompts && err instanceof Error) this.d.log.debug(`${id}: raw error: ${err.message}`);
     this.failing.set(id, detail);
+    this.note(j.uri, 'error', { detail });
     this.models.delete(j.backend); // the server may have restarted with another model
     return { state: 'error', detail: withRetry(detail, j.backoff) };
   }

@@ -7,6 +7,7 @@ import type { Secrets } from '../config/secrets';
 import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
+import { describeOutcome, relativeTime, type OutcomeLog } from '../completion/outcomes';
 import type { StatusBar } from './statusBar';
 import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
@@ -21,6 +22,7 @@ export interface Snooze {
 export interface CommandDeps {
   context: vscode.ExtensionContext;
   status: StatusBar;
+  outcomes: OutcomeLog;
   secrets: Secrets;
   snooze: Snooze;
   channel: vscode.OutputChannel;
@@ -198,8 +200,22 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       await vscode.window.showTextDocument(doc, { preview: true });
       await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
     }),
+    reg('whyNoSuggestion', async () => {
+      const doc = vscode.window.activeTextEditor?.document;
+      const list = doc ? d.outcomes.forUri(doc.uri.toString()) : [];
+      if (list.length === 0) {
+        void vscode.window.showInformationMessage('No completion requests for this file yet.');
+        return;
+      }
+      const now = Date.now();
+      await vscode.window.showQuickPick(
+        list.map((o) => ({ label: describeOutcome(o), description: relativeTime(now, o.at) })),
+        { placeHolder: 'Why no suggestion? The latest completion requests for this file, newest first' },
+      );
+    }),
     reg('accepted', () => {
       accepted++;
+      d.outcomes.accepted();
       d.status.setStats(accepted);
     }),
     reg('nextEditAccepted', () => d.nextEditAccepted()),

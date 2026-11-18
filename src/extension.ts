@@ -4,6 +4,7 @@ import { createBackend } from './backends/index';
 import { Capabilities } from './models/capabilities';
 import type { FimBackend } from './backends/types';
 import { SuggestionCache } from './completion/cache';
+import { OutcomeLog } from './completion/outcomes';
 import { ExtraContextRing } from './completion/context';
 import { ContextTracker } from './completion/contextTracker';
 import { resolveFim } from './completion/effective';
@@ -83,7 +84,8 @@ export function activate(context: vscode.ExtensionContext): {
     return r.problems;
   };
 
-  const status = new StatusBar({ enabled: () => activity(settings).on, menu: () => menuInputs(settings, false), snoozedUntil, localOnly: () => settings.privacy.localOnly });
+  const outcomes = new OutcomeLog();
+  const status = new StatusBar({ enabled: () => activity(settings).on, menu: () => menuInputs(settings, false), snoozedUntil, localOnly: () => settings.privacy.localOnly, stats: () => outcomes.stats() });
   sub(status);
 
   const cache = new SuggestionCache();
@@ -127,6 +129,7 @@ export function activate(context: vscode.ExtensionContext): {
     log,
     snoozedUntil,
     capabilities,
+    outcomes,
     backoff,
     nextEdit,
     debouncer: (id) => {
@@ -205,6 +208,7 @@ export function activate(context: vscode.ExtensionContext): {
 
   for (const d of registerCommands({
     context,
+    outcomes,
     localServers: servers,
     localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
     status,

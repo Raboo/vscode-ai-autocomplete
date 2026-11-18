@@ -146,6 +146,10 @@ Click **AI** in the status bar for the menu:
 - **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions: off".
 - **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
 
+### Why no suggestion?
+
+When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion requests for the active file, newest first, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts and the median latency. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
+
 ### What a backend is used for
 
 Each backend has **Use for** checkboxes on the Backends page: **Completions**, **Next Edit** or both. A backend with only Next Edit ticked is never used for ghost-text completions, so you can add a Zeta server and keep it out of the completion picker. A Sweep model can do both: it is a Qwen2.5-Coder fine-tune and fills in the middle with the qwen template, so one Sweep backend with both boxes ticked serves completions and Next Edit.

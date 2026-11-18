@@ -26,11 +26,11 @@
 
 ### Task 2: "Why no suggestion?" and local stats
 
-- [ ] A ring of the last 20 completion outcomes per window, each a fixed reason without code text: skipped (with the gate reason: mid-word, suggest widget open, multi-cursor, excluded file, disabled language, snoozed, off), cache hit, joined a running request, shown (chars, ms), empty answer, filtered (which rule), error (fixed text), cancelled.
-- [ ] Command **AI Autocomplete: Why No Suggestion?** (also in the status bar menu, Help group) shows the latest outcomes for the active file in a quick pick, newest first, with the time.
-- [ ] Status bar tooltip adds: requests and shown counts this session, accepted count, median latency of the last 20 answered requests.
-- [ ] Unit tests for the ring and the stats; manifest test for the command.
-- [ ] Commit: `feat: Why No Suggestion command and session stats in the tooltip`
+- [x] A ring of the last 20 completion outcomes per window, each a fixed reason without code text: skipped (with the gate reason: mid-word, suggest widget open, multi-cursor, excluded file, disabled language, snoozed, off), cache hit, joined a running request, shown (chars, ms), empty answer, filtered (which rule), error (fixed text), cancelled.
+- [x] Command **AI Autocomplete: Why No Suggestion?** (also in the status bar menu, Help group) shows the latest outcomes for the active file in a quick pick, newest first, with the time.
+- [x] Status bar tooltip adds: requests and shown counts this session, accepted count, median latency of the last 20 answered requests.
+- [x] Unit tests for the ring and the stats; manifest test for the command.
+- [x] Commit: `feat: Why No Suggestion command and session stats in the tooltip`
 
 ### Task 3: Warm-up and prefetch for local llama.cpp
 

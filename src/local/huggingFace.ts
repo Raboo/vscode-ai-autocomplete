@@ -34,7 +34,8 @@ export interface HfFile {
 }
 
 export type UpdateCheck =
-  | { kind: 'upToDate' }
+  /** `revision`: set when the repo moved on but this file's content is unchanged, so the caller may re-pin. */
+  | { kind: 'upToDate'; revision?: string }
   | { kind: 'available'; revision: string; bytes: number; sha256: string; date?: string }
   | { kind: 'gone' };
 
@@ -147,6 +148,7 @@ export async function checkUpdate(m: LocalModel, o: HfOptions): Promise<UpdateCh
   if (info.sha === m.revision) return { kind: 'upToDate' };
   const file = (await ggufFiles(m.repo, info.sha, o)).find((f) => f.path === m.file);
   if (!file || !file.sha256) return { kind: 'gone' };
+  if (file.sha256 === m.sha256) return { kind: 'upToDate', revision: info.sha };
   const r: UpdateCheck = { kind: 'available', revision: info.sha, bytes: file.bytes, sha256: file.sha256 };
   if (info.date) r.date = info.date;
   return r;

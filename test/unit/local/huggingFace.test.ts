@@ -134,6 +134,8 @@ describe('checkUpdate', () => {
       sha256: 'bb',
       date: '2026-01-02T00:00:00.000Z',
     });
+    files = [{ type: 'file', path: 'm.gguf', size: 1, lfs: { oid: 'aa' } }];
+    expect(await checkUpdate(model(), { apiBase: base })).toEqual({ kind: 'upToDate', revision: 'new' });
     files = [{ type: 'file', path: 'other.gguf', size: 9, lfs: { oid: 'bb' } }];
     expect(await checkUpdate(model(), { apiBase: base })).toEqual({ kind: 'gone' });
   });

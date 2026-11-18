@@ -15,7 +15,7 @@ describe('parseExtraArgs', () => {
     ['--host 0.0.0.0', '--host'], ['-m x', '-m'], ['--model x', '--model'], ['--alias x', '--alias'], ['-a x', '-a'],
     ['--api-key k', '--api-key'], ['--api-key-file f', '--api-key-file'], ['--hf-repo x', '--hf-repo'], ['-hf x', '-hf'],
     ['--models-max 2', '--models-max'], ['--webui', '--webui'], ['--no-webui', '--no-webui'], ['--ssl-key-file f', '--ssl-key-file'],
-    ['--path p', '--path'], ['--model-url u', '--model-url'], ['-mu u', '-mu'], ['--model-draft d', '--model-draft'], ['-md d', '-md'], ['--mmproj f', '--mmproj'], ['--threads 8 --port=1', '--port'],
+    ['--path p', '--path'], ['--model-url u', '--model-url'], ['-mu u', '-mu'], ['--model-draft d', '--model-draft'], ['-md d', '-md'], ['--mmproj f', '--mmproj'], ['-hfd x', '-hfd'], ['-hfrd x', '-hfrd'], ['-hfrv x', '-hfrv'], ['-hffv x', '-hffv'], ['--hf-file-v x', '--hf-file-v'], ['-dr x', '-dr'], ['--docker-repo x', '--docker-repo'], ['--threads 8 --port=1', '--port'],
   ])('refuses %s naming %s', (line, flag) => {
     expect(parseExtraArgs(line)).toEqual({ args: [], refused: flag });
   });

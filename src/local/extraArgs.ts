@@ -3,9 +3,9 @@
 
 const REFUSED_EXACT = new Set([
   'host', 'port', 'm', 'model', 'alias', 'a', 'c', 'ctx-size', 'np', 'parallel', 'api-key', 'api-key-file',
-  'webui', 'no-webui', 'path', 'model-url', 'mu', 'model-draft', 'md', 'hf', 'hfr', 'hff', 'hfv', 'hft',
+  'webui', 'no-webui', 'path', 'model-url', 'mu', 'model-draft', 'md', 'dr', 'docker-repo',
 ]);
-const REFUSED_PREFIXES = ['hf-', 'models-', 'ssl-', 'mmproj'];
+const REFUSED_PREFIXES = ['hf', 'models-', 'ssl-', 'mmproj'];
 
 function split(line: string): string[] | undefined {
   const out: string[] = [];

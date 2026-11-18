@@ -32,7 +32,7 @@ export interface Settings {
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
-  /** Machine-scoped paths of the local runtimes; unset means look on PATH and in the usual places. */
+  /** Machine-scoped `local` settings (global values only): the llama-server path (unset: PATH and usual places), the models folder (absolute; unset: the default), how many models stay loaded, and the model list. */
   local: { llamaServerPath?: string; modelsDir?: string; modelsInMemory: number; models: LocalModelEntry[] };
 }
 
@@ -273,6 +273,13 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     const v = machine<unknown>(key, '');
     return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
   };
+  const modelsDir = ((): string | undefined => {
+    const v = localPath('local.modelsDir');
+    if (v === undefined) return undefined;
+    if (/^([/\\]|[A-Za-z]:[/\\])/.test(v)) return v;
+    problems.push('aiAutocomplete.local.modelsDir must be an absolute folder path');
+    return undefined;
+  })();
   const modelsInMemory = ((): number => {
     const v = machine<unknown>('local.modelsInMemory', 1);
     if (typeof v === 'number' && Number.isInteger(v) && v >= 1) return v;
@@ -411,7 +418,7 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     debug: { logPrompts: machine('debug.logPrompts', false) },
     local: {
       ...(localPath('local.llamaServerPath') !== undefined ? { llamaServerPath: localPath('local.llamaServerPath') } : {}),
-      ...(localPath('local.modelsDir') !== undefined ? { modelsDir: localPath('local.modelsDir') } : {}),
+      ...(modelsDir !== undefined ? { modelsDir } : {}),
       modelsInMemory,
       models: localModels.entries,
     },

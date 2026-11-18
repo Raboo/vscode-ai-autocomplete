@@ -330,12 +330,13 @@ export class LocalModelsActions {
 
   private checkUpdate(name: string): void {
     const m = this.model(name);
-    if (!m || m.builtIn || this.updates[name] === 'checking') return;
+    if (!m || m.builtIn || this.updates[name] === 'checking' || this.updating.has(name)) return;
     this.updates[name] = 'checking';
     this.checks.delete(name);
     this.detach(`checking ${name} for an update`, async () => {
       try {
         const r = await checkUpdate(m, { token: await this.d.secrets.getHfToken() });
+        if (r.kind === 'upToDate' && r.revision) await this.repin(name, r.revision);
         if (r.kind === 'available') {
           this.checks.set(name, r);
           this.updates[name] = { available: { bytes: r.bytes, ...(r.date ? { date: r.date.slice(0, 10) } : {}) } };
@@ -387,18 +388,37 @@ export class LocalModelsActions {
           const denied = err instanceof DownloadError && (err.status === 401 || err.status === 403);
           this.updates[name] = denied ? hfProblem(new HfError('auth'), m.repo) : { error: err instanceof DownloadError ? err.message : 'The update failed; see the log.' };
         }
+        this.updating.delete(name);
         return;
+      }
+      // The new file has replaced the old one: keep the `updating` entry until the settings say so too.
+      try {
+        await this.pin(name, { revision: check.revision, bytes: check.bytes, sha256: check.sha256 });
+        this.checks.delete(name);
+        this.updates[name] = 'upToDate';
+        await this.d.router.syncPresets();
+      } catch (err) {
+        this.d.log.error(`local models: ${name}: the new file is in place but the settings could not be updated`, err);
+        this.updates[name] = { error: 'The new file is in place but the settings could not be written; fix your settings.json and check for updates again.' };
       } finally {
         this.updating.delete(name);
       }
-      const entries = userValue('local.models');
-      const list = Array.isArray(entries) ? (entries as unknown[]) : [];
-      await writeUser('local.models', list.map((e) => (typeof e === 'object' && e !== null && (e as { name?: unknown }).name === name
-        ? { ...e, revision: check.revision, bytes: check.bytes, sha256: check.sha256 } : e)));
-      this.checks.delete(name);
-      this.updates[name] = 'upToDate';
-      await this.d.router.syncPresets();
     });
+  }
+
+  private async pin(name: string, fields: { revision: string; bytes?: number; sha256?: string }): Promise<void> {
+    const entries = userValue('local.models');
+    const list = Array.isArray(entries) ? (entries as unknown[]) : [];
+    await writeUser('local.models', list.map((e) => (typeof e === 'object' && e !== null && (e as { name?: unknown }).name === name ? { ...e, ...fields } : e)));
+  }
+
+  /** The repo has a new commit but this file is byte-identical: pin the new commit, so the next check is a plain match. */
+  private async repin(name: string, revision: string): Promise<void> {
+    try {
+      await this.pin(name, { revision });
+    } catch (err) {
+      this.d.log.error(`local models: re-pinning ${name} failed`, err);
+    }
   }
 
   private async changeModelsDir(): Promise<void> {

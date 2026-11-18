@@ -51,6 +51,13 @@ describe('parseSettings', () => {
     expect(g.settings.local.modelsDir).toBe('/m');
     expect(g.settings.local.models).toEqual([{ name: 'a', hidden: true }]);
   });
+  test('local.modelsDir must be absolute: a relative or ~/ path is a problem and falls back', () => {
+    for (const bad of ['models', './m', '~/models']) {
+      const r = parseSettings(src({ 'local.modelsDir': { globalValue: bad } }));
+      expect(r.settings.local.modelsDir).toBeUndefined();
+      expect(r.problems).toContain('aiAutocomplete.local.modelsDir must be an absolute folder path');
+    }
+  });
   test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));
     expect(r.settings.enabled).toBe(false);

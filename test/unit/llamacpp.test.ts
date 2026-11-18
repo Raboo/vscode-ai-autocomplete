@@ -374,6 +374,15 @@ describe('LlamaCppBackend', () => {
         expect(await b.detectModel(new AbortController().signal)).toBeUndefined();
         expect((await b.listModels(new AbortController().signal)).models).toEqual([]);
       });
+      test('listing against a router names the models from GET /models; a failed read lists none', async () => {
+        let ok = true;
+        m = await startMockHttp(({ url }) => (url.startsWith('/props') ? { json: { role: 'router' } } : ok ? { json: { data: [{ id: 'a' }, { id: 'b' }, { nope: 1 }] } } : { status: 500, json: {} }));
+        const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+        expect((await b.listModels(new AbortController().signal)).models).toEqual(['a', 'b']);
+        expect(await b.detectModel(new AbortController().signal)).toBeUndefined();
+        ok = false;
+        expect((await b.listModels(new AbortController().signal)).models).toEqual([]);
+      });
     });
     describe('without model detection', () => {
       const props = (m: Mock) => m.requests.filter((r) => r.url.startsWith('/props')).length;

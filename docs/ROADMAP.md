@@ -91,14 +91,9 @@ Phase 3c (check before merging the Phase 3c PR, on its CI `.vsix`; [plan](superp
 - **Turn off AI Autocomplete** stops ghost text and Next Edit and shows the off icon; **Turn on AI Autocomplete** brings both back with the same backends.
 - A Sweep v2 backend on LM Studio with both uses ticked: no warning, Test passes the completion steps and the Next Edit step, and ghost text appears (expect the MLX leading-space loss after a word).
 
-Phase 4 (check before merging the `feat/local-models` branch; [plan](superpowers/plans/2026-11-16-local-model-helper.md)):
+Phase 4 (released in v0.6.0; the server parts are replaced by 4c; [plan](superpowers/plans/2026-11-16-local-model-helper.md)):
 
 - Setup with llama-server: Sweep 1.5B, ghost text and Next Edit work.
-- Setup with LM Studio: the model is loaded under the identifier `sweep-next-edit-1.5b`.
-- Restart VS Code with the backend selected: the server comes back.
-- Two windows open on the same local backend: one llama-server process. Close the window that started it: the other takes it over within about 15 s.
-- Select the local backend on the Backends page (or with the picker): its server starts without a reload; select another backend: it stops.
-- After an LM Studio restart, the `-lmstudio` backend still answers, or note here that it needs Set Up again.
 - Stop Local Models (with two windows open: both lose the server, and neither starts it again).
 - Remove Downloaded Models.
 - A cancelled download resumes.

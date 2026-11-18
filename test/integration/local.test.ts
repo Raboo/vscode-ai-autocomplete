@@ -294,7 +294,7 @@ suite('Local model helper', () => {
     }
   });
 
-  test('an old local-test backend that was selected moves to local on activation', async () => {
+  test('an old local-test backend that was selected moves to local when the migration runs again', async () => {
     await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
     await unconfigure(['backends', 'completions.backend']);
     await configure({

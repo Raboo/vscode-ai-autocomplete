@@ -52,7 +52,7 @@ export class LlamaCppBackend implements FimBackend {
     return authHeaders(this.config, await this.apiKey());
   }
 
-  async listModels(signal: AbortSignal, timeoutMs = LIST_MODELS_TIMEOUT_MS, slotModel?: string): Promise<ServerInfo> {
+  async listModels(signal: AbortSignal, timeoutMs = LIST_MODELS_TIMEOUT_MS, slotModel?: string, listRouter = true): Promise<ServerInfo> {
     // A router answers for the named model only; autoload=false keeps this read from loading it. A plain server ignores both.
     const path = slotModel ? `/props?model=${encodeURIComponent(slotModel)}&autoload=false` : '/props';
     const key = slotModel ?? '';
@@ -69,6 +69,7 @@ export class LlamaCppBackend implements FimBackend {
     let model: string | undefined;
     if (props?.role === 'router' && !slotModel) {
       model = undefined; // a router has no model of its own ("llama-server", "none"): models are chosen per request
+      if (listRouter) return { models: await this.routerModels(signal), contextWindows: {} };
     } else if (typeof props?.model_alias === 'string' && props.model_alias) {
       model = props.model_alias;
     } else if (typeof props?.model_path === 'string' && props.model_path) {
@@ -88,6 +89,16 @@ export class LlamaCppBackend implements FimBackend {
       models: [model],
       contextWindows: typeof nCtx === 'number' && Number.isFinite(nCtx) ? { [model]: nCtx } : {},
     };
+  }
+
+  /** The ids a router serves (`GET /models`); `[]` when that read fails or times out. */
+  private async routerModels(signal: AbortSignal): Promise<string[]> {
+    try {
+      const body = (await getJson(joinUrl(this.config.baseUrl, '/models'), { headers: await this.authHeaders(), signal, timeoutMs: 5000 })) as { data?: unknown } | null;
+      return Array.isArray(body?.data) ? (body.data as Array<{ id?: unknown }>).flatMap((d) => (typeof d?.id === 'string' ? [d.id] : [])) : [];
+    } catch {
+      return [];
+    }
   }
 
   /** Reads `/props` once per model for `total_slots` when no model detection did (settings name the model). Never awaited by a request; its own short timeout, not the request's signal. */
@@ -112,7 +123,7 @@ export class LlamaCppBackend implements FimBackend {
 
   async detectModel(signal: AbortSignal): Promise<string | undefined> {
     try {
-      return (await this.listModels(signal)).models[0];
+      return (await this.listModels(signal, undefined, undefined, false)).models[0]; // a router has no model to detect
     } catch {
       return undefined;
     }

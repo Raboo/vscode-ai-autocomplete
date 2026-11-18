@@ -189,7 +189,18 @@ export function activate(context: vscode.ExtensionContext): {
   // Tests swap in their own recipes, for setup and for the servers it records alike.
   let testRecipes: readonly Recipe[] | undefined;
   const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
-  const servers = new LocalServers({ context, log, settings: () => settings, recipes, showLog: () => channel.show(true) });
+  const servers = new LocalServers({
+    context,
+    log,
+    settings: () => settings,
+    recipes,
+    showLog: () => channel.show(true),
+    // Requests that failed while the model loaded may have opened the backoff circuit: the server answers now.
+    onReady: (id) => {
+      backoffs.get(id)?.reset();
+      provider.clearError();
+    },
+  });
   localServers = servers;
   sub(servers);
   const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };

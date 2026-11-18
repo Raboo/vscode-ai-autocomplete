@@ -125,6 +125,7 @@ function setup(o: {
   const moved: number[] = [];
   const terminated: number[] = [];
   const unexpected: string[] = [];
+  const ready: string[] = [];
   const clock = fakeSleep();
   const pool = new ServerPool({
     launch: o.launch,
@@ -148,6 +149,7 @@ function setup(o: {
     alive: o.alive ?? (() => false),
     terminate: (pid) => void terminated.push(pid),
     stoppedUnexpectedly: (id) => void unexpected.push(id),
+    onReady: (id) => void ready.push(id),
     sleep: clock.sleep,
     killGraceMs: 20,
   });
@@ -160,6 +162,7 @@ function setup(o: {
     moved,
     terminated,
     unexpected,
+    ready,
     clock,
     managed: () => managed,
     setManaged: (list: ManagedServer[]) => void (managed = list),
@@ -301,6 +304,26 @@ describe('ServerPool', () => {
     expect(failing.pool.running()).toEqual(['a']);
   });
 
+  test('a server that became ready is reported once; a failed or cancelled start is not', async () => {
+    const { launch, launched } = fakeLaunch();
+    const { pool, ready } = setup({ launch });
+    const started = pool.start(server('a'));
+    await tick();
+    expect(ready).toEqual([]);
+    launched[0].ready();
+    await started;
+    expect(ready).toEqual(['a']);
+
+    const cancelled = pool.start(server('b'));
+    await tick();
+    await pool.stop('b');
+    await expect(cancelled).rejects.toBeInstanceOf(StartCancelled);
+    const failing = setup({ launch: () => Promise.reject(new LocalRuntimeError('boom')) });
+    await expect(failing.pool.start(server('a'))).rejects.toThrow('boom');
+    expect(ready).toEqual(['a']);
+    expect(failing.ready).toEqual([]);
+  });
+
   test('a start failure is logged as an error', async () => {
     const launch: Launch = () => Promise.reject(new LocalRuntimeError('boom'));
     const { pool, errors } = setup({ launch, managed: [server('a')] });
@@ -314,7 +337,7 @@ describe('ServerPool across windows', () => {
   test("a server already answering on the saved port with the recipe's alias is adopted: no spawn, no move, no new record", async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const managed = [server('a', 8012, 555)];
-    const { pool, moved, managed: saved, probes } = setup({ launch, managed, probe: (port, alias) => Promise.resolve(port === 8012 && alias === ALIAS ? 'ours' : 'none') });
+    const { pool, moved, managed: saved, probes, ready } = setup({ launch, managed, probe: (port, alias) => Promise.resolve(port === 8012 && alias === ALIAS ? 'ours' : 'none') });
     await pool.startSelected();
     expect(launched).toHaveLength(0);
     expect(moved).toEqual([]);
@@ -322,6 +345,7 @@ describe('ServerPool across windows', () => {
     expect(probes).toEqual([8012]);
     expect(pool.running()).toEqual(['a']);
     await expect(pool.start(server('a'))).resolves.toEqual({ port: 8012, pid: 555, adopted: true });
+    expect(ready).toEqual(['a', 'a']);
   });
 
   test('stopping or disposing an adopted server leaves it running and ends the watch', async () => {

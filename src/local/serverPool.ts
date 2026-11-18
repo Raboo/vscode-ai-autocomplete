@@ -103,6 +103,8 @@ export interface ServerPoolDeps {
   terminate(pid: number): void;
   /** A server this window started exited without being asked to. */
   stoppedUnexpectedly(backendId: string): void;
+  /** A server for the backend answers now (started or adopted): requests that failed while it loaded may go again. */
+  onReady?(backendId: string): void;
   /** Resolves after `ms`, or at once when `signal` aborts. */
   sleep?(ms: number, signal: AbortSignal): Promise<void>;
   recipes?(): readonly Recipe[];
@@ -203,6 +205,7 @@ export class ServerPool {
       slot.proc = proc;
       void proc.exited.then(() => this.exitedUnasked(id, slot, proc));
       this.d.log.debug(`llama-server ${id}: ready on port ${port}`);
+      this.d.onReady?.(id);
       return { port, adopted: false, ...(proc.pid !== undefined ? { pid: proc.pid } : {}) };
     } catch (err) {
       if (this.slots.get(id) === slot) this.slots.delete(id);
@@ -228,6 +231,7 @@ export class ServerPool {
     const pid = this.managed().find((e) => e.backendId === id && e.port === port)?.pid;
     this.d.log.info(`llama-server ${id}: using the one already running on port ${port}`);
     void this.watch(id, slot, port, alias);
+    this.d.onReady?.(id);
     return { port, adopted: true, ...(pid !== undefined ? { pid } : {}) };
   }
 

@@ -19,6 +19,8 @@ export interface LocalServersDeps {
   spawnFn?: SpawnLike;
   /** The recipes managed servers may use; RECIPES when unset (tests swap in their own). */
   recipes?(): readonly Recipe[];
+  /** A backend's server answers now (started or adopted). */
+  onReady?(backendId: string): void;
 }
 
 /** The machine as runtime lookup sees it: platform, home, PATH and the file system. */
@@ -99,6 +101,7 @@ export class LocalServers implements vscode.Disposable {
       stoppedUnexpectedly: (id) => {
         void vscode.window.showErrorMessage(`Local model ${id} stopped unexpectedly.`, 'Show Log').then((c) => c && d.showLog());
       },
+      onReady: (id) => d.onReady?.(id),
       ...(d.recipes ? { recipes: d.recipes } : {}),
     });
   }

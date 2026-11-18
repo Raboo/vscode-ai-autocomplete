@@ -12,6 +12,10 @@
     "type": "git",
     "url": "https://github.com/Raboo/vscode-ai-autocomplete"
   },
+  "homepage": "https://github.com/Raboo/vscode-ai-autocomplete#readme",
+  "bugs": {
+    "url": "https://github.com/Raboo/vscode-ai-autocomplete/issues"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -22,6 +26,18 @@
     "AI",
     "Programming Languages"
   ],
+  "keywords": [
+    "autocomplete",
+    "code completion",
+    "fill in the middle",
+    "next edit",
+    "llama.cpp",
+    "lm studio",
+    "ollama",
+    "self-hosted",
+    "local",
+    "codestral"
+  ],
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -31,433 +47,483 @@
     "workspace"
   ],
   "contributes": {
-    "configuration": {
-      "title": "AI Autocomplete",
-      "properties": {
-        "aiAutocomplete.backends": {
-          "type": "array",
-          "default": [],
-          "scope": "machine",
-          "markdownDescription": "[Manage backends](command:aiAutocomplete.manageBackends)\n\nCompletion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "kind",
-              "baseUrl"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z0-9][a-z0-9-]*$",
-                "description": "Unique id: lowercase letters, digits and dashes."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "llamacpp",
-                  "openai",
-                  "mistral"
-                ],
-                "description": "API protocol the backend speaks."
-              },
-              "baseUrl": {
-                "type": "string",
-                "description": "Base URL, http or https."
-              },
-              "hostFlavor": {
-                "type": "string",
-                "enum": [
-                  "llamacpp",
-                  "vllm",
-                  "sglang",
-                  "lmstudio",
-                  "ollama",
-                  "strata",
-                  "deepseek",
-                  "fireworks",
-                  "together",
-                  "openrouter",
-                  "mistral",
-                  "generic"
-                ],
-                "description": "Server software, used to pick server-specific request options."
-              },
-              "fimModel": {
-                "type": "string",
-                "description": "Model name for fill-in-the-middle completions."
-              },
-              "nextEditModel": {
-                "type": "string",
-                "description": "Model name for next-edit suggestions."
-              },
-              "use": {
-                "type": "array",
-                "items": {
+    "configuration": [
+      {
+        "title": "General",
+        "properties": {
+          "aiAutocomplete.enabled": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Turn AI Autocomplete on or off: off stops completions and Next Edit together and keeps both backend choices. The status bar menu's **Turn off AI Autocomplete** sets it.",
+            "order": 1
+          },
+          "aiAutocomplete.backends": {
+            "type": "array",
+            "default": [],
+            "scope": "machine",
+            "markdownDescription": "[Manage backends](command:aiAutocomplete.manageBackends)\n\nCompletion backends. Machine-scoped: only read from your user settings, never from a workspace, so a repository cannot redirect your code to another host. API keys are not stored here; use the **AI Autocomplete: Set API Key** command.\n\nllama.cpp:\n```json\n{ \"id\": \"local\", \"kind\": \"llamacpp\", \"baseUrl\": \"http://127.0.0.1:8012\" }\n```\nMistral Codestral:\n```json\n{ \"id\": \"codestral\", \"kind\": \"mistral\", \"baseUrl\": \"https://codestral.mistral.ai\", \"fimModel\": \"codestral-latest\" }\n```",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "kind",
+                "baseUrl"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*$",
+                  "description": "Unique id: lowercase letters, digits and dashes."
+                },
+                "kind": {
                   "type": "string",
                   "enum": [
-                    "completions",
-                    "nextEdit"
-                  ]
+                    "llamacpp",
+                    "openai",
+                    "mistral"
+                  ],
+                  "description": "API protocol the backend speaks."
                 },
-                "uniqueItems": true,
-                "description": "What the backend is used for. Missing means both."
-              },
-              "fimMode": {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "native",
-                  "template",
-                  "chat"
-                ],
-                "default": "auto",
-                "description": "How fill-in-the-middle prompts are built."
-              },
-              "headers": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
+                "baseUrl": {
+                  "type": "string",
+                  "description": "Base URL, http or https."
                 },
-                "description": "Extra HTTP headers."
-              },
-              "fim": {
-                "type": "object",
-                "additionalProperties": false,
-                "description": "Completion settings for this backend; each key overrides the matching global setting.",
-                "properties": {
-                  "template": {
+                "hostFlavor": {
+                  "type": "string",
+                  "enum": [
+                    "llamacpp",
+                    "vllm",
+                    "sglang",
+                    "lmstudio",
+                    "ollama",
+                    "strata",
+                    "deepseek",
+                    "fireworks",
+                    "together",
+                    "openrouter",
+                    "mistral",
+                    "generic"
+                  ],
+                  "description": "Server software, used to pick server-specific request options."
+                },
+                "fimModel": {
+                  "type": "string",
+                  "description": "Model name for fill-in-the-middle completions."
+                },
+                "nextEditModel": {
+                  "type": "string",
+                  "description": "Model name for next-edit suggestions."
+                },
+                "use": {
+                  "type": "array",
+                  "items": {
                     "type": "string",
                     "enum": [
-                      "qwen",
-                      "codestral",
-                      "deepseek",
-                      "starcoder",
-                      "codellama",
-                      "codegemma",
-                      "granite-code",
-                      "granite4",
-                      "seed-coder",
-                      "mellum"
-                    ],
-                    "description": "FIM prompt template to use instead of the one detected from the model name."
+                      "completions",
+                      "nextEdit"
+                    ]
                   },
-                  "contextTokens": {
-                    "type": "integer",
-                    "minimum": 256,
-                    "maximum": 131072,
-                    "description": "Total context budget in tokens, split between prefix, suffix and extra context."
+                  "uniqueItems": true,
+                  "description": "What the backend is used for. Missing means both."
+                },
+                "fimMode": {
+                  "type": "string",
+                  "enum": [
+                    "auto",
+                    "native",
+                    "template",
+                    "chat"
+                  ],
+                  "default": "auto",
+                  "description": "How fill-in-the-middle prompts are built."
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
                   },
-                  "prefixLines": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10000,
-                    "description": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
-                  },
-                  "suffixLines": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10000,
-                    "description": "Maximum lines of code after the cursor."
-                  },
-                  "extraContext": {
-                    "type": "boolean",
-                    "description": "Include snippets from other open files."
-                  },
-                  "multiline": {
-                    "type": "string",
-                    "enum": [
-                      "auto",
-                      "always",
-                      "never"
-                    ],
-                    "description": "Whether completions may span several lines."
-                  },
-                  "maxTokens": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4096,
-                    "description": "Maximum tokens to generate."
-                  },
-                  "temperature": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 2,
-                    "description": "Sampling temperature."
-                  },
-                  "topP": {
-                    "type": "number",
-                    "exclusiveMinimum": 0,
-                    "maximum": 1,
-                    "description": "Nucleus sampling probability."
-                  },
-                  "topK": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Top-K sampling; 0 disables it."
-                  },
-                  "debounceMs": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 2000,
-                    "description": "Delay in milliseconds before requesting a completion after typing."
-                  },
-                  "timeoutMs": {
-                    "type": "integer",
-                    "minimum": 500,
-                    "maximum": 60000,
-                    "description": "Request timeout in milliseconds."
-                  },
-                  "thinking": {
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "templateKwarg:enable_thinking",
-                      "templateKwarg:thinking",
-                      "templateKwarg:thinking_mode=disabled",
-                      "templateKwarg:thinking_budget=0",
-                      "reasoningEffortNone",
-                      "systemSoftSwitch:/no_think",
-                      "vendorThinkingDisabled",
-                      "cannotDisable"
-                    ],
-                    "description": "How thinking is turned off for this backend's model on the chat prompt."
-                  },
-                  "stop": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
+                  "description": "Extra HTTP headers."
+                },
+                "fim": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Completion settings for this backend; each key overrides the matching global setting.",
+                  "properties": {
+                    "template": {
+                      "type": "string",
+                      "enum": [
+                        "qwen",
+                        "codestral",
+                        "deepseek",
+                        "starcoder",
+                        "codellama",
+                        "codegemma",
+                        "granite-code",
+                        "granite4",
+                        "seed-coder",
+                        "mellum"
+                      ],
+                      "description": "FIM prompt template to use instead of the one detected from the model name."
                     },
-                    "description": "Extra stop sequences."
-                  },
-                  "extraBody": {
-                    "type": "object",
-                    "description": "Extra JSON fields merged into the request body."
+                    "contextTokens": {
+                      "type": "integer",
+                      "minimum": 256,
+                      "maximum": 131072,
+                      "description": "Total context budget in tokens, split between prefix, suffix and extra context."
+                    },
+                    "prefixLines": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000,
+                      "description": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
+                    },
+                    "suffixLines": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10000,
+                      "description": "Maximum lines of code after the cursor."
+                    },
+                    "extraContext": {
+                      "type": "boolean",
+                      "description": "Include snippets from other open files."
+                    },
+                    "multiline": {
+                      "type": "string",
+                      "enum": [
+                        "auto",
+                        "always",
+                        "never"
+                      ],
+                      "description": "Whether completions may span several lines."
+                    },
+                    "maxTokens": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4096,
+                      "description": "Maximum tokens to generate."
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2,
+                      "description": "Sampling temperature."
+                    },
+                    "topP": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1,
+                      "description": "Nucleus sampling probability."
+                    },
+                    "topK": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Top-K sampling; 0 disables it."
+                    },
+                    "debounceMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2000,
+                      "description": "Delay in milliseconds before requesting a completion after typing."
+                    },
+                    "timeoutMs": {
+                      "type": "integer",
+                      "minimum": 500,
+                      "maximum": 60000,
+                      "description": "Request timeout in milliseconds."
+                    },
+                    "thinking": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "templateKwarg:enable_thinking",
+                        "templateKwarg:thinking",
+                        "templateKwarg:thinking_mode=disabled",
+                        "templateKwarg:thinking_budget=0",
+                        "reasoningEffortNone",
+                        "systemSoftSwitch:/no_think",
+                        "vendorThinkingDisabled",
+                        "cannotDisable"
+                      ],
+                      "description": "How thinking is turned off for this backend's model on the chat prompt."
+                    },
+                    "stop": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Extra stop sequences."
+                    },
+                    "extraBody": {
+                      "type": "object",
+                      "description": "Extra JSON fields merged into the request body."
+                    }
                   }
                 }
               }
-            }
+            },
+            "order": 2
+          },
+          "aiAutocomplete.privacy.localOnly": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address. A workspace, or any folder of a multi-root workspace, can turn this on but not off.",
+            "order": 3
           }
-        },
-        "aiAutocomplete.enabled": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "markdownDescription": "Turn AI Autocomplete on or off: off stops completions and Next Edit together and keeps both backend choices. The status bar menu's **Turn off AI Autocomplete** sets it."
-        },
-        "aiAutocomplete.fim.enabled": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "markdownDescription": "Enable inline fill-in-the-middle completions. **Off** in the status bar menu's **Completions** entry sets it to false and keeps `#aiAutocomplete.fim.backend#`."
-        },
-        "aiAutocomplete.nextEdit.enabled": {
-          "type": "boolean",
-          "scope": "resource",
-          "default": true,
-          "description": "Show Next Edit suggestions when a Next Edit backend is chosen."
-        },
-        "aiAutocomplete.nextEdit.backend": {
-          "type": "string",
-          "scope": "resource",
-          "default": "",
-          "description": "Backend for Next Edit suggestions (an id from aiAutocomplete.backends). Empty: Next Edit is off."
-        },
-        "aiAutocomplete.nextEdit.timeoutMs": {
-          "type": "integer",
-          "scope": "resource",
-          "minimum": 500,
-          "maximum": 60000,
-          "default": 10000,
-          "description": "Deadline for one Next Edit request."
-        },
-        "aiAutocomplete.nextEdit.format": {
-          "type": "string",
-          "scope": "resource",
-          "default": "auto",
-          "enum": [
-            "auto",
-            "chatXtab",
-            "sweep",
-            "zeta21"
-          ],
-          "enumDescriptions": [
-            "Picks the format by the model name.",
-            "Chat prompt with the chatXtab tags (our own wording).",
-            "Sweep next-edit models on a raw completions route.",
-            "Zeta 2.1 on a raw completions route."
-          ],
-          "description": "Prompt and answer format of Next Edit requests."
-        },
-        "aiAutocomplete.nextEdit.display": {
-          "type": "string",
-          "scope": "resource",
-          "default": "auto",
-          "enum": [
-            "auto",
-            "native",
-            "decorations"
-          ],
-          "enumDescriptions": [
-            "Native inline edits when the proposed API is enabled, otherwise decorations.",
-            "Native ghost text and inline edits (needs the proposed API).",
-            "Editor decorations; works without the proposed API."
-          ],
-          "description": "How Next Edit suggestions are shown."
-        },
-        "aiAutocomplete.nextEdit.regionLinesAbove": {
-          "type": "integer",
-          "scope": "resource",
-          "minimum": 0,
-          "maximum": 20,
-          "default": 5,
-          "description": "Lines above the cursor the model may rewrite."
-        },
-        "aiAutocomplete.nextEdit.regionLinesBelow": {
-          "type": "integer",
-          "scope": "resource",
-          "minimum": 0,
-          "maximum": 40,
-          "default": 10,
-          "description": "Lines below the cursor the model may rewrite."
-        },
-        "aiAutocomplete.nextEdit.historySize": {
-          "type": "integer",
-          "scope": "resource",
-          "minimum": 0,
-          "maximum": 10,
-          "default": 5,
-          "description": "Number of recent edit diffs sent to the model."
-        },
-        "aiAutocomplete.nextEdit.contextBudget": {
-          "type": "integer",
-          "scope": "resource",
-          "minimum": 1000,
-          "maximum": 16000,
-          "default": 3500,
-          "description": "Prompt budget in tokens, split between the file, the edit history and recently viewed snippets."
-        },
-        "aiAutocomplete.fim.backend": {
-          "type": "string",
-          "scope": "resource",
-          "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend used for completions. May be set per workspace."
-        },
-        "aiAutocomplete.fim.debounceMs": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "default": null,
-          "scope": "resource",
-          "markdownDescription": "Delay in milliseconds before requesting a completion after typing. `null` picks a default based on whether the backend is local."
-        },
-        "aiAutocomplete.fim.multiline": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "always",
-            "never"
-          ],
-          "default": "auto",
-          "scope": "resource",
-          "markdownDescription": "Whether completions may span multiple lines. `auto` decides from the cursor position."
-        },
-        "aiAutocomplete.fim.maxTokens": {
-          "type": "number",
-          "default": 128,
-          "scope": "resource",
-          "markdownDescription": "Maximum number of tokens to generate per completion. A `sampling.maxTokens` in `#aiAutocomplete.modelOverrides#` replaces it for matching models."
-        },
-        "aiAutocomplete.fim.prefixLines": {
-          "type": "number",
-          "default": 200,
-          "scope": "resource",
-          "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent."
-        },
-        "aiAutocomplete.fim.suffixLines": {
-          "type": "number",
-          "default": 60,
-          "scope": "resource",
-          "markdownDescription": "Number of lines after the cursor sent as context."
-        },
-        "aiAutocomplete.fim.extraContext": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "markdownDescription": "Include snippets from other open and recently edited files as extra context."
-        },
-        "aiAutocomplete.fim.disableInLanguages": {
-          "type": "array",
-          "items": {
-            "type": "string"
+        }
+      },
+      {
+        "title": "Completions",
+        "properties": {
+          "aiAutocomplete.fim.enabled": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Show inline code completions (ghost text).",
+            "order": 1
           },
-          "default": [
-            "plaintext"
-          ],
-          "scope": "resource",
-          "markdownDescription": "Language ids in which completions are disabled."
-        },
-        "aiAutocomplete.fim.disableInFiles": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "aiAutocomplete.fim.backend": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "markdownDescription": "Id of the backend (from `#aiAutocomplete.backends#`) used for completions. Defaults to the first backend used for completions. May be set per workspace.",
+            "order": 2
           },
-          "default": [
-            "**/.env",
-            "**/.env.*",
-            "**/*.pem",
-            "**/*.key",
-            "**/.npmrc",
-            "**/.pypirc",
-            "**/*.tfvars",
-            "**/*.p12",
-            "**/*.pfx",
-            "**/.netrc",
-            "**/.docker/config.json",
-            "**/id_rsa*",
-            "**/id_ed25519*"
-          ],
-          "scope": "resource",
-          "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled. Workspace and folder settings add patterns to this list; they cannot remove the ones from your user settings (or the defaults)."
-        },
-        "aiAutocomplete.fim.skipMidWord": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "markdownDescription": "Do not trigger a completion when the cursor is in the middle of a word."
-        },
-        "aiAutocomplete.privacy.localOnly": {
-          "type": "boolean",
-          "default": false,
-          "scope": "resource",
-          "markdownDescription": "Refuse to send any request to a backend that does not resolve to a loopback or private-network address. A workspace, or any folder of a multi-root workspace, can turn this on but not off."
-        },
-        "aiAutocomplete.modelOverrides": {
-          "type": "object",
-          "default": {},
-          "scope": "machine",
-          "markdownDescription": "Per-model overrides. Keys are regular expressions matched against the model name; values may set `fimTemplate`, `stop`, `sampling`, `thinking` and `extraBody`. Machine-scoped.\n\n```json\n{ \"qwen.*coder\": { \"fimTemplate\": \"qwen\", \"stop\": [\"<|endoftext|>\"] } }\n```"
-        },
-        "aiAutocomplete.debug.logPrompts": {
-          "type": "boolean",
-          "default": false,
-          "scope": "machine",
-          "markdownDescription": "Write prompt and completion text to the output channel. Off by default because it contains your code. Timings, status codes and sizes are always logged at debug level."
-        },
-        "aiAutocomplete.local.llamaServerPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Path to `llama-server`. Empty: look on PATH and in the usual install places. Machine-scoped."
-        },
-        "aiAutocomplete.local.lmsPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Path to LM Studio's `lms` command. Empty: look on PATH and in the usual install places. Machine-scoped."
+          "aiAutocomplete.fim.multiline": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "default": "auto",
+            "scope": "resource",
+            "markdownDescription": "Whether completions may span multiple lines. `auto` decides from the cursor position.",
+            "order": 3
+          },
+          "aiAutocomplete.fim.disableInLanguages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "plaintext"
+            ],
+            "scope": "resource",
+            "markdownDescription": "Language ids in which completions are disabled.",
+            "order": 4
+          },
+          "aiAutocomplete.fim.disableInFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "**/.env",
+              "**/.env.*",
+              "**/*.pem",
+              "**/*.key",
+              "**/.npmrc",
+              "**/.pypirc",
+              "**/*.tfvars",
+              "**/*.p12",
+              "**/*.pfx",
+              "**/.netrc",
+              "**/.docker/config.json",
+              "**/id_rsa*",
+              "**/id_ed25519*"
+            ],
+            "scope": "resource",
+            "markdownDescription": "Glob patterns of files whose content is never sent and in which completions are disabled. Workspace and folder settings add patterns to this list; they cannot remove the ones from your user settings (or the defaults).",
+            "order": 5
+          },
+          "aiAutocomplete.fim.skipMidWord": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Do not trigger a completion when the cursor is in the middle of a word.",
+            "order": 6
+          },
+          "aiAutocomplete.fim.extraContext": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Include snippets from other open and recently edited files as extra context.",
+            "order": 7
+          },
+          "aiAutocomplete.fim.debounceMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "default": null,
+            "scope": "resource",
+            "markdownDescription": "Delay in milliseconds before requesting a completion after typing. `null` picks a default based on whether the backend is local.",
+            "order": 8
+          },
+          "aiAutocomplete.fim.maxTokens": {
+            "type": "number",
+            "default": 128,
+            "scope": "resource",
+            "markdownDescription": "Maximum number of tokens to generate per completion. A `sampling.maxTokens` in `#aiAutocomplete.modelOverrides#` replaces it for matching models.",
+            "order": 9
+          },
+          "aiAutocomplete.fim.prefixLines": {
+            "type": "number",
+            "default": 200,
+            "scope": "resource",
+            "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent.",
+            "order": 10
+          },
+          "aiAutocomplete.fim.suffixLines": {
+            "type": "number",
+            "default": 60,
+            "scope": "resource",
+            "markdownDescription": "Number of lines after the cursor sent as context.",
+            "order": 11
+          }
+        }
+      },
+      {
+        "title": "Next Edit",
+        "properties": {
+          "aiAutocomplete.nextEdit.enabled": {
+            "type": "boolean",
+            "scope": "resource",
+            "default": true,
+            "description": "Show Next Edit suggestions when a Next Edit backend is chosen.",
+            "order": 1
+          },
+          "aiAutocomplete.nextEdit.backend": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "description": "Backend for Next Edit suggestions (an id from aiAutocomplete.backends). Empty: Next Edit is off.",
+            "order": 2
+          },
+          "aiAutocomplete.nextEdit.display": {
+            "type": "string",
+            "scope": "resource",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "native",
+              "decorations"
+            ],
+            "description": "How Next Edit suggestions are shown.",
+            "markdownEnumDescriptions": [
+              "Native inline edits when the proposed API is enabled, otherwise decorations.",
+              "VS Code's own inline-edit view. Needs **Enable Native Next Edit UI** and a VS Code restart.",
+              "Editor decorations; works without the proposed API."
+            ],
+            "order": 3
+          },
+          "aiAutocomplete.nextEdit.format": {
+            "type": "string",
+            "scope": "resource",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "chatXtab",
+              "sweep",
+              "zeta21"
+            ],
+            "enumDescriptions": [
+              "Picks the format by the model name.",
+              "Chat prompt, for general chat models such as Qwen on Strata.",
+              "Sweep next-edit models on a raw completions route.",
+              "Zeta 2.1 on a raw completions route."
+            ],
+            "description": "Prompt and answer format of Next Edit requests.",
+            "order": 4
+          },
+          "aiAutocomplete.nextEdit.timeoutMs": {
+            "type": "integer",
+            "scope": "resource",
+            "minimum": 500,
+            "maximum": 60000,
+            "default": 10000,
+            "description": "Deadline for one Next Edit request.",
+            "order": 5
+          },
+          "aiAutocomplete.nextEdit.regionLinesAbove": {
+            "type": "integer",
+            "scope": "resource",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 5,
+            "description": "Lines above the cursor the model may rewrite.",
+            "order": 6
+          },
+          "aiAutocomplete.nextEdit.regionLinesBelow": {
+            "type": "integer",
+            "scope": "resource",
+            "minimum": 0,
+            "maximum": 40,
+            "default": 10,
+            "description": "Lines below the cursor the model may rewrite.",
+            "order": 7
+          },
+          "aiAutocomplete.nextEdit.historySize": {
+            "type": "integer",
+            "scope": "resource",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 5,
+            "description": "Number of recent edit diffs sent to the model.",
+            "order": 8
+          },
+          "aiAutocomplete.nextEdit.contextBudget": {
+            "type": "integer",
+            "scope": "resource",
+            "minimum": 1000,
+            "maximum": 16000,
+            "default": 3500,
+            "description": "Prompt budget in tokens, split between the file, the edit history and recently viewed snippets.",
+            "order": 9
+          }
+        }
+      },
+      {
+        "title": "Local models",
+        "properties": {
+          "aiAutocomplete.local.llamaServerPath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Path to `llama-server`. Empty: look on PATH and in the usual install places. Machine-scoped.",
+            "order": 1
+          },
+          "aiAutocomplete.local.lmsPath": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "markdownDescription": "Path to LM Studio's `lms` command. Empty: look on PATH and in the usual install places. Machine-scoped.",
+            "order": 2
+          }
+        }
+      },
+      {
+        "title": "Advanced",
+        "properties": {
+          "aiAutocomplete.modelOverrides": {
+            "type": "object",
+            "default": {},
+            "scope": "machine",
+            "markdownDescription": "Per-model overrides. Keys are regular expressions matched against the model name; values may set `fimTemplate`, `stop`, `sampling`, `thinking` and `extraBody`. Machine-scoped.\n\n```json\n{ \"qwen.*coder\": { \"fimTemplate\": \"qwen\", \"stop\": [\"<|endoftext|>\"] } }\n```",
+            "order": 1
+          },
+          "aiAutocomplete.debug.logPrompts": {
+            "type": "boolean",
+            "default": false,
+            "scope": "machine",
+            "markdownDescription": "Write prompt and completion text to the output channel. Off by default because it contains your code. Timings, status codes and sizes are always logged at debug level.",
+            "order": 2
+          }
         }
       }
-    },
+    ],
     "commands": [
       {
         "command": "aiAutocomplete.menu",

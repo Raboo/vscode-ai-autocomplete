@@ -87,3 +87,38 @@ test('fim.disableInFiles default matches the code and covers common credential f
     expect(DEFAULT_DISABLE_IN_FILES).toContain(p);
   }
 });
+test('Marketplace fields', () => {
+  expect(pkg.keywords).toEqual(['autocomplete', 'code completion', 'fill in the middle', 'next edit', 'llama.cpp', 'lm studio', 'ollama', 'self-hosted', 'local', 'codestral']);
+  expect(pkg.homepage).toBe('https://github.com/Raboo/vscode-ai-autocomplete#readme');
+  expect(pkg.bugs).toEqual({ url: 'https://github.com/Raboo/vscode-ai-autocomplete/issues' });
+});
+test('settings come in titled sections, each setting ordered', () => {
+  const sections = pkg.contributes.configuration as { title: string; properties: Record<string, { order?: number }> }[];
+  expect(sections.map((s) => s.title)).toEqual(['General', 'Completions', 'Next Edit', 'Local models', 'Advanced']);
+  const keys = (title: string) => Object.keys(sections.find((s) => s.title === title)!.properties);
+  expect(keys('General').sort()).toEqual(['aiAutocomplete.backends', 'aiAutocomplete.enabled', 'aiAutocomplete.privacy.localOnly']);
+  expect(keys('Completions').every((k) => k.startsWith('aiAutocomplete.fim.'))).toBe(true);
+  expect(keys('Next Edit').every((k) => k.startsWith('aiAutocomplete.nextEdit.'))).toBe(true);
+  expect(keys('Local models').every((k) => k.startsWith('aiAutocomplete.local.'))).toBe(true);
+  expect(keys('Advanced').sort()).toEqual(['aiAutocomplete.debug.logPrompts', 'aiAutocomplete.modelOverrides']);
+  for (const s of sections) {
+    const orders = Object.values(s.properties).map((p) => p.order);
+    expect(orders.every((o) => typeof o === 'number'), s.title).toBe(true);
+    expect(new Set(orders).size, s.title).toBe(orders.length);
+  }
+  const order = (k: string) => settingProps[`aiAutocomplete.${k}`].order as number;
+  expect(order('enabled')).toBeLessThan(order('backends'));
+  expect(order('fim.enabled')).toBeLessThan(order('fim.backend'));
+  expect(order('fim.backend')).toBeLessThan(order('fim.debounceMs'));
+  expect(order('nextEdit.enabled')).toBeLessThan(order('nextEdit.backend'));
+  expect(order('nextEdit.backend')).toBeLessThan(order('nextEdit.timeoutMs'));
+});
+test('setting descriptions without jargon', () => {
+  expect(settingProps['aiAutocomplete.fim.enabled'].markdownDescription ?? settingProps['aiAutocomplete.fim.enabled'].description).toBe('Show inline code completions (ghost text).');
+  const format = settingProps['aiAutocomplete.nextEdit.format'];
+  expect(format.enumDescriptions[format.enum.indexOf('chatXtab')]).toBe('Chat prompt, for general chat models such as Qwen on Strata.');
+  const display = settingProps['aiAutocomplete.nextEdit.display'];
+  expect(display.markdownEnumDescriptions[display.enum.indexOf('native')]).toBe("VS Code's own inline-edit view. Needs **Enable Native Next Edit UI** and a VS Code restart.");
+  expect(settingProps['aiAutocomplete.fim.backend'].default).toBe('');
+  expect(settingProps['aiAutocomplete.nextEdit.backend'].default).toBe('');
+});

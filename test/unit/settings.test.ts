@@ -44,6 +44,11 @@ describe('parseSettings', () => {
     const { settings } = parseSettings(src({ 'fim.maxTokens': { globalValue: 1, workspaceValue: 2, workspaceFolderValue: 3 } }));
     expect(settings.fim.maxTokens).toBe(3);
   });
+  test('fim.backend default "" means the first completion backend, without a problem', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { defaultValue: '' } }));
+    expect(settings.fim.backendId).toBe('a');
+    expect(problems).toEqual([]);
+  });
   test('unknown fim.backend falls back to first backend with a problem', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, 'fim.backend': { workspaceValue: 'nope' } }));
     expect(r.settings.fim.backendId).toBe('a');

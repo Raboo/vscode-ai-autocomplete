@@ -137,7 +137,7 @@ describe('stepped prefix window', () => {
 function source(text: string): LineSource & { read: number } {
   const lines = text.split(/\r?\n/);
   const starts = [0];
-  for (let i = 0, nl = text.indexOf('\n'); nl !== -1; i++, nl = text.indexOf('\n', nl + 1)) starts.push(nl + 1);
+  for (let nl = text.indexOf('\n'); nl !== -1; nl = text.indexOf('\n', nl + 1)) starts.push(nl + 1);
   const src = {
     read: 0,
     lineCount: lines.length,

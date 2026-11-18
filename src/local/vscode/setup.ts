@@ -10,13 +10,12 @@ import { runConnectionTest } from '../../manage/connectionTest';
 import { upsertBackend } from '../../manage/form';
 import type { TestStep } from '../../manage/protocol';
 import { useBackend, useNextEditBackend } from '../../ui/commands';
-import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, serversToStart, type LocalRuntime, type ManagedServer } from '../backendEntry';
+import { MANAGED_KEY, localBackendEntry, localBackendId, parseManaged, serversToStart, type ManagedServer } from '../backendEntry';
 import { DownloadError, downloadModel } from '../download';
-import { LmStudio, defaultExec } from '../lmStudio';
 import { downloadUrl, fitsMemory, modelPathSegments, type Recipe } from '../recipes';
-import { INSTALL_HINT, findRuntime, type RuntimeId } from '../runtimes';
+import { INSTALL_HINT, findRuntime } from '../runtimes';
 import type { Started } from '../serverPool';
-import { LOCAL_RUNTIMES, setupArgument } from '../setupArg';
+import { setupArgument } from '../setupArg';
 import { realEnv } from './servers';
 
 export interface SetupDeps {
@@ -44,12 +43,6 @@ export type SetupOutcome =
 const PREFERRED_PORT = 8012;
 const RECOMMENDED = 'sweep-1.5b';
 const PROGRESS_MS = 250;
-const RUNTIME_ID: Record<LocalRuntime, RuntimeId> = { llamaServer: 'llamaServer', lmStudio: 'lms' };
-const RUNTIME_LABEL: Record<LocalRuntime, string> = { llamaServer: 'llama-server', lmStudio: 'LM Studio' };
-const RUNTIME_NOTE: Record<LocalRuntime, string> = {
-  llamaServer: 'runs the model as a process VS Code starts and stops',
-  lmStudio: 'loads the model into LM Studio',
-};
 const USE_LABEL: Record<BackendUse, string> = { completions: 'Completions', nextEdit: 'Next Edit' };
 /** The settings selecting a backend that setup may change (through useBackend and useNextEditBackend). */
 const SELECTION_KEYS = ['completions.backend', 'completions.enabled', 'nextEdit.backend', 'nextEdit.enabled'] as const;
@@ -67,27 +60,8 @@ export function modelsDir(context: vscode.ExtensionContext): string {
   return join(context.globalStorageUri.fsPath, 'models');
 }
 
-function runtimePath(runtime: LocalRuntime, s: Settings): string | undefined {
-  const override = runtime === 'llamaServer' ? s.local.llamaServerPath : s.local.lmsPath;
-  return findRuntime(RUNTIME_ID[runtime], realEnv(), override);
-}
-
-async function pickRuntime(s: Settings): Promise<LocalRuntime | undefined> {
-  type Item = vscode.QuickPickItem & { runtime: LocalRuntime; found: boolean };
-  const items: Item[] = LOCAL_RUNTIMES.map((runtime) => {
-    const found = runtimePath(runtime, s) !== undefined;
-    return found
-      ? { label: RUNTIME_LABEL[runtime], description: RUNTIME_NOTE[runtime], runtime, found }
-      : { label: RUNTIME_LABEL[runtime], description: 'not installed', detail: INSTALL_HINT[RUNTIME_ID[runtime]], runtime, found };
-  });
-  items.sort((a, b) => Number(b.found) - Number(a.found));
-  const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Run the local model with' });
-  if (!pick) return undefined;
-  if (!pick.found) {
-    void vscode.window.showInformationMessage(INSTALL_HINT[RUNTIME_ID[pick.runtime]]);
-    return undefined;
-  }
-  return pick.runtime;
+function llamaServerPath(s: Settings): string | undefined {
+  return findRuntime('llamaServer', realEnv(), s.local.llamaServerPath);
 }
 
 async function pickRecipe(recipes: readonly Recipe[]): Promise<Recipe | undefined> {
@@ -157,17 +131,9 @@ async function download(d: SetupDeps, r: Recipe, dest: string): Promise<'downloa
  * Starts the model and returns the port it is served on, plus the record of its llama-server (`port`: the one to try
  * first). A llama-server another window already runs for this backend is used as it is.
  */
-async function startRuntime(d: SetupDeps, r: Recipe, runtime: LocalRuntime, binary: string, file: string, port: number): Promise<{ port: number; managed?: ManagedServer }> {
-  if (runtime === 'lmStudio') {
-    // LM Studio is the user's app: a failure here or later leaves its server running and any model it loaded, on purpose.
-    const lms = new LmStudio(binary, defaultExec);
-    const modelKey = await lms.importModel(file, r.repo);
-    const port = await lms.ensureServer();
-    await lms.load(modelKey, r.contextTokens, r.modelName);
-    return { port };
-  }
+async function startRuntime(d: SetupDeps, r: Recipe, file: string, port: number): Promise<{ port: number; managed?: ManagedServer }> {
   // The pool stops a server this window runs for this backend, then adopts one on the port or takes it (or a free one).
-  const m: ManagedServer = { backendId: localBackendId(r, runtime), recipeId: r.id, file, port };
+  const m: ManagedServer = { backendId: localBackendId(r), recipeId: r.id, file, port };
   const started = await d.servers.start(m);
   return { port: started.port, managed: { ...m, port: started.port, ...(started.pid !== undefined ? { pid: started.pid } : {}) } };
 }
@@ -271,32 +237,27 @@ export async function setUpLocalModel(d: SetupDeps, arg?: unknown): Promise<Setu
 
 async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
   let recipe: Recipe;
-  let runtime: LocalRuntime;
   let replace = false;
   const parsed = setupArgument(arg, d.recipes(), d.context.extensionMode === vscode.ExtensionMode.Test);
   if (parsed === 'invalid') {
-    void vscode.window.showErrorMessage('AI Autocomplete: unknown local model or runtime.');
+    void vscode.window.showErrorMessage('AI Autocomplete: unknown local model.');
     return undefined;
   }
   if (parsed !== 'none') {
-    ({ recipe, runtime, replace } = parsed);
+    ({ recipe, replace } = parsed);
   } else {
-    const rt = await pickRuntime(d.settings());
-    if (!rt) return undefined;
     const r = await pickRecipe(d.recipes());
     if (!r) return undefined;
-    runtime = rt;
     recipe = r;
   }
 
-  const binary = runtimePath(runtime, d.settings());
-  if (!binary) {
-    const text = `${RUNTIME_LABEL[runtime]} was not found. ${INSTALL_HINT[RUNTIME_ID[runtime]]}`;
+  if (!llamaServerPath(d.settings())) {
+    const text = `llama-server was not found. ${INSTALL_HINT.llamaServer}`;
     void vscode.window.showErrorMessage(text);
     return { ok: false, message: text };
   }
 
-  const id = localBackendId(recipe, runtime);
+  const id = localBackendId(recipe);
   const exists = (Array.isArray(userBackends()) ? (userBackends() as unknown[]) : []).some((e) => isEntry(e) && e.id === id);
   if (exists && !replace) {
     const yes: vscode.MessageItem = { title: 'Yes' };
@@ -323,19 +284,19 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
       void vscode.window.showInformationMessage('The download was cancelled.');
       return undefined;
     }
-    startAttempted = runtime === 'llamaServer';
+    startAttempted = true;
     // Taken before the start: the pool moves the backend's baseUrl when the port is taken, and a failure puts it back.
     before = { backends: userBackends(), selection: selection() };
     const port = previous?.port ?? PREFERRED_PORT;
-    const started = await busyWith(`Starting ${recipe.label}…`, () => startRuntime(d, recipe, runtime, binary, file, port));
+    const started = await busyWith(`Starting ${recipe.label}…`, () => startRuntime(d, recipe, file, port));
     managed = started.managed;
-    await config().update('backends', upsertBackend(userBackends(), localBackendEntry(recipe, runtime, started.port), id), vscode.ConfigurationTarget.Global);
+    await config().update('backends', upsertBackend(userBackends(), localBackendEntry(recipe, started.port), id), vscode.ConfigurationTarget.Global);
     if (managed) await d.servers.record(managed);
     if (recipe.uses.includes('completions')) await useBackend(id);
     if (recipe.uses.includes('nextEdit')) await useNextEditBackend(id);
   } catch (err) {
     await undo(d, { id, recipe, previous, managed, before, startAttempted });
-    d.log.error(`local model setup (${recipe.id}, ${runtime}) failed`, err);
+    d.log.error(`local model setup (${recipe.id}) failed`, err);
     const text = `Setting up ${recipe.label} failed: ${message(err)}`;
     void vscode.window.showErrorMessage(text);
     return { ok: false, message: text };
@@ -386,7 +347,7 @@ export async function removeLocalModels(d: SetupDeps): Promise<void> {
   const yes: vscode.MessageItem = { title: 'Delete' };
   const answer = await vscode.window.showWarningMessage(
     `Delete ${picks.length === 1 ? picks[0].label : `${picks.length} files`} (${size(total)})?`,
-    { modal: true, detail: 'Models imported into LM Studio keep their data there. A local backend that uses a deleted file stops working until you set it up again.' },
+    { modal: true, detail: 'A local backend that uses a deleted file stops working until you set it up again.' },
     yes,
   );
   if (answer !== yes) return;

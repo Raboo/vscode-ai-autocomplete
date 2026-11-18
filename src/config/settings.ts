@@ -32,7 +32,7 @@ export interface Settings {
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
   /** Machine-scoped paths of the local runtimes; unset means look on PATH and in the usual places. */
-  local: { llamaServerPath?: string; lmsPath?: string };
+  local: { llamaServerPath?: string };
 }
 
 /** Files whose content is never sent by default: environment files, keys and credential stores. */
@@ -402,7 +402,6 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     debug: { logPrompts: machine('debug.logPrompts', false) },
     local: {
       ...(localPath('local.llamaServerPath') !== undefined ? { llamaServerPath: localPath('local.llamaServerPath') } : {}),
-      ...(localPath('local.lmsPath') !== undefined ? { lmsPath: localPath('local.lmsPath') } : {}),
     },
   };
   return { settings, problems };

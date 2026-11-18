@@ -579,13 +579,6 @@
             "scope": "machine",
             "markdownDescription": "Path to `llama-server`. Empty: look on PATH and in the usual install places. Machine-scoped.",
             "order": 1
-          },
-          "aiAutocomplete.local.lmsPath": {
-            "type": "string",
-            "default": "",
-            "scope": "machine",
-            "markdownDescription": "Path to LM Studio's `lms` command. Empty: look on PATH and in the usual install places. Machine-scoped.",
-            "order": 2
           }
         }
       },

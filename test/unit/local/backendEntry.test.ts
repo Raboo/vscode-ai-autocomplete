@@ -15,28 +15,24 @@ const both = recipe('sweep-1.5b');
 const completionsOnly = recipe('qwen2.5-coder-1.5b');
 
 describe('localBackendId', () => {
-  test('llama-server and LM Studio ids', () => {
-    expect(localBackendId(recipe('mellum-4b'), 'llamaServer')).toBe('local-mellum-4b');
-    expect(localBackendId(recipe('mellum-4b'), 'lmStudio')).toBe('local-mellum-4b-lmstudio');
+  test('llama-server id', () => {
+    expect(localBackendId(recipe('mellum-4b'))).toBe('local-mellum-4b');
   });
   test('dots in a recipe id become dashes, because backend ids do not allow dots', () => {
-    expect(localBackendId(both, 'llamaServer')).toBe('local-sweep-1-5b');
-    expect(localBackendId(both, 'lmStudio')).toBe('local-sweep-1-5b-lmstudio');
+    expect(localBackendId(both)).toBe('local-sweep-1-5b');
   });
   test('ids pass the settings id pattern for every recipe', () => {
     for (const r of RECIPES) {
-      for (const rt of ['llamaServer', 'lmStudio'] as const) {
-        const { settings, problems } = parseSettings(src({ backends: { globalValue: [localBackendEntry(r, rt, 8012)] } }));
-        expect(problems).toEqual([]);
-        expect(settings.backends.map((b) => b.id)).toEqual([localBackendId(r, rt)]);
-      }
+      const { settings, problems } = parseSettings(src({ backends: { globalValue: [localBackendEntry(r, 8012)] } }));
+      expect(problems).toEqual([]);
+      expect(settings.backends.map((b) => b.id)).toEqual([localBackendId(r)]);
     }
   });
 });
 
 describe('localBackendEntry', () => {
   test('llama-server entry for a recipe that serves both uses', () => {
-    const entry = localBackendEntry(both, 'llamaServer', 8123);
+    const entry = localBackendEntry(both, 8123);
     expect(entry).toEqual({
       id: 'local-sweep-1-5b', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8123',
       use: ['completions', 'nextEdit'], model: both.modelName, nextEditModel: both.modelName,
@@ -48,33 +44,22 @@ describe('localBackendEntry', () => {
       fimModel: both.modelName, nextEditModel: both.modelName, use: { completions: true, nextEdit: true },
     });
   });
-  test('LM Studio entry is an openai backend with the lmstudio flavor and a /v1 base URL', () => {
-    const entry = localBackendEntry(both, 'lmStudio', 1234);
-    const { settings, problems } = parseSettings(src({ backends: { globalValue: [entry] } }));
-    expect(problems).toEqual([]);
-    expect(settings.backends[0]).toMatchObject({
-      id: 'local-sweep-1-5b-lmstudio', kind: 'openai', hostFlavor: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1',
-      fimModel: both.modelName, nextEditModel: both.modelName, use: { completions: true, nextEdit: true },
-    });
-  });
   test('a completions-only recipe has no nextEditModel and serves completions only', () => {
-    for (const rt of ['llamaServer', 'lmStudio'] as const) {
-      const entry = localBackendEntry(completionsOnly, rt, 8012);
-      expect(entry).not.toHaveProperty('nextEditModel');
-      const { settings } = parseSettings(src({ backends: { globalValue: [entry] } }));
-      expect(settings.backends[0].fimModel).toBe(completionsOnly.modelName);
-      expect(settings.backends[0].nextEditModel).toBeUndefined();
-      expect(settings.backends[0].use).toEqual({ completions: true, nextEdit: false });
-    }
+    const entry = localBackendEntry(completionsOnly, 8012);
+    expect(entry).not.toHaveProperty('nextEditModel');
+    const { settings } = parseSettings(src({ backends: { globalValue: [entry] } }));
+    expect(settings.backends[0].fimModel).toBe(completionsOnly.modelName);
+    expect(settings.backends[0].nextEditModel).toBeUndefined();
+    expect(settings.backends[0].use).toEqual({ completions: true, nextEdit: false });
   });
   test('a Next Edit only recipe has no model', () => {
-    const entry = localBackendEntry({ ...both, uses: ['nextEdit'] }, 'llamaServer', 8012);
+    const entry = localBackendEntry({ ...both, uses: ['nextEdit'] }, 8012);
     expect(entry).not.toHaveProperty('model');
     expect(entry.nextEditModel).toBe(both.modelName);
     expect(entry.use).toEqual(['nextEdit']);
   });
   test('the entry does not share the recipe uses array', () => {
-    const entry = localBackendEntry(both, 'llamaServer', 8012);
+    const entry = localBackendEntry(both, 8012);
     (entry.use as string[]).push('x');
     expect(both.uses).toEqual(['completions', 'nextEdit']);
   });

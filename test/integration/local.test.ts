@@ -36,7 +36,7 @@ const userBackends = (): Record<string, unknown>[] => {
 const entry = (): Record<string, unknown> | undefined => userBackends().find((e) => e.id === BACKEND_ID);
 const portOf = (e: Record<string, unknown> | undefined): number => Number(new URL(String(e?.baseUrl)).port);
 const setUp = (replace = false): Thenable<SetupOutcome> =>
-  vscode.commands.executeCommand<SetupOutcome>('aiAutocomplete.setUpLocalModel', { recipe: 'test', runtime: 'llamaServer', ...(replace ? { replace } : {}) });
+  vscode.commands.executeCommand<SetupOutcome>('aiAutocomplete.setUpLocalModel', { recipe: 'test', ...(replace ? { replace } : {}) });
 const health = async (port: number): Promise<number> => (await fetch(`http://127.0.0.1:${port}/health`)).status;
 const healthy = async (port: number): Promise<boolean> => (await health(port).catch(() => 0)) === 200;
 async function healthyWithin(port: number, ms: number): Promise<boolean> {

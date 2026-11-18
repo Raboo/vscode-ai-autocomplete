@@ -24,11 +24,11 @@ describe('parseSettings', () => {
     expect(settings.enabled).toBe(true);
   });
   test('local runtime paths are machine-scoped: workspace values are ignored, "" is unset', () => {
-    const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' }, 'local.lmsPath': { workspaceValue: '/evil/lms' } }));
+    const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' } }));
     expect(a.settings.local).toEqual({});
-    const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' }, 'local.lmsPath': { globalValue: '/opt/lms' } }));
-    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server', lmsPath: '/opt/lms' });
-    const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' }, 'local.lmsPath': { defaultValue: '' } }));
+    const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' } }));
+    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server' });
+    const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' } }));
     expect(c.settings.local).toEqual({});
   });
   test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {

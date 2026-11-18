@@ -6,7 +6,7 @@ const HEALTH_TIMEOUT_MS = 2000;
 const KILL_GRACE_MS = 5000;
 const OUTPUT_DRAIN_MS = 100;
 
-/** A failure of a local runtime (llama-server or LM Studio) with a message fit for the user. */
+/** A failure of a local runtime (llama-server) with a message fit for the user. */
 export class LocalRuntimeError extends Error {
   constructor(message: string) {
     super(message);

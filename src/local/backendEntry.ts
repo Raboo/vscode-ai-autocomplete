@@ -1,8 +1,6 @@
 import type { Settings } from '../config/settings';
 import type { Recipe } from './recipes';
 
-export type LocalRuntime = 'llamaServer' | 'lmStudio';
-
 /** A server the extension started for a local model; kept in global state so it can start again next session. */
 export interface ManagedServer {
   backendId: string;
@@ -19,18 +17,15 @@ export interface ManagedServer {
 /** Key of the managed servers in the extension's global state. */
 export const MANAGED_KEY = 'localServers';
 
-/** `local-<recipe id>` (plus `-lmstudio`), with dots turned into dashes: backend ids allow only lowercase letters, digits and dashes. */
-export function localBackendId(r: Recipe, runtime: LocalRuntime): string {
-  const id = `local-${r.id.replaceAll('.', '-')}`;
-  return runtime === 'lmStudio' ? `${id}-lmstudio` : id;
+/** `local-<recipe id>` with dots turned into dashes: backend ids allow only lowercase letters, digits and dashes. */
+export function localBackendId(r: Recipe): string {
+  return `local-${r.id.replaceAll('.', '-')}`;
 }
 
 /** The `aiAutocomplete.backends` entry for a local model served on `127.0.0.1:<port>`. */
-export function localBackendEntry(r: Recipe, runtime: LocalRuntime, port: number): Record<string, unknown> {
+export function localBackendEntry(r: Recipe, port: number): Record<string, unknown> {
   const host = `http://127.0.0.1:${port}`;
-  const entry: Record<string, unknown> = runtime === 'lmStudio'
-    ? { id: localBackendId(r, runtime), kind: 'openai', hostFlavor: 'lmstudio', baseUrl: `${host}/v1` }
-    : { id: localBackendId(r, runtime), kind: 'llamacpp', baseUrl: host };
+  const entry: Record<string, unknown> = { id: localBackendId(r), kind: 'llamacpp', baseUrl: host };
   entry.use = [...r.uses];
   if (r.uses.includes('completions')) entry.model = r.modelName;
   if (r.uses.includes('nextEdit')) entry.nextEditModel = r.modelName;

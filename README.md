@@ -6,7 +6,7 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 
 - **Ghost-text completions** as you type, from a fill-in-the-middle model; `Tab` accepts.
 - **Next Edit** suggests the change that follows the one you just made, such as a rename carried to the lines below.
-- **Local models in one step:** Set Up Local Model downloads a small model and runs it with llama.cpp or LM Studio.
+- **Local models in one step:** Set Up Local Model downloads a small model and runs it with llama.cpp.
 - **Your own server or a hosted API:** llama.cpp, LM Studio, Ollama, vLLM, Mistral Codestral, OpenRouter and other OpenAI-compatible servers.
 - **Private by design:** no telemetry, credential files excluded by default, and a local-only switch.
 
@@ -87,9 +87,8 @@ If a step before the Test fails, setup writes no backend, puts your selection se
 **Runtimes.** Neither one is installed for you. The picker shows how to install one that is missing.
 
 - **llama-server** (from llama.cpp). VS Code starts it on `127.0.0.1` (port 8012, or a free port if that one is taken). It starts when its backend is selected for completions or Next Edit, at VS Code start or when you select it, and stops when you select another backend. All VS Code windows share one server: a window that finds it already running on its port uses it. VS Code stops it when the window that started it closes; other windows take it over. If it stops unexpectedly, a notification says so. The backend id is `local-<model>`, for example `local-sweep-1-5b`.
-- **LM Studio**, through its `lms` command. Setup imports the file into LM Studio, starts LM Studio's server if it is off and loads the model under the model name in the table below. LM Studio keeps running on its own, and setup never stops it. The backend id ends in `-lmstudio`, for example `local-sweep-1-5b-lmstudio`.
 
-If a command is not on PATH or in the usual install places, set `aiAutocomplete.local.llamaServerPath` or `aiAutocomplete.local.lmsPath` in your user settings. Both are machine-scoped: a workspace cannot set them.
+If a command is not on PATH or in the usual install places, set `aiAutocomplete.local.llamaServerPath` in your user settings. It is machine-scoped: a workspace cannot set it.
 
 **Models.** Each file is a GGUF, pinned to one Hugging Face revision and checked by sha256 after the download. The context size is 8192 for all of them. A model whose file is more than 40% of your memory is marked "may not fit in memory".
 
@@ -107,8 +106,8 @@ Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set
 
 **Stopping and removing.**
 
-- **AI Autocomplete: Stop Local Models** stops the llama-server processes now, in all windows. They start again when VS Code starts (or a window opens) with their backends still selected, or when you select their backend again. It does not touch LM Studio.
-- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too, except one this window is downloading) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A model imported into LM Studio is a hard link to the file, so the data stays on disk until you also remove the model in LM Studio. A backend whose file was deleted stops working until you set it up again.
+- **AI Autocomplete: Stop Local Models** stops the llama-server processes now, in all windows. They start again when VS Code starts (or a window opens) with their backends still selected, or when you select their backend again.
+- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too, except one this window is downloading) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A backend whose file was deleted stops working until you set it up again.
 
 The only request that leaves your machine is the download from `huggingface.co` (which redirects to Hugging Face's file servers). Setup sends nothing else off the machine, and the local backend it adds is on `127.0.0.1`.
 

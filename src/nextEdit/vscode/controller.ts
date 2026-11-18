@@ -364,7 +364,7 @@ export class NextEditController implements vscode.Disposable {
       completionsBackendId: s.fim.backendId,
       completionsActive: s.enabled && s.fim.enabled,
       kind: backend?.config.kind,
-      slots: backend?.slotCount?.(),
+      slots: backend?.slotCount?.(backend ? nextEditModel(backend.config, this.models.get(backend)) : undefined),
     });
   }
 

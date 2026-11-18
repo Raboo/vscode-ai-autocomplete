@@ -79,6 +79,6 @@ export interface FimBackend {
   listModels(signal: AbortSignal, timeoutMs?: number): Promise<ServerInfo>;
   streamFim(req: FimRequest): AsyncIterable<string>;
   streamChat(req: ChatRequest): AsyncIterable<ChatEvent>;
-  /** The server's parallel slot count when known (llama.cpp's `total_slots`); undefined otherwise. */
-  slotCount?(): number | undefined;
+  /** The server's parallel slot count for a model (none: the unnamed one) when known (llama.cpp's `total_slots`); undefined otherwise. */
+  slotCount?(model?: string): number | undefined;
 }

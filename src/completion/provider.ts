@@ -14,6 +14,7 @@ import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
 import { buildFimWindowIn, type ExtraContextRing, type LineSource } from './context';
 import { docPath } from './contextTracker';
+import { DetectedModels } from './detectedModels';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
@@ -89,7 +90,7 @@ function withRetry(detail: string, backoff: ErrorBackoff): string {
 }
 
 export class FimProvider implements vscode.InlineCompletionItemProvider {
-  private readonly models = new WeakMap<FimBackend, string>();
+  private readonly models = new DetectedModels<FimBackend>();
   private readonly logged = new Set<string>();
   /** Backends whose last request failed, with the failure's status detail. */
   private readonly failing = new Map<string, string>();
@@ -101,8 +102,9 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     this.requests = new RequestStatus(d.status);
   }
 
-  /** Shows idle again (after "Retry now" or an API key change); a request still running reports its own outcome. */
+  /** Shows idle again (after "Retry now", an API key change or a local server that became ready); a request still running reports its own outcome. Model detection is tried again too. */
   clearError(): void {
+    this.models.forgetMisses();
     this.requests.report({ state: 'idle' });
   }
 
@@ -381,15 +383,19 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     return { state: 'error', detail: withRetry(detail, j.backoff) };
   }
 
-  /** Model id from settings, else detected once per backend instance (only a detected id is remembered). */
+  /** Model id from settings, else detected once per backend instance; a detection that found nothing is not repeated for 30 s. */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     if (backend.config.fimModel) return backend.config.fimModel;
     const known = this.models.get(backend);
     if (known !== undefined) return known;
+    if (!this.models.shouldDetect(backend)) return undefined;
     const detected = await backend.detectModel(signal);
-    if (detected !== undefined && !signal.aborted) {
+    if (signal.aborted) return detected;
+    if (detected !== undefined) {
       this.models.set(backend, detected);
       this.d.log.info(`backend "${backend.config.id}": detected model ${detected}`);
+    } else {
+      this.models.missed(backend);
     }
     return detected;
   }

@@ -112,7 +112,7 @@ describe('backends page render', () => {
     }
     expect(html).toMatch(/<button[^>]*data-action="use"[^>]*data-id="lm"[^>]*>Use for completions</);
     expect(html).not.toMatch(/data-action="use"[^>]*data-id="local"/);
-    expect(html).toContain('in use');
+    expect(html).toContain('<span class="badge">Completions</span>');
     expect(count(html, '>Test<')).toBe(2);
     expect(count(html, '>Edit<')).toBe(2);
     expect(count(html, '>Remove<')).toBe(2);
@@ -166,7 +166,7 @@ describe('backends page render', () => {
   test('cards show uses, badges and use buttons per use', () => {
     const both = card({ id: 'both', model: 'coder', nextEditModel: 'zeta-2.1', inUse: true, nextEditInUse: true });
     const html = renderPage(state({ cards: [both] }), ui());
-    expect(html).toContain('<span class="badge">in use</span>');
+    expect(html).toContain('<span class="badge">Completions</span>');
     expect(html).toContain('<span class="badge">Next Edit</span>');
     expect(html).not.toContain('>Use for completions<');
     expect(html).not.toContain('>Use for Next Edit<');
@@ -189,10 +189,10 @@ describe('backends page render', () => {
     const co = renderPage(state({ cards: [card({ id: 'co', uses: { completions: true, nextEdit: false }, model: 'm' })] }), ui());
     expect(co).toContain('a-use-co');
     expect(co).not.toContain('a-useNextEdit-co');
-    // a Next Edit-only card in use shows the Next Edit badge but never "in use"
+    // a Next Edit-only card in use shows the Next Edit badge but never the Completions one
     const neIn = renderPage(state({ cards: [card({ id: 'ne', uses: { completions: false, nextEdit: true }, nextEditModel: 'z', nextEditInUse: true })] }), ui());
     expect(neIn).toContain('<span class="badge">Next Edit</span>');
-    expect(neIn).not.toContain('in use');
+    expect(neIn).not.toContain('<span class="badge">Completions</span>');
   });
 
   test('cards name their uses', () => {
@@ -214,16 +214,34 @@ describe('backends page render', () => {
     expect(used).toContain('<span class="badge">Next Edit</span>');
   });
 
-  test('header shows completions on/off, local only, the General settings link and Add backend', () => {
+  test('header: the General settings link and Add backend; notes only for local only and completions off', () => {
     const on = renderPage(state(), ui());
-    expect(on).toContain('Completions on');
-    expect(on).toContain('Local only: off in this workspace');
+    expect(on).not.toContain('Completions on');
+    expect(on).not.toContain('Local only');
+    expect(on).not.toContain('Completions are off');
     expect(on).toMatch(/<button[^>]*data-action="openSettings"[^>]*>General settings…</);
     expect(on).toMatch(/<button[^>]*data-action="add"[^>]*>\+ Add backend</);
     expect(on).toMatch(/<button[^>]*data-action="setUpLocal"[^>]*>Set up local model<\/button><button[^>]*data-action="add"/);
     const off = renderPage(state({ completionsOn: false, localOnly: true }), ui());
-    expect(off).toContain('Completions off');
-    expect(off).toContain('Local only: on in this workspace');
+    expect(off).toContain('Completions are off');
+    expect(off).toMatch(/🔒 Local only/);
+    expect(renderPage(state({ localOnly: true }), ui())).not.toContain('Completions are off');
+    expect(renderPage(state({ completionsOn: false }), ui())).not.toContain('Local only');
+  });
+
+  test('the empty page explains both ways to get a backend, with both buttons', () => {
+    const html = renderPage(state({ cards: [] }), ui());
+    const empty = /<div class="empty[^"]*">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? '';
+    expect(empty).toContain('No backends yet. <strong>Set up local model</strong> downloads a small model and runs it for you, or <strong>+ Add backend</strong> connects a server you already run.');
+    expect(empty).toMatch(/<button[^>]*data-action="setUpLocal"[^>]*>Set up local model</);
+    expect(empty).toMatch(/<button[^>]*data-action="add"[^>]*>\+ Add backend</);
+    expect(renderPage(state(), ui())).not.toContain('No backends yet');
+  });
+
+  test('a card shows its URL truncated, with the full URL in the title', () => {
+    const url = 'https://example.com/a/very/long/path/that/goes/on/v1';
+    const html = renderPage(state({ cards: [card({ baseUrl: url })] }), ui());
+    expect(html).toContain(`<span class="url" title="${url}">${url}</span>`);
   });
 
   test('API key field: stored placeholder, Remove key, typed key and the re-enter note', () => {

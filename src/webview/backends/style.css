@@ -101,7 +101,7 @@ button:disabled {
 .card {
   margin-bottom: 8px;
   padding: 9px 11px;
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, var(--vscode-contrastBorder, transparent)));
   border-radius: 3px;
 }
 
@@ -126,6 +126,16 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* A long URL is cut with an ellipsis; its title shows all of it. */
+.url {
+  display: inline-block;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -136,6 +146,7 @@ button:disabled {
 .badge {
   padding: 1px 6px;
   border-radius: 8px;
+  border: 1px solid var(--vscode-contrastBorder, transparent);
   background: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
   font-size: 0.85em;
@@ -186,12 +197,16 @@ button:disabled {
   margin: 8px 0;
 }
 
+.empty p {
+  margin: 0 0 8px;
+}
+
 /* Edit form */
 
 .section {
   margin: 14px 0 2px;
   padding-bottom: 3px;
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, var(--vscode-contrastBorder, transparent)));
   color: var(--vscode-descriptionForeground);
   font-size: 0.85em;
   font-weight: 600;
@@ -334,7 +349,7 @@ textarea:disabled {
 .result {
   margin-top: 10px;
   padding: 6px 10px;
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, var(--vscode-contrastBorder, transparent)));
   border-radius: 3px;
   background: var(--vscode-textBlockQuote-background);
   line-height: 1.7;

@@ -51,18 +51,24 @@ function steps(list: TestStep[], note?: string): string {
   return `<div class="result"><ul class="steps">${items}</ul>${note ? `<p class="hint">${e(note)}</p>` : ''}</div>`;
 }
 
+/** What is out of the ordinary in this workspace: local only on, completions off. Nothing when all is normal. */
+function notesLine(s: PageState): string {
+  const notes = [...(s.localOnly ? ['🔒 Local only'] : []), ...(s.completionsOn ? [] : ['Completions are off'])];
+  return notes.length > 0 ? `<span class="muted">${notes.map(e).join(' · ')}</span>` : '';
+}
+
 function header(s: PageState): string {
   return '<header class="page-head"><h1>Backends</h1>'
-    + `<span class="muted">· Completions ${s.completionsOn ? 'on' : 'off'} · Local only: ${s.localOnly ? 'on' : 'off'} in this workspace ·</span>`
+    + notesLine(s)
     + button('openSettings', 'General settings…', { id: 'a-openSettings', cls: 'link' })
     + button('setUpLocal', 'Set up local model', { id: 'a-setUpLocal', cls: 'btn secondary push' })
     + button('add', '+ Add backend', { id: 'a-add', cls: 'btn primary' })
     + '</header>';
 }
 
-/** The in-use badges of a card: "in use" for completions, "Next Edit" for Next Edit. */
+/** The in-use badges of a card: "Completions" and "Next Edit", for what the backend is selected for. */
 function badges(c: CardView): string {
-  return `${c.inUse ? '<span class="badge">in use</span>' : ''}${c.nextEditInUse ? '<span class="badge">Next Edit</span>' : ''}`;
+  return `${c.inUse ? '<span class="badge">Completions</span>' : ''}${c.nextEditInUse ? '<span class="badge">Next Edit</span>' : ''}`;
 }
 
 /** The Use for buttons of a saved backend: one per use it has and is not already selected for. */
@@ -77,7 +83,9 @@ function collapsedCard(c: CardView): string {
   const nextEdit = c.uses.nextEdit && (!c.uses.completions || (c.nextEditModel !== undefined && c.nextEditModel !== c.model))
     ? [`Next Edit model: ${c.nextEditModel ?? 'auto-detect'}`] : [];
   const uses = c.uses.completions && c.uses.nextEdit ? 'Completions · Next Edit' : c.uses.completions ? 'Completions only' : 'Next Edit only';
-  const meta = [c.typeLabel, c.baseUrl, uses, ...(c.uses.completions ? [model] : []), ...nextEdit, ...(c.keyStored ? ['API key set'] : [])].map(e).join(' · ');
+  // A long URL is cut with an ellipsis by the stylesheet; the title shows all of it.
+  const url = `<span class="url" title="${e(c.baseUrl)}">${e(c.baseUrl)}</span>`;
+  const meta = [e(c.typeLabel), url, ...[uses, ...(c.uses.completions ? [model] : []), ...nextEdit, ...(c.keyStored ? ['API key set'] : [])].map(e)].join(' · ');
   const actions = button('test', 'Test', { id: `a-test-${c.id}`, dataId: c.id })
     + button('edit', 'Edit', { id: `a-edit-${c.id}`, dataId: c.id })
     + useButtons(c)
@@ -227,6 +235,12 @@ export function renderPage(state: PageState, ui: LocalUi): string {
   });
   // A new backend, or a draft whose card has gone from settings, gets its own card at the end.
   if (ed && !editShown) cards.push(editCard(state, ed, ui));
-  const empty = cards.length === 0 ? '<p class="empty muted">No backends yet. Add one to start getting completions.</p>' : '';
+  const empty = cards.length === 0
+    ? '<div class="empty muted"><p>No backends yet. <strong>Set up local model</strong> downloads a small model and runs it for you, '
+      + 'or <strong>+ Add backend</strong> connects a server you already run.</p><div class="actions">'
+      + button('setUpLocal', 'Set up local model', { id: 'a-empty-setUpLocal', cls: 'btn primary' })
+      + button('add', '+ Add backend', { id: 'a-empty-add' })
+      + '</div></div>'
+    : '';
   return `${header(state)}${empty}<div class="cards">${cards.join('')}</div>`;
 }

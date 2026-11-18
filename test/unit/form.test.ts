@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, useFromUnknown, validateForm } from '../../src/manage/form';
+import { fieldViews, THINKING_LABELS, entryToForm, formToConfig, formToEntry, formWarnings, newForm, planRename, removeBackend, retypeForm, upsertBackend, useFromUnknown, validateForm, RESERVED_ID } from '../../src/manage/form';
 import type { BackendForm } from '../../src/manage/protocol';
 import { parseSettings, type RawSettingsSource, type Settings } from '../../src/config/settings';
 import { TEMPLATES } from '../../src/models/templates';
@@ -141,6 +141,10 @@ describe('form model', () => {
     const fields = errs.map((e) => e.field).sort();
     expect(fields).toEqual(['baseUrl', 'contextTokens', 'debounceMs', 'extraBody', 'headers', 'id', 'maxTokens', 'temperature', 'topK', 'topP'].sort());
     expect(validateForm(form({ id: 'a' }), ['a'])).toEqual([{ field: 'id', message: expect.any(String) }]);
+    // The local model helper's backend id is reserved for new backends and renames, not for editing it.
+    expect(validateForm(form({ id: 'local' }), [])).toEqual([{ field: 'id', message: RESERVED_ID }]);
+    expect(validateForm(form({ id: 'local', originalId: 'mine' }), [])).toEqual([{ field: 'id', message: 'The id local is used by the local model helper.' }]);
+    expect(validateForm(form({ id: 'local', originalId: 'local' }), ['other'])).toEqual([]);
     expect(validateForm(form({ id: 'a', originalId: 'a' }), ['a'])).toEqual([]);
     expect(validateForm(form({ changed: { extraBody: '{bad' } }), []).map((e) => e.field)).toEqual(['extraBody']);
     expect(validateForm(form({ changed: { temperature: '2', topP: '1', topK: '0', maxTokens: '4096', timeoutMs: '500' } }), [])).toEqual([]);

@@ -66,9 +66,9 @@
 
 ### Task 8: Next Edit keeps its suggestion while you type it
 
-- [ ] A Next Edit result for an older document version is kept when the user's edits since then are a prefix of the suggested change at the same place (typing what the model suggested); its edit is rebased onto the new text. Otherwise it is dropped as today.
-- [ ] Unit tests for the rebase; integration test: typing the first letters of the suggestion keeps it.
-- [ ] Commit: `feat: Next Edit suggestions survive typing them`
+- [x] A Next Edit result for an older document version is kept when the user's edits since then are a prefix of the suggested change at the same place (typing what the model suggested); its edit is rebased onto the new text. Otherwise it is dropped as today.
+- [x] Unit tests for the rebase; integration test: typing the first letters of the suggestion keeps it.
+- [x] Commit: `feat: Next Edit suggestions survive typing them`
 
 ### Finish
 

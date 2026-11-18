@@ -27,6 +27,8 @@ export interface DownloadOptions {
   signal: AbortSignal;
   onProgress(received: number, total: number): void;
   fetchFn?: typeof fetch;
+  /** The `Authorization` value for a request to this URL, asked per hop so a redirect to another host can drop it. */
+  authFor?(url: URL): string | undefined;
   /** Free bytes on the volume holding `dir`. Defaults to `fs.statfs`. */
   freeBytes?(dir: string): Promise<number>;
 }
@@ -103,6 +105,10 @@ async function open(o: DownloadOptions, partBytes: number): Promise<Response> {
     const headers: Record<string, string> = {};
     if (partBytes > 0) {
       headers.range = `bytes=${partBytes}-`;
+    }
+    const auth = o.authFor?.(current);
+    if (auth) {
+      headers.authorization = auth;
     }
     const res = await doFetch(current, { headers, redirect: 'manual', signal: o.signal });
     const location = res.headers.get('location');

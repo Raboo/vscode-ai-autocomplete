@@ -14,11 +14,12 @@ import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
 import type { ContextFile } from '../../types';
 import { decorationPlan, displayFor } from '../decorations';
-import { toItemText, type LineEdit } from '../diff';
+import { classify, editShow, toItemText, type LineEdit, type Pos } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
 import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
-import { nextEditBudgets } from '../region';
+import { rebaseEdit } from '../rebase';
+import { nextEditBudgets, type LineSpan } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
@@ -43,6 +44,17 @@ type Timer = ReturnType<typeof setTimeout>;
 /** Edit hunks completions get as extra context. */
 const RECENT_EDIT_HUNKS = 3;
 
+/** A result with the document text it applies to, so it can be rebased while the user types it. */
+type Held = NextEditResult & { text: string };
+
+/** Where the cursor is after a content change that typed `text` over `range` (before VS Code reports the selection). */
+function cursorAfter(change: vscode.TextDocumentContentChangeEvent): Pos {
+  const { start } = change.range;
+  const parts = change.text.split(/\r?\n/);
+  const last = parts[parts.length - 1];
+  return parts.length === 1 ? { line: start.line, character: start.character + last.length } : { line: start.line + parts.length - 1, character: last.length };
+}
+
 const samePos = (a: { line: number; character: number }, b: { line: number; character: number }): boolean => a.line === b.line && a.character === b.character;
 
 /**
@@ -56,10 +68,11 @@ export class NextEditController implements vscode.Disposable {
   private readonly policy = new TriggerPolicy();
   private readonly history = new EditHistory();
   private readonly models = new WeakMap<FimBackend, string>();
-  private readonly inflight = new Map<string, { version: number; ctl: AbortController }>();
-  private result: NextEditResult | undefined;
+  /** `region` is set once the request's input is built: typing inside it keeps the request running (see changed()). */
+  private readonly inflight = new Map<string, { version: number; ctl: AbortController; region?: LineSpan }>();
+  private result: Held | undefined;
   /** An inline edit shown as decorations, waiting for Tab or Esc. Never returned by itemFor(). */
-  private pending: NextEditResult | undefined;
+  private pending: Held | undefined;
   private readonly decorations = new EditDecorations();
   /** The version and cursor line each document was last asked about, so a repeated trigger does not ask again. */
   private readonly asked = new Map<string, { version: number; line: number }>();
@@ -264,6 +277,7 @@ export class NextEditController implements vscode.Disposable {
   private closed(doc: vscode.TextDocument): void {
     const uri = doc.uri.toString();
     this.cancel(uri);
+    this.policy.closed(uri);
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
@@ -278,11 +292,26 @@ export class NextEditController implements vscode.Disposable {
     const doc = e.document;
     // First, and silently: the log is a document too, so logging about its changes would loop.
     if (e.contentChanges.length === 0) return;
-    // Any change to its document, an undo included, leaves a pending edit pointing at shifted lines.
-    if (this.pending?.uri === doc.uri.toString()) this.clearPending();
-    if (!this.tracking() || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
-    this.cancel(uri);
+    // The user typing a pending edit or a held result keeps the rest of it; any other change to its document, an undo
+    // included, leaves it pointing at shifted lines.
+    const typing = this.typing(e);
+    if (this.pending?.uri === uri) {
+      const p = typing && this.rebased(this.pending, doc, typing.cursor);
+      const editor = vscode.window.activeTextEditor;
+      if (p && editor) {
+        const lines = p.text.split(/\r?\n/);
+        // Decorations show an inline edit, also when the rest has become an insertion at the cursor.
+        this.pending = { ...p, show: editShow(p.edit, lines) };
+        this.decorations.show(editor, decorationPlan(p.edit, lines, typing.cursor));
+      } else {
+        this.clearPending();
+      }
+    }
+    const kept = typing && this.result?.uri === uri ? this.rebased(this.result, doc, typing.cursor) : undefined;
+    if (!this.tracking() || !this.eligible(doc)) return;
+    this.cancel(uri, typing ? this.inRegion(uri, typing.change) : false);
+    if (kept) this.result = kept;
     this.restartIdle(doc);
     const reason = e.reason;
     if (reason === vscode.TextDocumentChangeReason.Undo || reason === vscode.TextDocumentChangeReason.Redo) return;
@@ -293,6 +322,31 @@ export class NextEditController implements vscode.Disposable {
     // A language or file FIM is disabled in is not eligible here, so only these settings leave FIM inactive for the document.
     const s = this.d.getSettings();
     if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
+  }
+
+  /** The change when it is the user typing in the active editor of a document Next Edit may use: one content change, no undo or redo, no snooze. */
+  private typing(e: vscode.TextDocumentChangeEvent): { change: vscode.TextDocumentContentChangeEvent; cursor: Pos } | undefined {
+    const doc = e.document;
+    const R = vscode.TextDocumentChangeReason;
+    if (e.contentChanges.length !== 1 || e.reason === R.Undo || e.reason === R.Redo) return undefined;
+    // Not editorFor(): the editor's selection is still the one before this change (a selection typed over is not empty).
+    if (!this.tracking() || !this.eligible(doc) || this.d.snoozedUntil() > Date.now() || vscode.window.activeTextEditor?.document !== doc) return undefined;
+    const change = e.contentChanges[0];
+    return { change, cursor: cursorAfter(change) };
+  }
+
+  /** `r` rebased onto the document's current text, when the user's edits since are the start of it; undefined when they are not or it is all typed. */
+  private rebased(r: Held, doc: vscode.TextDocument, cursor: Pos): Held | undefined {
+    const text = doc.getText();
+    const edit = rebaseEdit(r.edit, r.text, text);
+    if (edit === undefined || edit === 'done') return undefined;
+    return { uri: r.uri, version: doc.version, cursor, edit, show: classify(edit, text.split(/\r?\n/), cursor), text };
+  }
+
+  /** Whether a change lies inside the lines the document's running request rewrites, so its answer may still be typed along. */
+  private inRegion(uri: string, change: vscode.TextDocumentContentChangeEvent): boolean {
+    const region = this.inflight.get(uri)?.region;
+    return region !== undefined && change.range.start.line >= region.start && change.range.end.line <= region.end;
   }
 
   private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {
@@ -313,11 +367,14 @@ export class NextEditController implements vscode.Disposable {
 
   /**
    * Aborts the document's request and drops its result, pending pause and pending chain: they belong to an older version.
-   * accepted() runs after the accept's own change event, so a chain is only cancelled by a later change.
+   * accepted() runs after the accept's own change event, so a chain is only cancelled by a later change. With `keepRequest`
+   * (the user typing inside the request's region) the request runs on and its answer is rebased when it comes.
    */
-  private cancel(uri: string): void {
-    this.inflight.get(uri)?.ctl.abort();
-    this.inflight.delete(uri);
+  private cancel(uri: string, keepRequest = false): void {
+    if (!keepRequest) {
+      this.inflight.get(uri)?.ctl.abort();
+      this.inflight.delete(uri);
+    }
     if (this.result?.uri === uri) this.result = undefined;
     this.clearTimer(this.pauseTimers, uri);
     this.clearTimer(this.chainTimers, uri);
@@ -422,7 +479,8 @@ export class NextEditController implements vscode.Disposable {
       // The cursor may have moved while the checks above awaited.
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
-      const lines = doc.getText().split(/\r?\n/);
+      const text = doc.getText();
+      const lines = text.split(/\r?\n/);
       const path = this.path(doc);
       const budgets = nextEditBudgets(s.nextEdit.contextBudget);
       const base: NextEditInput = {
@@ -450,11 +508,13 @@ export class NextEditController implements vscode.Disposable {
       };
       // Again on what is sent: `previous` (Sweep's original window) is known only after the flush.
       if (this.notSendable(format, input, uri, version)) return;
+      const flight = this.inflight.get(uri);
+      if (flight?.ctl === ctl) flight.region = input.region;
       const started = Date.now();
       this.policy.requested(uri, at.line, started);
       this.asked.set(uri, { version, line: at.line });
       const log = this.d.log;
-      const result = await runNextEdit({
+      const fresh = await runNextEdit({
         backend,
         values,
         flavor,
@@ -472,19 +532,25 @@ export class NextEditController implements vscode.Disposable {
       backoff.recordSuccess();
       log.debug(
         `next edit ${id} model=${model ?? '?'} format=${format.id} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
-          `→ ${result ? result.show.kind : 'no edit'} in ${Date.now() - started} ms`,
+          `→ ${fresh ? fresh.show.kind : 'no edit'} in ${Date.now() - started} ms`,
       );
-      if (!result || ctl.signal.aborted) return;
-      if (doc.version !== version || vscode.window.activeTextEditor?.document !== doc) {
-        log.debug('next edit: result dropped, the document or editor changed');
+      if (!fresh || ctl.signal.aborted) return;
+      if (vscode.window.activeTextEditor?.document !== doc) {
+        log.debug('next edit: result dropped, the editor changed');
         return;
       }
       if (this.d.snoozedUntil() > Date.now()) {
         log.debug('next edit: result dropped, snoozed');
         return;
       }
-      // Stored for another cursor, it would show nothing and the trigger below would make FIM answer at the new cursor.
       const cursor = this.editorFor(doc)?.selection.active;
+      // The user typed while the request ran: kept only when what they typed is the start of the suggestion.
+      const result = doc.version === version ? { ...fresh, text } : cursor && this.rebased({ ...fresh, text }, doc, { line: cursor.line, character: cursor.character });
+      if (!result) {
+        log.debug('next edit: result dropped, the document changed');
+        return;
+      }
+      // Stored for another cursor, it would show nothing and the trigger below would make FIM answer at the new cursor.
       if (result.show.kind === 'ghost' && !(cursor && samePos(cursor, result.cursor))) {
         log.debug('next edit: result dropped, the cursor moved');
         return;
@@ -500,9 +566,9 @@ export class NextEditController implements vscode.Disposable {
         const shown = vscode.window.activeTextEditor;
         if (!shown) return;
         this.result = undefined;
-        this.pending = result;
-        // The version was checked above, so `lines` is still the document's text.
-        this.decorations.show(shown, decorationPlan(result.edit, lines, shown.selection.active));
+        const current = result.text.split(/\r?\n/);
+        this.pending = { ...result, show: editShow(result.edit, current) };
+        this.decorations.show(shown, decorationPlan(result.edit, current, shown.selection.active));
         return;
       }
       this.result = result;

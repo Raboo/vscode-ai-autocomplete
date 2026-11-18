@@ -26,6 +26,12 @@ export class TriggerPolicy {
     this.lastEdit = { uri, at: now };
   }
 
+  /** A closed document's edit and request are forgotten: an untitled document opened later may get the same URI. */
+  closed(uri: string): void {
+    if (this.lastEdit?.uri === uri) this.lastEdit = undefined;
+    if (this.lastRequest?.uri === uri) this.lastRequest = undefined;
+  }
+
   rejected(now: number): void {
     this.rejectedAt = now;
   }

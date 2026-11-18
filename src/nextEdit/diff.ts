@@ -63,7 +63,12 @@ export function classify(e: LineEdit, docLines: string[], cursor: Pos): NextEdit
     const inserted = insertedAt(oldText, newText, offset);
     if (inserted) return { kind: 'ghost', insertText: inserted };
   }
+  return editShow(e, docLines);
+}
 
+/** The edit as an inline edit (never ghost text): the document range it replaces and the text. */
+export function editShow(e: LineEdit, docLines: string[]): Extract<NextEditShow, { kind: 'edit' }> {
+  const { startLine: s, endLine: e2, newLines } = e;
   const last = docLines.length - 1;
   const endOf = (line: number): Pos => ({ line, character: docLines[line].length });
 

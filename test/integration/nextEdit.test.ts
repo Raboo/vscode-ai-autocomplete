@@ -322,6 +322,28 @@ suite('Next Edit', () => {
     });
   });
 
+  test('typing the suggestion keeps the rest of a pending edit', async () => {
+    await withPendingRename(async (editor, m) => {
+      // A request for a typed version proposes nothing, so only the kept edit can be pending.
+      m.setNextEdit({ content: ['NO_CHANGE'] });
+      // After `(r` on line 7, where the rename inserts `adius`.
+      const at = CIRCLE[7].indexOf('(r') + 2;
+      editor.selection = new vscode.Selection(7, at, 7, at);
+      await typeKeys(editor, 'adi');
+      const typed = CIRCLE.map((l, i) => (i === 7 ? 'def circle_circumference(radi):' : l)).join('\n');
+      assert.equal(editor.document.getText(), typed);
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+      assert.equal(api.nextEditPending()?.version, editor.document.version);
+      // Still pending after the edit pause and FIM's answer for the typed version.
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      assert.equal(editor.document.getText(), RENAMED.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
+    });
+  });
+
   test('a snooze clears a pending edit', async () => {
     await withPendingRename(async (editor) => {
       try {

@@ -65,3 +65,14 @@ test('afterPause is true outside a rejection cooldown', () => {
   expect(p.afterPause(12_000)).toBe(false);
   expect(p.afterPause(16_000)).toBe(true);
 });
+
+test('a closed document forgets its edit, so a new document reusing its URI does not ask on a cursor move', () => {
+  const p = new TriggerPolicy();
+  p.edited('untitled:Untitled-1', 1_000);
+  p.closed('untitled:Untitled-1');
+  expect(p.onCursorMove('untitled:Untitled-1', 0, 2_000)).toBe(false);
+  // Closing another document changes nothing.
+  p.edited('a', 3_000);
+  p.closed('b');
+  expect(p.onCursorMove('a', 0, 4_000)).toBe(true);
+});

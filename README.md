@@ -235,6 +235,8 @@ Next Edit suggests the edit you are likely to make next. After you change code, 
 
 **Turn it on:** run **AI Autocomplete: Select Next Edit Backend** and pick a backend; only backends with **Next Edit** ticked under **Use for** are listed. To use a different model than the completions, set **Next Edit model** on the Backends page (`nextEditModel`); with both uses ticked and no Next Edit model, the backend's completion model is used. On a backend with only Next Edit ticked there is no completion model: the Next Edit model, or the model the server lists, is used. Press **Test connection** on the backend to check that its Next Edit model answers in its format. When the server lists several models, set `nextEditModel`, so the extension does not have to guess which one to use. A Next Edit backend, like a completion backend, can be picked per workspace only from the backends in your user settings. **Off** in the same picker (the menu's **Next Edit** entry) turns it off again. **Snooze...** and **Turn off AI Autocomplete** pause Next Edit too; **Off** under **Completions** turns off completions only.
 
+**Typing it yourself:** if you start typing what Next Edit suggests (or what it is about to suggest), the rest of the suggestion stays and moves with your text; `Tab` applies what is left. Any other change drops it.
+
 **Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `sweep` gets Sweep, any other model gets `chatXtab`.
 
 | Format | Fits | Route |

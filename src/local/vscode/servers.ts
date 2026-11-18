@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { renameBackendEntry } from '../../config/rename';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
-import { DEFAULT_PORT, LOCAL_BACKEND_ID, MANAGED_KEY, localEntryPort, parseManaged, upsertLocalEntry } from '../backendEntry';
+import { LOCAL_BACKEND_ID, MANAGED_KEY, parseManaged } from '../backendEntry';
 import { freePort, type SpawnLike } from '../llamaServer';
-import { LEGACY_MANAGED_KEY, legacyServers, planMigration, type LegacyServer } from '../migrate';
+import { LEGACY_MANAGED_KEY, MIGRATED_KEY, applyMigration, type LegacyServer } from '../migrate';
 import type { LocalModel } from '../modelList';
 import { RECIPES, modelPathSegments, type Recipe } from '../recipes';
 import { RouterClient, probeRouter } from '../router';
@@ -165,46 +165,35 @@ export class LocalServers implements vscode.Disposable {
     });
   }
 
-  /** Activation: moves old per-model helper backends to `local` (once, when there are any), then starts the router when `local` is selected. Never throws. */
+  /** Activation: moves old per-model helper backends to `local` (once), then starts the router when `local` is selected. Never throws. */
   async activate(): Promise<void> {
     await this.migrate();
     await this.pool.startSelected();
   }
 
-  /**
-   * Old `local-<recipe>` llama-server backends: their processes stop, `local` takes over their selections (written in
-   * the order that never leaves a selection naming a missing backend), they are removed, and their records are cleared.
-   */
+  /** Old `local-<recipe>` llama-server backends move to `local`, once (a flag in global state). Never throws. */
   private async migrate(): Promise<void> {
     const state = this.d.context.globalState;
+    if (state.get(MIGRATED_KEY) === true) return;
     try {
       const raw = config().inspect('backends')?.globalValue;
-      const backends = Array.isArray(raw) ? (raw as unknown[]) : [];
-      const legacy = state.get(LEGACY_MANAGED_KEY);
-      const plan = planMigration({ backends, managed: legacy, settings: this.d.settings() });
-      if (plan.log === '') {
-        if (legacy !== undefined) await state.update(LEGACY_MANAGED_KEY, undefined);
-        return;
-      }
       const recipes = this.d.recipes?.() ?? RECIPES;
-      for (const rec of legacyServers(legacy)) {
-        if (rec.pid === undefined || !plan.stopPids.includes(rec.pid) || !alive(rec.pid)) continue;
-        if (await legacyServing(rec, recipes)) terminate(rec.pid);
-      }
-      let list = backends;
-      if (plan.local) {
-        const port = localEntryPort(list) ?? parseManaged(state.get(MANAGED_KEY))?.port ?? DEFAULT_PORT;
-        list = upsertLocalEntry(list, plan.local, port);
-        await config().update('backends', list, vscode.ConfigurationTarget.Global);
-      }
-      if (plan.select.completions) await config().update('completions.backend', LOCAL_BACKEND_ID, vscode.ConfigurationTarget.Global);
-      if (plan.select.nextEdit) await config().update('nextEdit.backend', LOCAL_BACKEND_ID, vscode.ConfigurationTarget.Global);
-      if (plan.removeIds.length > 0) {
-        list = list.filter((e) => !(isEntry(e) && typeof e.id === 'string' && plan.removeIds.includes(e.id)));
-        await config().update('backends', list, vscode.ConfigurationTarget.Global);
-      }
-      await state.update(LEGACY_MANAGED_KEY, undefined);
-      this.d.log.info(plan.log);
+      const routerPort = parseManaged(state.get(MANAGED_KEY))?.port;
+      await applyMigration(
+        { backends: Array.isArray(raw) ? (raw as unknown[]) : [], managed: state.get(LEGACY_MANAGED_KEY), settings: this.d.settings(), recipes, ...(routerPort !== undefined ? { routerPort } : {}) },
+        {
+          writeBackends: async (list) => config().update('backends', list, vscode.ConfigurationTarget.Global),
+          select: async (use) => config().update(use === 'completions' ? 'completions.backend' : 'nextEdit.backend', LOCAL_BACKEND_ID, vscode.ConfigurationTarget.Global),
+          alive,
+          serving: (rec) => legacyServing(rec, recipes),
+          terminate,
+          finish: async () => {
+            await state.update(LEGACY_MANAGED_KEY, undefined);
+            await state.update(MIGRATED_KEY, true);
+          },
+          log: this.d.log,
+        },
+      );
     } catch (err) {
       this.d.log.error('local models: moving the old local backends to the router failed', err);
     }

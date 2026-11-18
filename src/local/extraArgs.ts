@@ -3,7 +3,7 @@
 
 const REFUSED_EXACT = new Set([
   'host', 'port', 'm', 'model', 'alias', 'a', 'c', 'ctx-size', 'np', 'parallel', 'api-key', 'api-key-file',
-  'webui', 'no-webui', 'path', 'hf', 'hfr', 'hff', 'hfv', 'hft',
+  'webui', 'no-webui', 'path', 'model-url', 'mu', 'model-draft', 'md', 'hf', 'hfr', 'hff', 'hfv', 'hft',
 ]);
 const REFUSED_PREFIXES = ['hf-', 'models-', 'ssl-', 'mmproj'];
 
@@ -39,7 +39,7 @@ function isFlag(token: string): boolean {
 }
 
 export function parseExtraArgs(line: string): { args: string[]; refused?: string } {
-  if (/[\r\n]/.test(line)) return { args: [], refused: 'a line break' };
+  if (/[\r\n\u0085\u2028\u2029]/.test(line)) return { args: [], refused: 'a line break' };
   const tokens = split(line);
   if (!tokens) return { args: [], refused: 'an unclosed quote' };
   const args: string[] = [];
@@ -49,7 +49,7 @@ export function parseExtraArgs(line: string): { args: string[]; refused?: string
       const eq = raw.indexOf('=');
       const flag = eq > 0 ? raw.slice(0, eq) : raw;
       const key = flag.replace(/^-+/, '');
-      if (key === '' || /[=;\s]/.test(key)) return { args: [], refused: flag };
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(key)) return { args: [], refused: flag };
       if (REFUSED_EXACT.has(key) || REFUSED_PREFIXES.some((p) => key.startsWith(p))) return { args: [], refused: flag };
       args.push(flag);
       prevFlag = true;

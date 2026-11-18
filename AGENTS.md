@@ -11,7 +11,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## Hard rules
 
 - No telemetry, ever. Nothing leaves the machine except requests to the user-configured backend.
-- Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`, `aiAutocomplete.local.llamaServerPath`) are read from `globalValue` only; workspace values are ignored.
+- Machine-scoped settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`, `aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.models`, `aiAutocomplete.local.modelsDir`, `aiAutocomplete.local.modelsInMemory`) are read from `globalValue` only; workspace values are ignored.
 - Only these files may `import 'vscode'`: `src/extension.ts`, `src/log.ts`, `src/config/vscodeSettings.ts`, `src/config/secrets.ts`, `src/completion/provider.ts`, `src/completion/contextTracker.ts`, `src/ui/*`, `src/nextEdit/vscode/*`, `src/local/vscode/*`. Everything else is pure and unit-testable.
 - The Backends page never receives an API key, and server-supplied text (model ids, error bodies) is HTML-escaped before it reaches the page. Error text shown in the page is fixed text.
 - Prompt and completion text, reasoning text and server error bodies are logged only when `aiAutocomplete.debug.logPrompts` is true; timings, status codes and sizes are always logged at debug level.

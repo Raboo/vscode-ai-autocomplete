@@ -15,7 +15,7 @@ describe('parseExtraArgs', () => {
     ['--host 0.0.0.0', '--host'], ['-m x', '-m'], ['--model x', '--model'], ['--alias x', '--alias'], ['-a x', '-a'],
     ['--api-key k', '--api-key'], ['--api-key-file f', '--api-key-file'], ['--hf-repo x', '--hf-repo'], ['-hf x', '-hf'],
     ['--models-max 2', '--models-max'], ['--webui', '--webui'], ['--no-webui', '--no-webui'], ['--ssl-key-file f', '--ssl-key-file'],
-    ['--path p', '--path'], ['--mmproj f', '--mmproj'], ['--threads 8 --port=1', '--port'],
+    ['--path p', '--path'], ['--model-url u', '--model-url'], ['-mu u', '-mu'], ['--model-draft d', '--model-draft'], ['-md d', '-md'], ['--mmproj f', '--mmproj'], ['--threads 8 --port=1', '--port'],
   ])('refuses %s naming %s', (line, flag) => {
     expect(parseExtraArgs(line)).toEqual({ args: [], refused: flag });
   });
@@ -27,6 +27,9 @@ describe('parseExtraArgs', () => {
     expect(parseExtraArgs('--a;b 1').refused).toBe('--a;b');
     expect(parseExtraArgs('8 --x').refused).toBe('8');
     expect(parseExtraArgs('--x "open').refused).toBeDefined();
+    expect(parseExtraArgs('--[x]')).toEqual({ args: [], refused: '--[x]' });
+    expect(parseExtraArgs('--[evil] 1').refused).toBe('--[evil]');
+    for (const br of ['\u0085', '\u2028', '\u2029']) expect(parseExtraArgs(`--threads 8${br}--x`).refused).toBeDefined();
   });
 });
 

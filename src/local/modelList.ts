@@ -33,7 +33,7 @@ export interface LocalModel {
   hidden: boolean;
 }
 
-// Not imported from settings.ts, which imports this file.
+// A copy of BACKEND_USES from settings.ts: importing the value would make a runtime import cycle (settings.ts imports parseLocalModels from here).
 const BACKEND_USES: readonly BackendUse[] = ['completions', 'nextEdit'];
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
 

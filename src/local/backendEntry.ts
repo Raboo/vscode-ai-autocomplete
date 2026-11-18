@@ -13,13 +13,17 @@ export interface ManagedServer {
   port: number;
   /**
    * The process serving it, written by the window that started it. Stop Local Models clears it: a record without a pid
-   * means nobody should be serving it, so a window that adopted the router does not start it again. A restart from
-   * another window also clears it, with the new `modelsMax`, while it stops the old process.
+   * means nobody should be serving it, so a window that adopted the router does not start it again (unless `restarting`).
    */
   pid?: number;
   presetsPath: string;
   /** `--models-max` the router was started with. */
   modelsMax: number;
+  /**
+   * Set (without a pid) by a window that restarts the router while it stops the old process: other windows wait for the
+   * new router instead of treating the exit as Stop Local Models. The new router's record drops it.
+   */
+  restarting?: true;
 }
 
 /** Key of the router record in the extension's global state (`localServers`, the per-model records, is read only by the migration). */
@@ -73,10 +77,10 @@ const isPort = (v: unknown): v is number => typeof v === 'number' && Number.isIn
 /** Reads the router record from global state (untrusted): undefined unless it is well-formed. */
 export function parseManaged(raw: unknown): ManagedServer | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
-  const { port, pid, presetsPath, modelsMax } = raw as Record<string, unknown>;
+  const { port, pid, presetsPath, modelsMax, restarting } = raw as Record<string, unknown>;
   if (!isPort(port) || typeof presetsPath !== 'string' || typeof modelsMax !== 'number' || !Number.isInteger(modelsMax) || modelsMax < 1) return undefined;
   const validPid = typeof pid === 'number' && Number.isInteger(pid) && pid > 0;
-  return validPid ? { port, pid, presetsPath, modelsMax } : { port, presetsPath, modelsMax };
+  return { port, ...(validPid ? { pid } : {}), presetsPath, modelsMax, ...(restarting === true ? { restarting: true as const } : {}) };
 }
 
 /** Whether the router should run: the extension is on and `local` exists and is selected for an enabled use. */

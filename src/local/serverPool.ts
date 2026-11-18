@@ -67,9 +67,9 @@ const sleepFor = (ms: number, signal: AbortSignal): Promise<void> =>
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** `rec` without its pid: nobody should be serving it (Stop Local Models), or a restart is under way. */
-function withoutPid(rec: ManagedServer, modelsMax = rec.modelsMax): ManagedServer {
-  return { port: rec.port, presetsPath: rec.presetsPath, modelsMax };
+/** `rec` without its pid: nobody should be serving it (Stop Local Models, or a restart that failed). */
+function withoutPid(rec: ManagedServer): ManagedServer {
+  return { port: rec.port, presetsPath: rec.presetsPath, modelsMax: rec.modelsMax };
 }
 
 export interface LaunchOptions {
@@ -204,8 +204,7 @@ export class ServerPool {
       const { text, names } = this.presets();
       await this.d.writePresets(text);
       if (slot.cancelled) throw cancelled();
-      const rec = this.managed();
-      const saved = rec?.port ?? DEFAULT_PORT;
+      const saved = this.managed()?.port ?? this.settingsPort() ?? DEFAULT_PORT;
       // Another window's router (or one left by an earlier session) on the saved port serves this window too.
       if (await this.ours(saved, names, slot)) return this.adopt(slot, saved);
       if (slot.cancelled) throw cancelled();
@@ -282,6 +281,33 @@ export class ServerPool {
     }
   }
 
+  /** Why no router can be started with the configured llama-server (missing, or too old), or undefined. Setup asks before it downloads. */
+  async binaryProblem(): Promise<string | undefined> {
+    try {
+      await this.routerBinary();
+      return undefined;
+    } catch (err) {
+      return message(err);
+    }
+  }
+
+  /** The port of `local`'s baseUrl in the settings, when it is there. */
+  private settingsPort(): number | undefined {
+    const url = this.d.settings().backends.find((b) => b.id === LOCAL_BACKEND_ID)?.baseUrl;
+    try {
+      const port = url ? Number(new URL(url).port) : NaN;
+      return Number.isInteger(port) && port > 0 && port <= 65535 ? port : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Whether the router record names this port and a live pid: a router this extension started (in some window). */
+  private owned(port: number): boolean {
+    const rec = this.managed();
+    return rec?.port === port && rec.pid !== undefined && this.d.alive(rec.pid);
+  }
+
   /** The llama-server to start; it must support router mode (`--models-preset` in its help). */
   private async routerBinary(): Promise<string> {
     const binary = this.d.binary();
@@ -299,17 +325,18 @@ export class ServerPool {
   }
 
   /**
-   * Whether `port` serves our router with these models; a llama-server still loading there is waited for (until the slot
-   * is halted). A router that lacks a model (another window wrote the presets after it started) is reloaded first.
+   * Whether `port` serves our router: one listing every preset model, or (with no models) the recorded one. A llama-server
+   * still loading there is waited for (until the slot is halted). The recorded router that lacks a model (another window
+   * wrote the presets after it started) is reloaded first; a router this extension did not start is never reloaded.
    */
   private async ours(port: number, names: string[], slot: Slot): Promise<boolean> {
     let reloaded = false;
     for (let polls = 0; ; polls++) {
       const state = await this.d.probe(port, names);
       if (slot.cancelled) return false;
-      if (state === 'ours') return true;
+      if (state === 'ours') return names.length > 0 || this.owned(port);
       if (state === 'none') {
-        if (reloaded || names.length === 0 || (await this.d.probe(port, [])) !== 'ours' || slot.cancelled) return false;
+        if (reloaded || names.length === 0 || !this.owned(port) || (await this.d.probe(port, [])) !== 'ours' || slot.cancelled) return false;
         reloaded = true;
         try {
           await this.d.router(port).reload();
@@ -346,8 +373,8 @@ export class ServerPool {
   /**
    * Checks an adopted router every 15 s. When it is gone (the window that ran it closed), this window starts its own,
    * unless Stop Local Models stopped it (its record has no pid then) or something else already holds the port (another
-   * window's router loading: the next check adopts it). A record without a pid but with another `modelsMax` is a restart
-   * in another window: the watch goes on.
+   * window's router loading: the next check adopts it). A record marked `restarting` is a restart in another window:
+   * the watch goes on.
    */
   private async watch(slot: Slot, port: number): Promise<void> {
     while (!slot.cancelled) {
@@ -357,10 +384,7 @@ export class ServerPool {
       if (slot.cancelled) return;
       if (state !== 'none') continue;
       const rec = this.managed();
-      if (rec && rec.pid === undefined && rec.modelsMax !== slot.modelsMax) {
-        slot.modelsMax = rec.modelsMax;
-        continue;
-      }
+      if (rec?.restarting) continue;
       if (!rec || rec.pid === undefined) {
         this.drop(slot);
         this.d.log.info(`llama-server: the router on port ${port} was stopped; not starting one`);
@@ -386,7 +410,7 @@ export class ServerPool {
     await this.sleep(EXIT_CHECK_MS, new AbortController().signal);
     if (this.disposed) return;
     const rec = this.managed();
-    const restarted = rec !== undefined && (rec.pid === undefined ? rec.modelsMax !== slot.modelsMax : rec.pid !== proc.pid);
+    const restarted = rec !== undefined && (rec.restarting === true || (rec.pid !== undefined && rec.pid !== proc.pid));
     if (rec && restarted) {
       this.d.log.info('llama-server was restarted from another window; using its router');
       if (this.slot) return;
@@ -501,16 +525,17 @@ export class ServerPool {
   }
 
   /**
-   * Restarts the router from this window, which becomes its owner: the record loses its pid and gets the new "Models in
-   * memory" (other windows then wait for the new router instead of starting their own), this window's router stops, or
-   * another window's by its pid; then this window starts one. Failures are logged and show in `state()`.
+   * Restarts the router from this window, which becomes its owner: the record loses its pid and is marked `restarting`
+   * (other windows then wait for the new router instead of starting their own or taking it for Stop Local Models), this
+   * window's router stops, or another window's by its pid; then this window starts one. A failed start clears the mark.
+   * Failures are logged and show in `state()`.
    */
   async restart(): Promise<void> {
     if (this.disposed) return;
     const rec = this.managed();
     const modelsMax = this.d.settings().local.modelsInMemory;
     try {
-      if (rec) await this.d.writeManaged(withoutPid(rec, modelsMax));
+      if (rec) await this.d.writeManaged({ ...withoutPid(rec), modelsMax, restarting: true });
     } catch (err) {
       this.d.log.error('local models: saving the router failed', err);
     }
@@ -527,6 +552,15 @@ export class ServerPool {
       for (let i = 0; i < RELEASE_POLLS && (await this.d.probe(rec.port, [])) !== 'none'; i++) await this.sleep(RELEASE_POLL_MS, signal);
     }
     await this.startQuietly();
+    // A start that failed (or was cancelled) leaves the mark: the other windows stop waiting.
+    const after = this.managed();
+    if (after?.restarting) {
+      try {
+        await this.d.writeManaged(withoutPid(after));
+      } catch (err) {
+        this.d.log.error('local models: saving the router failed', err);
+      }
+    }
   }
 
   /**

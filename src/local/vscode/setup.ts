@@ -12,10 +12,9 @@ import { useBackend, useNextEditBackend } from '../../ui/commands';
 import { LOCAL_BACKEND_ID, routerWanted, upsertLocalEntry } from '../backendEntry';
 import { DownloadError, downloadModel } from '../download';
 import { downloadUrl, fitsMemory, modelPathSegments, type Recipe } from '../recipes';
-import { INSTALL_HINT, findRuntime } from '../runtimes';
 import type { ServerPool } from '../serverPool';
 import { setupArgument } from '../setupArg';
-import { modelsDir, realEnv } from './servers';
+import { modelsDir } from './servers';
 
 export interface SetupDeps {
   context: vscode.ExtensionContext;
@@ -24,7 +23,7 @@ export interface SetupDeps {
   /** The recipes to offer (RECIPES, or a test's own). */
   recipes(): readonly Recipe[];
   /** The router of the `local` backend. */
-  router: Pick<ServerPool, 'start' | 'state' | 'port' | 'syncPresets' | 'stopHere'>;
+  router: Pick<ServerPool, 'start' | 'state' | 'port' | 'syncPresets' | 'stopHere' | 'binaryProblem'>;
   /** Opens the Backends page on a backend. */
   openBackend(id: string): void;
 }
@@ -47,10 +46,6 @@ const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
 const size = (bytes: number): string => (bytes >= 1e8 ? gb(bytes) : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 const mb = (bytes: number): number => Math.round(bytes / 1e6);
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-function llamaServerPath(s: Settings): string | undefined {
-  return findRuntime('llamaServer', realEnv(), s.local.llamaServerPath);
-}
 
 async function pickRecipe(recipes: readonly Recipe[]): Promise<Recipe | undefined> {
   const memory = totalmem();
@@ -205,10 +200,11 @@ async function setUp(d: SetupDeps, arg: unknown): Promise<SetupOutcome> {
     recipe = r;
   }
 
-  if (!llamaServerPath(d.settings())) {
-    const text = `llama-server was not found. ${INSTALL_HINT.llamaServer}`;
-    void vscode.window.showErrorMessage(text);
-    return { ok: false, message: text };
+  // Before the download: a missing or too old llama-server (no router mode) fails here, not after gigabytes.
+  const problem = await d.router.binaryProblem();
+  if (problem !== undefined) {
+    void vscode.window.showErrorMessage(problem);
+    return { ok: false, message: problem };
   }
 
   const segments = modelPathSegments(recipe);

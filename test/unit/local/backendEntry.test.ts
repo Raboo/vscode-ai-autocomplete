@@ -35,6 +35,8 @@ describe('parseManaged', () => {
   test('a valid record, with or without its pid', () => {
     expect(parseManaged(ok)).toEqual(ok);
     expect(parseManaged({ ...ok, pid: 4242 })).toEqual({ ...ok, pid: 4242 });
+    expect(parseManaged({ ...ok, restarting: true })).toEqual({ ...ok, restarting: true });
+    expect(parseManaged({ ...ok, restarting: 'yes' })).toEqual(ok);
     for (const pid of [undefined, 0, -1, 1.5, '4242', null]) {
       const e = parseManaged({ ...ok, pid });
       expect(e).toEqual(ok);

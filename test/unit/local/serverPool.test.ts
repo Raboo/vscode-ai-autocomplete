@@ -88,6 +88,8 @@ const deselected = (): Settings => makeSettings({ 'completions.enabled': false, 
 
 const PRESETS = '/g/presets.ini';
 const record = (port = 8012, pid?: number, modelsMax = 1): ManagedServer => ({ port, presetsPath: PRESETS, modelsMax, ...(pid ? { pid } : {}) });
+/** The record a restart in some window writes while it stops the old router. */
+const restarting = (port = 8012, modelsMax = 1): ManagedServer => ({ ...record(port, undefined, modelsMax), restarting: true });
 /** The models downloaded in these tests (all built-ins otherwise count as not downloaded). */
 const DOWNLOADED = ['sweep-next-edit-1.5b', 'qwen2.5-coder-3b'];
 
@@ -127,6 +129,7 @@ function setup(o: {
   settings?: () => Settings;
   downloaded?: string[];
   load?: (port: number, name: string) => Promise<void>;
+  reload?: (port: number) => void;
   focused?: boolean;
 }) {
   const logs: { level: string; m: string }[] = [];
@@ -142,6 +145,7 @@ function setup(o: {
   const helps: string[] = [];
   const reloads: number[] = [];
   const loads: string[] = [];
+  const writes: (ManagedServer | undefined)[] = [];
   const clock = fakeSleep();
   const downloaded = o.downloaded ?? DOWNLOADED;
   const pool = new ServerPool({
@@ -157,6 +161,7 @@ function setup(o: {
       o.writeManaged ??
       ((rec) => {
         managed = rec;
+        writes.push(rec);
         return Promise.resolve();
       }),
     moveBackend: (port) => (moved.push(port), Promise.resolve()),
@@ -168,7 +173,7 @@ function setup(o: {
     },
     router: (port) => ({
       load: (name) => (loads.push(name), o.load ? o.load(port, name) : Promise.resolve()),
-      reload: () => (reloads.push(port), Promise.resolve()),
+      reload: () => (reloads.push(port), o.reload?.(port), Promise.resolve()),
     }),
     alive: o.alive ?? (() => false),
     terminate: (pid) => void terminated.push(pid),
@@ -192,6 +197,7 @@ function setup(o: {
     helps,
     reloads,
     loads,
+    writes,
     clock,
     managed: () => managed,
     setManaged: (rec: ManagedServer | undefined) => void (managed = rec),
@@ -406,6 +412,13 @@ describe('ServerPool: llama-server checks', () => {
     expect(pool.failure()).toMatch(/too old for the local model helper; update llama\.cpp\. Install llama\.cpp/);
   });
 
+  test('binaryProblem names a missing or too old llama-server, nothing for a router-capable one', async () => {
+    const { launch } = fakeLaunch({ autoReady: true });
+    expect(await setup({ launch }).pool.binaryProblem()).toBeUndefined();
+    expect(await setup({ launch, binary: () => undefined }).pool.binaryProblem()).toMatch(/not found/);
+    expect(await setup({ launch, help: 'old' }).pool.binaryProblem()).toMatch(/too old/);
+  });
+
   test('the help text is read once per binary path', async () => {
     const { launch } = fakeLaunch({ autoReady: true });
     let binary = '/bin/llama-server';
@@ -501,7 +514,7 @@ describe('ServerPool: presets, warm-up, restart', () => {
     await tick();
     expect(terminated).toEqual([555]);
     // The record says a restart is under way: no pid, the new models in memory.
-    expect(managed()).toEqual(record(8012, undefined, 2));
+    expect(managed()).toEqual(restarting(8012, 2));
     states[8012] = 'none';
     await restarted;
     expect(launched).toHaveLength(1);
@@ -509,18 +522,35 @@ describe('ServerPool: presets, warm-up, restart', () => {
     expect(managed()).toEqual(record(8012, launched[0].child.pid, 2));
   });
 
-  test('the owner window whose router another window restarted watches the new one instead of reporting an error', async () => {
+  test('the owner window whose router another window restarted (same models in memory) watches the new one instead of reporting an error', async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const states: Record<number, PortState> = {};
-    const { pool, errors, unexpected, setManaged, clock } = setup({ launch, probe: portStates(states) });
+    const { pool, errors, unexpected, setManaged, clock, logs } = setup({ launch, probe: portStates(states) });
     await pool.start();
-    setManaged(record(8012, undefined, 2));
+    setManaged(restarting());
     launched[0].child.exit('SIGTERM');
     await tick(5);
     expect(errors()).toEqual([]);
     expect(unexpected).toEqual([]);
     expect(pool.state()).toBe('running');
     expect(clock.pending()).toBe(1);
+    expect(logs.map((l) => l.m)).not.toContain('llama-server was stopped by Stop Local Models in another window.');
+  });
+
+  test('a restart with the same models in memory marks the record, and a failed start clears the mark', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const t = setup({ launch });
+    await t.pool.start();
+    const pid = launched[0].child.pid;
+    await t.pool.restart();
+    expect(t.writes.slice(1)).toEqual([restarting(), record(8012, launched[1].child.pid)]);
+    expect(t.managed()).toEqual(record(8012, launched[1].child.pid));
+    expect(pid).not.toBe(launched[1].child.pid);
+
+    const failing = setup({ launch: () => Promise.reject(new LocalRuntimeError('boom')), managed: record(8012, 555) });
+    await failing.pool.restart();
+    expect(failing.managed()).toEqual(record());
+    expect(failing.pool.state()).toBe('failed');
   });
 
   test('a model list change rewrites the presets and reloads; a selection change warms the new models', async () => {
@@ -564,20 +594,49 @@ describe('ServerPool across windows', () => {
     expect(ready).toEqual(['local', 'local']);
   });
 
-  test('a router on the port that lacks a model is reloaded (another window wrote new presets) and then adopted', async () => {
+  test('the recorded router (live pid) that lacks a model is reloaded (another window wrote new presets) and then adopted', async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     let reloaded = false;
     const { pool, reloads } = setup({
       launch,
       managed: record(8012, 555),
+      alive: (pid) => pid === 555,
       probe: (_port, names) => Promise.resolve(names.length === 0 || reloaded ? 'ours' : 'none'),
+      reload: () => void (reloaded = true),
     });
-    const origReload = reloads.push.bind(reloads);
-    reloads.push = (...p: number[]) => ((reloaded = true), origReload(...p));
     await pool.startSelected();
-    expect([...reloads]).toEqual([8012]);
+    expect(reloads).toEqual([8012]);
     expect(launched).toHaveLength(0);
     expect(pool.state()).toBe('running');
+  });
+
+  test('a router we did not start (no live recorded pid) is never reloaded nor adopted without our models', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const anyRouter: ServerPoolDeps['probe'] = (_port, names) => Promise.resolve(names.length === 0 ? 'ours' : 'none');
+    const foreign = setup({ launch, managed: record(8012, 555), alive: () => false, probe: anyRouter, freePort: () => Promise.resolve(9001) });
+    await foreign.pool.startSelected();
+    expect(foreign.reloads).toEqual([]);
+    expect(launched).toHaveLength(1);
+    expect(foreign.moved).toEqual([9001]);
+
+    // No downloaded models: any router lists all of none, so only the recorded one is adopted.
+    const empty = setup({ launch, downloaded: [], probe: anyRouter, freePort: () => Promise.resolve(9002) });
+    await empty.pool.startSelected();
+    expect(launched).toHaveLength(2);
+    const recorded = setup({ launch, downloaded: [], managed: record(8012, 555), alive: () => true, probe: anyRouter });
+    await recorded.pool.startSelected();
+    expect(launched).toHaveLength(2);
+    expect(recorded.pool.state()).toBe('running');
+  });
+
+  test("without a record the saved port is local's baseUrl port", async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const s = () => makeSettings({}, [{ ...LOCAL, baseUrl: 'http://127.0.0.1:8100' }]);
+    const { pool, probes, moved } = setup({ launch, settings: s });
+    await pool.startSelected();
+    expect(probes[0].port).toBe(8100);
+    expect(launched[0].o.port).toBe(8100);
+    expect(moved).toEqual([]);
   });
 
   test('stopping or disposing an adopted router leaves it running and ends the watch', async () => {
@@ -658,18 +717,18 @@ describe('ServerPool across windows', () => {
     expect(clock.pending()).toBe(0);
   });
 
-  test('a gone router whose record says a restart is under way (no pid, new models in memory) is watched on', async () => {
+  test('a gone router whose record says a restart is under way (marked, same models in memory) is watched on', async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const states: Record<number, PortState> = { 8012: 'ours' };
     const { pool, clock, setManaged } = setup({ launch, managed: record(8012, 555), probe: portStates(states) });
     await pool.startSelected();
     states[8012] = 'none';
-    setManaged(record(8012, undefined, 2));
+    setManaged(restarting());
     await clock.fire();
     expect(launched).toHaveLength(0);
     expect(clock.pending()).toBe(1);
     states[8012] = 'ours';
-    setManaged(record(8012, 777, 2));
+    setManaged(record(8012, 777));
     await clock.fire();
     expect(pool.state()).toBe('running');
     expect(launched).toHaveLength(0);

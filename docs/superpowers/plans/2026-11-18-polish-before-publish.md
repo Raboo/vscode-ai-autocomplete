@@ -66,7 +66,7 @@
 
 ### Task 8: Next Edit keeps its suggestion while you type it
 
-- [x] A Next Edit result for an older document version is kept when the user's edits since then are a prefix of the suggested change at the same place (typing what the model suggested); its edit is rebased onto the new text. Otherwise it is dropped as today.
+- [x] A Next Edit result for an older document version is kept when the user's edits since then are a prefix of the suggested change at the same place (typing what the model suggested); its edit is rebased onto the new text. Otherwise it is dropped as today. A request still running when the user types inside its region keeps running (its answer is rebased) only when it cannot hold up completions: Next Edit uses another backend than completions, or the shared backend is llama.cpp reporting 2 or more slots; otherwise the keystroke aborts it as before.
 - [x] Unit tests for the rebase; integration test: typing the first letters of the suggestion keeps it.
 - [x] Commit: `feat: Next Edit suggestions survive typing them`
 

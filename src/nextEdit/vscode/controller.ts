@@ -21,7 +21,7 @@ import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
 import { rebaseEdit } from '../rebase';
 import { nextEditBudgets, type LineSpan } from '../region';
 import { runNextEdit, type NextEditResult } from '../request';
-import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, TriggerPolicy } from '../trigger';
+import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
 
 export interface NextEditDeps {
@@ -293,9 +293,10 @@ export class NextEditController implements vscode.Disposable {
     // First, and silently: the log is a document too, so logging about its changes would loop.
     if (e.contentChanges.length === 0) return;
     const uri = doc.uri.toString();
+    const active = this.tracking() && this.eligible(doc);
     // The user typing a pending edit or a held result keeps the rest of it; any other change to its document, an undo
     // included, leaves it pointing at shifted lines.
-    const typing = this.typing(e);
+    const typing = active ? this.typing(e) : undefined;
     if (this.pending?.uri === uri) {
       const p = typing && this.rebased(this.pending, doc, typing.cursor);
       const editor = vscode.window.activeTextEditor;
@@ -309,8 +310,8 @@ export class NextEditController implements vscode.Disposable {
       }
     }
     const kept = typing && this.result?.uri === uri ? this.rebased(this.result, doc, typing.cursor) : undefined;
-    if (!this.tracking() || !this.eligible(doc)) return;
-    this.cancel(uri, typing ? this.inRegion(uri, typing.change) : false);
+    if (!active) return;
+    this.cancel(uri, typing !== undefined && this.inRegion(uri, typing.change) && this.keepsWhileTyping());
     if (kept) this.result = kept;
     this.restartIdle(doc);
     const reason = e.reason;
@@ -324,13 +325,16 @@ export class NextEditController implements vscode.Disposable {
     if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
   }
 
-  /** The change when it is the user typing in the active editor of a document Next Edit may use: one content change, no undo or redo, no snooze. */
+  /**
+   * The change when it is the user typing in the active editor: one content change, no undo or redo, no snooze. The
+   * caller has checked that Next Edit is on and may use the document.
+   */
   private typing(e: vscode.TextDocumentChangeEvent): { change: vscode.TextDocumentContentChangeEvent; cursor: Pos } | undefined {
     const doc = e.document;
     const R = vscode.TextDocumentChangeReason;
     if (e.contentChanges.length !== 1 || e.reason === R.Undo || e.reason === R.Redo) return undefined;
     // Not editorFor(): the editor's selection is still the one before this change (a selection typed over is not empty).
-    if (!this.tracking() || !this.eligible(doc) || this.d.snoozedUntil() > Date.now() || vscode.window.activeTextEditor?.document !== doc) return undefined;
+    if (this.d.snoozedUntil() > Date.now() || vscode.window.activeTextEditor?.document !== doc) return undefined;
     const change = e.contentChanges[0];
     return { change, cursor: cursorAfter(change) };
   }
@@ -347,6 +351,21 @@ export class NextEditController implements vscode.Disposable {
   private inRegion(uri: string, change: vscode.TextDocumentContentChangeEvent): boolean {
     const region = this.inflight.get(uri)?.region;
     return region !== undefined && change.range.start.line >= region.start && change.range.end.line <= region.end;
+  }
+
+  /** Whether the running request may outlive a keystroke without holding up completions (see keepRequestWhileTyping). */
+  private keepsWhileTyping(): boolean {
+    const s = this.d.getSettings();
+    const id = s.nextEdit.backendId;
+    if (id === undefined) return false;
+    const backend = this.d.getBackend(id);
+    return keepRequestWhileTyping({
+      nextEditBackendId: id,
+      completionsBackendId: s.fim.backendId,
+      completionsActive: s.enabled && s.fim.enabled,
+      kind: backend?.config.kind,
+      slots: backend?.slotCount?.(),
+    });
   }
 
   private selectionChanged(e: vscode.TextEditorSelectionChangeEvent): void {

@@ -17,6 +17,8 @@ export interface FimRequest {
   stop: string[];
   sampling: Sampling;
   timeMaxPredictMs?: number;
+  /** Which feature asks; llama.cpp keeps one slot (prompt cache) per feature. Default completions. */
+  slot?: 'completions' | 'nextEdit';
   extraBody: Record<string, unknown>;
   signal: AbortSignal;
   timeoutMs: number;

@@ -224,4 +224,24 @@ describe('LlamaCppBackend', () => {
     const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
     await expect(b.listModels(new AbortController().signal)).rejects.toBeInstanceOf(HttpError);
   });
+  describe('slots', () => {
+    const native: FimRequest['payload'] = { route: 'native', prefix: 'P', suffix: 'S', extra: [], filePath: 'a.ts', repoName: 'r' };
+    const run = async (slots: number | undefined, r: Partial<FimRequest>, detect = true): Promise<Record<string, unknown>> => {
+      m = await startMockHttp(({ url }) => (url === '/props' ? { json: { model_alias: 'q', ...(slots !== undefined ? { total_slots: slots } : {}) } } : { sse: SSE }));
+      const b = new LlamaCppBackend(cfg(m.url), async () => undefined);
+      if (detect) await b.detectModel(new AbortController().signal);
+      await collect(b.streamFim(req(r)));
+      return m.requests[m.requests.length - 1].body as Record<string, unknown>;
+    };
+    test('with 2 slots completions use slot 0 (infill and completion) and Next Edit slot 1', async () => {
+      expect(await run(2, { payload: native })).toMatchObject({ id_slot: 0 });
+      expect(await run(2, {})).toMatchObject({ id_slot: 0 });
+      expect(await run(2, { slot: 'nextEdit' })).toMatchObject({ id_slot: 1 });
+    });
+    test('with 1 slot, unknown slots or no detection no id_slot is sent', async () => {
+      expect(await run(1, { slot: 'nextEdit' })).not.toHaveProperty('id_slot');
+      expect(await run(undefined, {})).not.toHaveProperty('id_slot');
+      expect(await run(2, {}, false)).not.toHaveProperty('id_slot');
+    });
+  });
 });

@@ -20,10 +20,10 @@ export function llamaServerArgs(o: { file: string; modelName: string; port: numb
     '--alias', o.modelName,
     '--host', '127.0.0.1',
     '--port', String(o.port),
-    '-c', String(o.contextTokens),
+    '-c', String(o.contextTokens * 2), // two slots share -c: each keeps the recipe's context
     '-ngl', '99',
     '-fa', 'on',
-    '-np', '1',
+    '-np', '2', // slot 0 for completions, slot 1 for Next Edit
     '--cache-reuse', '256',
     '--no-webui',
   ];

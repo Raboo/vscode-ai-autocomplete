@@ -5,6 +5,9 @@ import { parseSse } from './sse';
 import { LIST_MODELS_TIMEOUT_MS, type ApiKeyProvider, type ChatEvent, type ChatRequest, type FimBackend, type FimRequest, type RouteCaps, type ServerInfo } from './types';
 
 export class LlamaCppBackend implements FimBackend {
+  /** `total_slots` from the last `/props` read; undefined until then. */
+  private totalSlots: number | undefined;
+
   constructor(
     readonly config: BackendConfig,
     private readonly apiKey: ApiKeyProvider,
@@ -31,7 +34,10 @@ export class LlamaCppBackend implements FimBackend {
       headers: await this.authHeaders(),
       signal,
       timeoutMs,
-    })) as { model_alias?: unknown; model_path?: unknown; n_ctx?: unknown; default_generation_settings?: { n_ctx?: unknown } } | null;
+    })) as { model_alias?: unknown; model_path?: unknown; n_ctx?: unknown; total_slots?: unknown; default_generation_settings?: { n_ctx?: unknown } } | null;
+    if (typeof props?.total_slots === 'number') {
+      this.totalSlots = props.total_slots;
+    }
     let model: string | undefined;
     if (typeof props?.model_alias === 'string' && props.model_alias) {
       model = props.model_alias;
@@ -69,6 +75,7 @@ export class LlamaCppBackend implements FimBackend {
       stream: true,
       cache_prompt: true,
       ...(req.timeMaxPredictMs !== undefined ? { t_max_predict_ms: req.timeMaxPredictMs } : {}),
+      ...(this.totalSlots !== undefined && this.totalSlots >= 2 ? { id_slot: req.slot === 'nextEdit' ? 1 : 0 } : {}),
     };
     const isNative = payload.route === 'native';
     const body = isNative

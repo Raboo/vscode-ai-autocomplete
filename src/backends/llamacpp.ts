@@ -27,7 +27,25 @@ export class LlamaCppBackend implements FimBackend {
   }
 
   private async *chat(req: ChatRequest): AsyncGenerator<ChatEvent> {
-    yield* streamOpenAiChat(joinUrl(this.config.baseUrl, '/v1/chat/completions'), await this.authHeaders(), req, false);
+    try {
+      yield* streamOpenAiChat(joinUrl(this.config.baseUrl, '/v1/chat/completions'), await this.authHeaders(), req, false);
+    } catch (err) {
+      this.forgetSlotsUnlessAborted(req.signal);
+      throw err;
+    }
+  }
+
+  /** `total_slots` as last read from `/props`; undefined until read, and again after a failed request. */
+  slotCount(): number | undefined {
+    return this.totalSlots;
+  }
+
+  /**
+   * A failed request (HTTP, connection or stream error) may mean the server was restarted with another layout: the slot
+   * count is read again before `id_slot` is sent again. An aborted request says nothing about the server.
+   */
+  private forgetSlotsUnlessAborted(signal: AbortSignal): void {
+    if (!signal.aborted) this.totalSlots = undefined;
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
@@ -99,7 +117,8 @@ export class LlamaCppBackend implements FimBackend {
       stream: true,
       cache_prompt: true,
       ...(req.timeMaxPredictMs !== undefined ? { t_max_predict_ms: req.timeMaxPredictMs } : {}),
-      ...(this.totalSlots !== undefined && this.totalSlots >= 2 ? { id_slot: req.slot === 'nextEdit' ? 1 : 0 } : {}),
+      // Exactly 2 slots is the layout the local helper starts (one per use); any other layout is left to the server.
+      ...(this.totalSlots === 2 ? { id_slot: req.slot === 'nextEdit' ? 1 : 0 } : {}),
     };
     const isNative = payload.route === 'native';
     const body = isNative
@@ -113,6 +132,15 @@ export class LlamaCppBackend implements FimBackend {
         }
       : { prompt: payload.prompt, ...common, ...req.extraBody };
 
+    try {
+      yield* this.fimStream(isNative, body, req);
+    } catch (err) {
+      this.forgetSlotsUnlessAborted(req.signal);
+      throw err;
+    }
+  }
+
+  private async *fimStream(isNative: boolean, body: Record<string, unknown>, req: FimRequest): AsyncGenerator<string> {
     const res = await postJson(joinUrl(this.config.baseUrl, isNative ? '/infill' : '/completion'), body, {
       headers: await this.authHeaders(),
       signal: req.signal,

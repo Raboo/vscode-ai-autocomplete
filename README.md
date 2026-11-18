@@ -17,11 +17,13 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 
 Then start typing in a code file and press `Tab` to accept a suggestion.
 
+<!-- Screenshots go here once images/completion.png and images/next-edit.png exist:
 ## How it looks
 
 ![Ghost text completion](images/completion.png)
 
 ![Next Edit](images/next-edit.png)
+-->
 
 ## Getting started
 

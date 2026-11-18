@@ -118,7 +118,7 @@ describe('activity', () => {
     expect(activity(S(true, true, true))).toEqual({ on: true });
   });
   test('completions off with Next Edit running stays on and says so', () => {
-    expect(activity(S(true, false, true))).toEqual({ on: true, note: 'Completions off' });
+    expect(activity(S(true, false, true))).toEqual({ on: true });
   });
   test('off when neither runs: completions off and Next Edit off, disabled or without a backend', () => {
     expect(activity(S(true, false, false))).toEqual({ on: false });

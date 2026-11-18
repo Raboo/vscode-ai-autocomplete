@@ -195,7 +195,8 @@ export function activate(context: vscode.ExtensionContext): {
     // Requests that failed while the model loaded may have opened the backoff circuit: the server answers now.
     onReady: (id) => {
       backoffs.get(id)?.reset();
-      provider.clearError();
+      // Only the completion backend's error is shown; another backend becoming ready must not hide it.
+      if (id === settings.fim.backendId) provider.clearError();
     },
   });
   localServers = servers;

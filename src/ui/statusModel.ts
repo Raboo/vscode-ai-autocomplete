@@ -17,11 +17,10 @@ export function noCompletionBackend(backendCount: number): { state: 'idle' | 'er
   return backendCount === 0 ? { state: 'error', detail: 'No backend configured' } : { state: 'idle', detail: 'No backend is used for completions' };
 }
 
-/** What runs: the status bar shows off only when neither completions nor Next Edit does, and says so when completions alone are off. */
-export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextEdit: { enabled: boolean; backendId?: string } }): { on: boolean; note?: string } {
+/** What runs: the status bar shows off only when neither completions nor Next Edit does. */
+export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextEdit: { enabled: boolean; backendId?: string } }): { on: boolean } {
   const nextEdit = s.nextEdit.enabled && s.nextEdit.backendId !== undefined;
-  if (!s.enabled || (!s.fim.enabled && !nextEdit)) return { on: false };
-  return s.fim.enabled ? { on: true } : { on: true, note: 'Completions off' };
+  return { on: s.enabled && (s.fim.enabled || nextEdit) };
 }
 
 /** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */

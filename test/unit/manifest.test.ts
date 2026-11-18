@@ -122,3 +122,14 @@ test('setting descriptions without jargon', () => {
   expect(settingProps['aiAutocomplete.fim.backend'].default).toBe('');
   expect(settingProps['aiAutocomplete.nextEdit.backend'].default).toBe('');
 });
+
+test('machine-scoped settings stay machine-scoped (a workspace must never redirect code or paths)', () => {
+  const machine = Object.entries(settingProps).filter(([, p]) => (p as { scope?: string }).scope === 'machine').map(([k]) => k).sort();
+  expect(machine).toEqual([
+    'aiAutocomplete.backends',
+    'aiAutocomplete.debug.logPrompts',
+    'aiAutocomplete.local.llamaServerPath',
+    'aiAutocomplete.local.lmsPath',
+    'aiAutocomplete.modelOverrides',
+  ]);
+});

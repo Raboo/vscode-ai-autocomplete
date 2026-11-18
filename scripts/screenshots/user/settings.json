@@ -1,0 +1,49 @@
+{
+  "chat.disableAIFeatures": true,
+  "workbench.startupEditor": "none",
+  "workbench.colorTheme": "Dark Modern",
+  "editor.fontSize": 16,
+  "editor.lineHeight": 24,
+  "editor.minimap.enabled": false,
+  "editor.quickSuggestions": {
+    "other": "off",
+    "comments": "off",
+    "strings": "off"
+  },
+  "breadcrumbs.enabled": false,
+  "security.workspace.trust.enabled": false,
+  "workbench.tips.enabled": false,
+  "workbench.layoutControl.enabled": false,
+  "window.commandCenter": false,
+  "update.mode": "none",
+  "extensions.ignoreRecommendations": true,
+  "telemetry.telemetryLevel": "off",
+  "git.enabled": false,
+  "window.zoomLevel": 1,
+  "workbench.auxiliaryBar.visible": false,
+  "aiAutocomplete.backends": [
+    {
+      "id": "llama-cpp",
+      "kind": "llamacpp",
+      "baseUrl": "http://127.0.0.1:56476",
+      "fimModel": "qwen2.5-coder-3b",
+      "use": [
+        "completions"
+      ]
+    },
+    {
+      "id": "strata",
+      "kind": "openai",
+      "hostFlavor": "strata",
+      "baseUrl": "http://127.0.0.1:56476/v1",
+      "nextEditModel": "qwen3.8-flash-next",
+      "use": [
+        "nextEdit"
+      ]
+    }
+  ],
+  "aiAutocomplete.fim.backend": "llama-cpp",
+  "aiAutocomplete.nextEdit.backend": "strata",
+  "aiAutocomplete.fim.enabled": false,
+  "aiAutocomplete.nextEdit.display": "decorations"
+}

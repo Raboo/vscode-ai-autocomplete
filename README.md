@@ -17,13 +17,21 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 
 Then start typing in a code file and press `Tab` to accept a suggestion.
 
-<!-- Screenshots go here once images/completion.png and images/next-edit.png exist:
 ## How it looks
 
-![Ghost text completion](images/completion.png)
+**Completions:** ghost text at the cursor, accepted with `Tab`.
 
-![Next Edit](images/next-edit.png)
--->
+![Ghost text completion of a TypeScript function body](images/completion.png)
+
+**Next Edit:** after renaming `r` to `radius` in one function, the extension suggests the same rename further down. `Tab` jumps to it and applies it; `Esc` dismisses it. With VS Code's native inline-edit view enabled, the suggestion shows in that view instead.
+
+![Next Edit suggesting the rename on lines 8 and 9](images/next-edit.png)
+
+**Status bar menu** and the **Backends page:**
+
+![The status bar menu](images/status-menu.png)
+
+![The Backends page with a completion backend and a Next Edit backend](images/backends-page.png)
 
 ## Getting started
 

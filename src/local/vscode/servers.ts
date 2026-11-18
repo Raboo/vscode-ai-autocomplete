@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { renameBackendEntry } from '../../config/rename';
 import type { Settings } from '../../config/settings';
@@ -31,13 +31,6 @@ export function realEnv(): RuntimeEnv {
     home: homedir(),
     pathEnv: process.env.PATH ?? '',
     exists: (p) => existsSync(p),
-    readFile: (p) => {
-      try {
-        return readFileSync(p, 'utf8');
-      } catch {
-        return undefined;
-      }
-    },
   };
 }
 

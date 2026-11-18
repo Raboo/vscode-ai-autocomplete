@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { INSTALL_HINT, findRuntime, runtimeCandidates, type RuntimeEnv } from '../../../src/local/runtimes';
 
 function env(over: Partial<RuntimeEnv> = {}): RuntimeEnv {
-  return { platform: 'darwin', home: '/Users/me', pathEnv: '/a/bin:/b/bin', exists: () => false, readFile: () => undefined, ...over };
+  return { platform: 'darwin', home: '/Users/me', pathEnv: '/a/bin:/b/bin', exists: () => false, ...over };
 }
 
 describe('runtimeCandidates', () => {

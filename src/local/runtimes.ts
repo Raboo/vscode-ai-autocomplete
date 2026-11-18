@@ -5,7 +5,6 @@ export interface RuntimeEnv {
   home: string;
   pathEnv: string;
   exists(p: string): boolean;
-  readFile(p: string): string | undefined;
 }
 
 export const INSTALL_HINT: Record<RuntimeId, string> = {

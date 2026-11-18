@@ -12,7 +12,7 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 
 ## Quick start
 
-- Run **AI Autocomplete: Set Up Local Model** from the Command Palette and pick a runtime and a model, or
+- Run **AI Autocomplete: Set Up Local Model** from the Command Palette and pick a model, or
 - run **AI Autocomplete: Manage Backends**, press **+ Add backend** and connect a server you already run.
 
 New here? **Get Started with AI Autocomplete** (Command Palette: *Welcome: Open Walkthrough...*) walks through these steps.
@@ -75,7 +75,7 @@ Renamed settings: `aiAutocomplete.fim.*` is now `aiAutocomplete.completions.*`, 
 
 **AI Autocomplete: Set Up Local Model** does the steps above for you. It is also in the status bar menu (**Set up local model...**) and on the Backends page (the button next to **+ Add backend**). It works in local windows only, not in a remote window.
 
-It asks for a runtime and a model, and then:
+It asks for a model, and then:
 
 1. downloads the model file with a progress notification (Cancel stops it; running the command again resumes from the partial file);
 2. starts the model;
@@ -84,7 +84,7 @@ It asks for a runtime and a model, and then:
 
 If a step before the Test fails, setup writes no backend, puts your selection settings back and stops the server it started. If the backend already exists, setup asks before it replaces it.
 
-**Runtimes.** Neither one is installed for you. The picker shows how to install one that is missing.
+**Runtime.** llama.cpp is not installed for you. If llama-server is not found, setup shows how to install it.
 
 - **llama-server** (from llama.cpp). VS Code starts it on `127.0.0.1` (port 8012, or a free port if that one is taken). It starts when its backend is selected for completions or Next Edit, at VS Code start or when you select it, and stops when you select another backend. All VS Code windows share one server: a window that finds it already running on its port uses it. VS Code stops it when the window that started it closes; other windows take it over. If it stops unexpectedly, a notification says so. The backend id is `local-<model>`, for example `local-sweep-1-5b`.
 
@@ -100,7 +100,7 @@ If a command is not on PATH or in the usual install places, set `aiAutocomplete.
 | Qwen2.5-Coder 7B | 8.1 GB | completions | Apache-2.0 | `qwen2.5-coder-7b` |
 | Mellum 4B | 4.3 GB | completions | Apache-2.0 | `mellum-4b-base` |
 
-Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set them up by hand on the Backends page. LM Studio runs these GGUF files on its llama.cpp engine; to use an MLX model, add it by hand too.
+Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set them up by hand on the Backends page. To use LM Studio or an MLX model, add it as a backend by hand on the Backends page.
 
 **Where files go.** In VS Code's global storage for the extension, under `models/<owner>/<repo>/<file>`. On macOS that is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
 
@@ -299,7 +299,7 @@ A value outside its limits is ignored, and a warning names it. The region settin
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.
 - With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
-- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the paths of the local runtimes (`aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.completions.backend`), but only from the ones you defined.
+- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the path of the local runtime (`aiAutocomplete.local.llamaServerPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.completions.backend`), but only from the ones you defined.
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
 - Files matching `aiAutocomplete.completions.disableInFiles` (by default `.env`, `.env.*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, `*.tfvars`, `*.p12`, `*.pfx`, `.netrc`, `.docker/config.json` and SSH keys `id_rsa*` and `id_ed25519*`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.

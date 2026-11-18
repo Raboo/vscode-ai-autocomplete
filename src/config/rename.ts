@@ -2,8 +2,10 @@ import type { Inspected, RawSettingsSource } from './settings';
 
 /**
  * The `aiAutocomplete.fim.*` settings were renamed to `aiAutocomplete.completions.*`, and the backend fields `fimModel`,
- * `fimMode` and `fim` to `model`, `mode` and `completions`. The extension moves old names on start and still reads them
- * until 1.0; each old name read adds a problem ending in OLD_NAME_NOTE.
+ * `fimMode` and `fim` to `model`, `mode` and `completions`. The extension moves old keys in user settings on start; it
+ * never writes workspace or folder settings, and never rewrites `backends` (a backend entry gets the new field names when
+ * it is saved from the Backends page or by the local model helper). Old names are read until 1.0; each old name read adds
+ * a problem ending in OLD_NAME_NOTE.
  */
 export const COMPLETIONS_KEYS = ['enabled', 'backend', 'multiline', 'disableInLanguages', 'disableInFiles', 'skipMidWord', 'extraContext', 'debounceMs',
   'maxTokens', 'prefixLines', 'suffixLines'] as const;
@@ -14,8 +16,16 @@ export const OLD_NAME_NOTE = 'the old name still works until 1.0';
 /** Old backend field → new backend field. */
 export const BACKEND_FIELD_RENAMES: readonly (readonly [string, string])[] = [['fimModel', 'model'], ['fimMode', 'mode'], ['fim', 'completions']];
 
-/** Settings read from user settings only (machine scope): never moved at the workspace level. */
-const MACHINE_KEYS: ReadonlySet<string> = new Set(['backends', 'modelOverrides', 'debug.logPrompts', 'local.llamaServerPath', 'local.lmsPath']);
+/** Restrict-only lists (a security exclusion): old and new values are joined, never replaced by one another. */
+const UNION_KEYS: ReadonlySet<CompletionsKey> = new Set<CompletionsKey>(['disableInFiles']);
+
+const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+/** The new list with the old list's missing strings added at the end; non-strings of the new list are kept. */
+const joinLists = (n: unknown, o: unknown): unknown[] => {
+  const base = Array.isArray(n) ? [...(n as unknown[])] : [];
+  for (const x of strList(o)) if (!base.includes(x)) base.push(x);
+  return base;
+};
 
 export const oldKey = (k: CompletionsKey): string => `fim.${k}`;
 export const newKey = (k: CompletionsKey): string => `completions.${k}`;
@@ -30,8 +40,9 @@ export function oldKeyProblem(k: CompletionsKey): string {
 }
 
 /**
- * The value of a renamed setting, level by level: at each level the new key wins, else the old one. Folder values of
- * both are kept (they only feed lists that are joined). `usedOld` says whether any old value was taken.
+ * The value of a renamed setting, level by level: at each level the new key wins, else the old one; for UNION_KEYS the
+ * two lists are joined at each level instead. Folder values of both are kept (they only feed lists that are joined).
+ * `usedOld` says whether any old value was taken.
  */
 export function inspectRenamed<T>(src: RawSettingsSource, k: CompletionsKey): { inspected: Inspected<T> | undefined; usedOld: boolean } {
   const n = src.inspect<T>(newKey(k));
@@ -39,9 +50,10 @@ export function inspectRenamed<T>(src: RawSettingsSource, k: CompletionsKey): { 
   if (!o) return { inspected: n, usedOld: false };
   let usedOld = false;
   const pick = (level: 'globalValue' | 'workspaceValue' | 'workspaceFolderValue'): T | undefined => {
-    if (n?.[level] !== undefined) return n[level];
-    if (o[level] !== undefined) usedOld = true;
-    return o[level];
+    if (o[level] !== undefined && (n?.[level] === undefined || UNION_KEYS.has(k))) usedOld = true;
+    if (n?.[level] === undefined) return o[level];
+    if (UNION_KEYS.has(k) && o[level] !== undefined) return joinLists(n[level], o[level]) as T;
+    return n[level];
   };
   const inspected: Inspected<T> = { ...(n?.defaultValue !== undefined ? { defaultValue: n.defaultValue } : {}) };
   for (const level of ['globalValue', 'workspaceValue', 'workspaceFolderValue'] as const) {
@@ -53,8 +65,6 @@ export function inspectRenamed<T>(src: RawSettingsSource, k: CompletionsKey): { 
   if (folderValues.length > 0) inspected.folderValues = folderValues;
   return { inspected, usedOld };
 }
-
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * One backend entry with its old field names replaced in place (same position, every other field kept). When both
@@ -73,50 +83,41 @@ export function renameBackendEntry(raw: Record<string, unknown>): { entry: Recor
   return { entry, renamed };
 }
 
-export type MigrationLevel = 'user' | 'workspace';
 export interface MigrationWrite {
-  /** Key below `aiAutocomplete.`. */
+  /** Key below `aiAutocomplete.`, in user settings. */
   key: string;
-  level: MigrationLevel;
-  /** undefined removes the key at that level. */
+  /** undefined removes the key. */
   value: unknown;
 }
 
 /**
- * What to write to move old names: each old key set in user settings (and in the workspace, when it is trusted and the key
- * is not machine-scoped) is copied to its new key when that is unset at the same level, then removed. Backend entries in
- * user settings get their fields renamed. Folder levels are left to the reader. Empty when nothing old is set.
+ * What to write to move old names in user settings: each old key set there is copied to its new key when that is unset,
+ * then removed; for UNION_KEYS the old list is added to the new one. Workspace and folder settings are never written:
+ * `workspaceOld` lists the old keys still set there (the reader keeps reading them until 1.0). Backend entries are left
+ * alone. Empty when nothing old is set.
  */
-export function planRenameMigration(src: RawSettingsSource, trusted: boolean): { writes: MigrationWrite[]; moved: string[] } {
+export function planRenameMigration(src: RawSettingsSource): { writes: MigrationWrite[]; moved: string[]; workspaceOld: string[] } {
   const writes: MigrationWrite[] = [];
   const moved: string[] = [];
-  const levels: [MigrationLevel, 'globalValue' | 'workspaceValue'][] = trusted ? [['user', 'globalValue'], ['workspace', 'workspaceValue']] : [['user', 'globalValue']];
+  const workspaceOld: string[] = [];
   for (const k of COMPLETIONS_KEYS) {
     const o = src.inspect<unknown>(oldKey(k));
     const n = src.inspect<unknown>(newKey(k));
-    for (const [level, field] of levels) {
-      if (level === 'workspace' && MACHINE_KEYS.has(newKey(k))) continue;
-      const v = o?.[field];
-      if (v === undefined) continue;
-      if (n?.[field] === undefined) {
-        writes.push({ key: newKey(k), level, value: v });
-        moved.push(`${oldKey(k)} → ${newKey(k)} (${level})`);
-      } else moved.push(`${oldKey(k)} dropped, ${newKey(k)} already set (${level})`);
-      writes.push({ key: oldKey(k), level, value: undefined });
-    }
+    if (o?.workspaceValue !== undefined || o?.workspaceFolderValue !== undefined || (o?.folderValues ?? []).length > 0) workspaceOld.push(oldKey(k));
+    const v = o?.globalValue;
+    if (v === undefined) continue;
+    const current = n?.globalValue;
+    if (current === undefined) {
+      writes.push({ key: newKey(k), value: v });
+      moved.push(`${oldKey(k)} → ${newKey(k)}`);
+    } else if (UNION_KEYS.has(k)) {
+      const joined = joinLists(current, v);
+      if (!Array.isArray(current) || joined.length !== current.length) {
+        writes.push({ key: newKey(k), value: joined });
+        moved.push(`${oldKey(k)} added to ${newKey(k)}`);
+      } else moved.push(`${oldKey(k)} dropped, already in ${newKey(k)}`);
+    } else moved.push(`${oldKey(k)} dropped, ${newKey(k)} already set`);
+    writes.push({ key: oldKey(k), value: undefined });
   }
-  const list = src.inspect<unknown>('backends')?.globalValue;
-  if (Array.isArray(list)) {
-    let changed = false;
-    const next = list.map((e) => {
-      if (!isObj(e)) return e;
-      const { entry, renamed } = renameBackendEntry(e);
-      if (renamed.length === 0) return e;
-      changed = true;
-      moved.push(`backend "${typeof e.id === 'string' ? e.id : '?'}": ${renamed.join(', ')} → ${renamed.map((f) => new Map(BACKEND_FIELD_RENAMES).get(f)).join(', ')}`);
-      return entry;
-    });
-    if (changed) writes.push({ key: 'backends', level: 'user', value: next });
-  }
-  return { writes, moved };
+  return { writes, moved, workspaceOld };
 }

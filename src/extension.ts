@@ -279,8 +279,8 @@ export function activate(context: vscode.ExtensionContext): {
     status.refresh();
     warnOnce(problems);
   };
-  // Old setting names (fim.*, fimModel, fimMode, fim) move to the new ones on start, after each settings change and when
-  // the workspace becomes trusted; a run that finds nothing old writes nothing.
+  // Old fim.* keys in user settings move to the new names on start and after each settings change; a run that finds
+  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 1.0).
   const migrate = migrationRunner(log);
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -289,7 +289,6 @@ export function activate(context: vscode.ExtensionContext): {
       migrate();
     }),
   );
-  sub(vscode.workspace.onDidGrantWorkspaceTrust(migrate));
   // An added folder of a multi-root workspace may bring its own privacy.localOnly or completions.disableInFiles.
   sub(vscode.workspace.onDidChangeWorkspaceFolders(onSettingsChanged));
 

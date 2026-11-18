@@ -361,6 +361,14 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
     expect(r.settings.fim.disableInFiles).toEqual(['**/.env', '**/old/**']);
     expect(r.problems).toHaveLength(1);
   });
+  test('disableInFiles under both names: the lists are joined at each level, not replaced by the new one', () => {
+    const r = parseSettings(src({
+      'completions.disableInFiles': { defaultValue: ['**/.env'], globalValue: ['**/u-new'], workspaceValue: ['**/w-new'] },
+      'fim.disableInFiles': { globalValue: ['**/u-old'], workspaceValue: ['**/w-old'], workspaceFolderValue: ['**/f-old'] },
+    }));
+    expect(r.settings.fim.disableInFiles).toEqual(['**/u-new', '**/u-old', '**/w-new', '**/w-old', '**/f-old']);
+    expect(r.problems).toEqual(['aiAutocomplete.fim.disableInFiles is now aiAutocomplete.completions.disableInFiles; the old name still works until 1.0']);
+  });
   test('old backend fields are read, each with a note naming the backend', () => {
     const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } }] } }));
     expect(r.settings.backends[0]).toMatchObject({ fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } });

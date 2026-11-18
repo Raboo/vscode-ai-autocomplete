@@ -16,12 +16,11 @@ suite('old setting names', () => {
     await unconfigure(TOUCHED);
   });
 
-  test('an old fim.enabled and a backend with fimModel in user settings are moved to the new names', async () => {
-    await configure({ backends: [{ id: 'old', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:9', fimModel: 'coder', fimMode: 'native' }], 'fim.enabled': false });
+  test('an old fim.enabled in user settings is moved to the new name; a backend with fimModel is left as written', async () => {
+    const backends = [{ id: 'old', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:9', fimModel: 'coder', fimMode: 'native' }];
+    await configure({ backends, 'fim.enabled': false });
     const moved = await waitFor(() => cfg().inspect('fim.enabled')?.globalValue === undefined && cfg().inspect('completions.enabled')?.globalValue === false, 5000);
     assert.ok(moved, `fim.enabled was not moved: ${JSON.stringify({ old: cfg().inspect('fim.enabled'), now: cfg().inspect('completions.enabled') })}`);
-    const backendsMoved = await waitFor(() => JSON.stringify(cfg().inspect('backends')?.globalValue).includes('"model"'), 5000);
-    assert.ok(backendsMoved, 'the backend entry was not rewritten');
-    assert.deepEqual(cfg().inspect('backends')?.globalValue, [{ id: 'old', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:9', model: 'coder', mode: 'native' }]);
+    assert.deepEqual(cfg().inspect('backends')?.globalValue, backends);
   });
 });

@@ -23,36 +23,39 @@ describe('renameBackendEntry', () => {
 
 describe('planRenameMigration', () => {
   test('nothing old set: nothing to write', () => {
-    expect(planRenameMigration(src({ 'completions.enabled': { defaultValue: true, globalValue: false }, backends: { globalValue: [{ id: 'a', model: 'm' }] } }), true))
-      .toEqual({ writes: [], moved: [] });
+    expect(planRenameMigration(src({ 'completions.enabled': { defaultValue: true, globalValue: false }, backends: { globalValue: [{ id: 'a', model: 'm' }] } })))
+      .toEqual({ writes: [], moved: [], workspaceOld: [] });
   });
   test('covers all 11 completion keys', () => {
     expect([...COMPLETIONS_KEYS].sort()).toEqual(['backend', 'debounceMs', 'disableInFiles', 'disableInLanguages', 'enabled', 'extraContext', 'maxTokens', 'multiline',
       'prefixLines', 'skipMidWord', 'suffixLines']);
   });
   test('an old user key is copied to the new key and removed', () => {
-    const { writes, moved } = planRenameMigration(src({ 'fim.enabled': { globalValue: false } }), false);
-    expect(writes).toEqual([{ key: 'completions.enabled', level: 'user', value: false }, { key: 'fim.enabled', level: 'user', value: undefined }]);
-    expect(moved).toEqual(['fim.enabled → completions.enabled (user)']);
+    const { writes, moved } = planRenameMigration(src({ 'fim.enabled': { globalValue: false } }));
+    expect(writes).toEqual([{ key: 'completions.enabled', value: false }, { key: 'fim.enabled', value: undefined }]);
+    expect(moved).toEqual(['fim.enabled → completions.enabled']);
   });
-  test('both set at a level: the new one is kept, the old one dropped', () => {
-    const { writes, moved } = planRenameMigration(src({ 'fim.maxTokens': { globalValue: 16 }, 'completions.maxTokens': { defaultValue: 128, globalValue: 32 } }), false);
-    expect(writes).toEqual([{ key: 'fim.maxTokens', level: 'user', value: undefined }]);
-    expect(moved).toEqual(['fim.maxTokens dropped, completions.maxTokens already set (user)']);
+  test('both set: the new one is kept, the old one dropped', () => {
+    const { writes, moved } = planRenameMigration(src({ 'fim.maxTokens': { globalValue: 16 }, 'completions.maxTokens': { defaultValue: 128, globalValue: 32 } }));
+    expect(writes).toEqual([{ key: 'fim.maxTokens', value: undefined }]);
+    expect(moved).toEqual(['fim.maxTokens dropped, completions.maxTokens already set']);
   });
-  test('levels are separate: a new user value does not stop an old workspace value from moving', () => {
-    const { writes } = planRenameMigration(src({ 'fim.backend': { workspaceValue: 'w' }, 'completions.backend': { defaultValue: '', globalValue: 'u' } }), true);
-    expect(writes).toEqual([{ key: 'completions.backend', level: 'workspace', value: 'w' }, { key: 'fim.backend', level: 'workspace', value: undefined }]);
+  test('disableInFiles set under both names: the old patterns are added to the new list before the old key is removed', () => {
+    const { writes, moved } = planRenameMigration(src({ 'fim.disableInFiles': { globalValue: ['**/a', '**/b'] }, 'completions.disableInFiles': { defaultValue: ['**/.env'], globalValue: ['**/b', '**/c'] } }));
+    expect(writes).toEqual([{ key: 'completions.disableInFiles', value: ['**/b', '**/c', '**/a'] }, { key: 'fim.disableInFiles', value: undefined }]);
+    expect(moved).toEqual(['fim.disableInFiles added to completions.disableInFiles']);
   });
-  test('the workspace level moves only in a trusted workspace; folder levels never', () => {
-    const map = { 'fim.backend': { workspaceValue: 'w', workspaceFolderValue: 'f' } };
-    expect(planRenameMigration(src(map), false).writes).toEqual([]);
-    expect(planRenameMigration(src(map), true).writes.map((w) => w.level)).toEqual(['workspace', 'workspace']);
+  test('disableInFiles: old patterns already in the new list only remove the old key', () => {
+    const { writes } = planRenameMigration(src({ 'fim.disableInFiles': { globalValue: ['**/a'] }, 'completions.disableInFiles': { globalValue: ['**/a'] } }));
+    expect(writes).toEqual([{ key: 'fim.disableInFiles', value: undefined }]);
   });
-  test('backend entries in user settings are rewritten; workspace backends are never touched', () => {
-    const user = [{ id: 'a', kind: 'llamacpp', fimModel: 'm', baseUrl: 'http://h' }, 'junk', { id: 'b', model: 'x' }];
-    const { writes, moved } = planRenameMigration(src({ backends: { globalValue: user, workspaceValue: [{ id: 'w', fimModel: 'evil' }] } }), true);
-    expect(writes).toEqual([{ key: 'backends', level: 'user', value: [{ id: 'a', kind: 'llamacpp', model: 'm', baseUrl: 'http://h' }, 'junk', { id: 'b', model: 'x' }] }]);
-    expect(moved).toEqual(['backend "a": fimModel → model']);
+  test('workspace and folder levels are never written; old names there are listed for the log', () => {
+    const r = planRenameMigration(src({ 'fim.backend': { workspaceValue: 'w', workspaceFolderValue: 'f' }, 'fim.maxTokens': { folderValues: [16] }, 'completions.backend': { defaultValue: '', globalValue: 'u' } }));
+    expect(r.writes).toEqual([]);
+    expect(r.workspaceOld).toEqual(['fim.backend', 'fim.maxTokens']);
+  });
+  test('backend entries are never rewritten (a settings write would replace the whole list and drop comments)', () => {
+    const { writes } = planRenameMigration(src({ backends: { globalValue: [{ id: 'a', kind: 'llamacpp', fimModel: 'm', baseUrl: 'http://h' }] } }));
+    expect(writes).toEqual([]);
   });
 });

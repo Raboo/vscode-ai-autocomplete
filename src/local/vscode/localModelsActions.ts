@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { rm } from 'node:fs/promises';
 import type { BackendUse } from '../../config/settings';
+import { DownloadError } from '../download';
 import { HfError, authFor, checkUpdate, ggufFiles, pinnedFileUrl, repoCommit, updateModelFile, type HfFile, type UpdateCheck } from '../huggingFace';
 import { isSplitOrProjector, modelNameFromFile, type LocalModel } from '../modelList';
 import { MOVE_FAILED, moveModelFiles, type FileMove } from '../moveFiles';
@@ -18,12 +19,17 @@ const USES: readonly BackendUse[] = ['completions', 'nextEdit'];
 const MULTI_FILE = 'multi-file models are not supported';
 const NO_CHECKSUM = 'no checksum on Hugging Face (not stored with Git LFS)';
 const BAD_PATH = 'this file path is not supported';
+const MAX_IN_MEMORY = 64;
+const IN_MEMORY_ERROR = `Models in memory must be a whole number from 1 to ${MAX_IN_MEMORY}.`;
+const PROGRESS_MS = 250;
 
 /** The host-owned page state the actions change: the edit form, the add flow and the update checks. */
 export interface ActionsView {
   form?: ModelForm;
   add?: AddState;
   updates: Record<string, ModelRow['update']>;
+  /** Fixed text when the typed Models in memory value was refused. */
+  modelsInMemoryError?: string;
 }
 
 const usesOf = (v: unknown): BackendUse[] => (Array.isArray(v) ? USES.filter((u) => (v as unknown[]).includes(u)) : []);
@@ -39,6 +45,10 @@ export class LocalModelsActions {
   private addFiles: { repo: string; revision: string; files: HfFile[] } | undefined;
   private readonly updates: Record<string, ModelRow['update']> = {};
   private readonly checks = new Map<string, Extract<UpdateCheck, { kind: 'available' }>>();
+  /** Running updates, by model name: their progress shows in `updates`, never as the row's download state. */
+  private readonly updating = new Map<string, AbortController>();
+  private memoryError: string | undefined;
+  private progressAt = 0;
   /** Bumped by each add-flow start or cancel: an older Hugging Face answer is dropped. */
   private addSerial = 0;
 
@@ -49,7 +59,10 @@ export class LocalModelsActions {
   ) {}
 
   view(): ActionsView {
-    return { ...(this.form ? { form: this.form } : {}), ...(this.add ? { add: this.add } : {}), updates: { ...this.updates } };
+    return {
+      ...(this.form ? { form: this.form } : {}), ...(this.add ? { add: this.add } : {}), updates: { ...this.updates },
+      ...(this.memoryError ? { modelsInMemoryError: this.memoryError } : {}),
+    };
   }
 
   private models(): LocalModel[] {
@@ -83,7 +96,12 @@ export class LocalModelsActions {
       case 'restart':
         return void r.restart();
       case 'setModelsInMemory':
-        if (Number.isInteger(m.n) && m.n >= 1 && m.n <= 64) await writeUser('local.modelsInMemory', m.n);
+        if (!(Number.isInteger(m.n) && m.n >= 1 && m.n <= MAX_IN_MEMORY)) {
+          this.memoryError = IN_MEMORY_ERROR;
+          return;
+        }
+        this.memoryError = undefined;
+        await writeUser('local.modelsInMemory', m.n);
         return;
       case 'openLog':
         return this.d.showLog();
@@ -117,6 +135,8 @@ export class LocalModelsActions {
         return this.checkUpdate(m.name);
       case 'update':
         return this.update(m.name);
+      case 'cancelUpdate':
+        return this.updating.get(m.name)?.abort();
       case 'changeModelsDir':
         return this.changeModelsDir();
       case 'setToken':
@@ -144,6 +164,10 @@ export class LocalModelsActions {
     const m = this.model(name);
     const path = m && modelPath(this.d, m);
     if (!m || !path || this.d.downloads.running(name)) return;
+    if (this.updating.has(name)) {
+      void vscode.window.showInformationMessage(`Cancel the update of ${m.label} first.`);
+      return;
+    }
     const yes: vscode.MessageItem = { title: 'Remove File' };
     const pick = await vscode.window.showWarningMessage(`Delete the downloaded file of ${m.label}?`, { modal: true, detail: 'The model stays in the list; Download gets it again.' }, yes);
     if (pick !== yes) return;
@@ -326,21 +350,47 @@ export class LocalModelsActions {
     });
   }
 
-  /** Downloads the new file next to the old one, then replaces it and pins the entry to the new commit. */
+  /**
+   * Downloads the new file next to the old one; once it is checked, unloads the model (errors ignored: the router must not
+   * keep the old weights, and Windows cannot replace an open file), replaces the file and pins the entry to the new
+   * commit, then the presets reload. Progress and failure stay in the row's update state: the old file keeps working.
+   */
   private update(name: string): void {
     const m = this.model(name);
     const check = this.checks.get(name);
     const dest = m && modelPath(this.d, m);
-    if (!m || !check || !dest || this.d.downloads.running(name)) return;
+    if (!m || !check || !dest || this.updating.has(name) || this.d.downloads.running(name)) return;
+    const ctl = new AbortController();
+    this.updating.set(name, ctl);
+    this.updates[name] = { updating: { received: 0, total: check.bytes } };
     this.detach(`updating ${name}`, async () => {
-      const token = await this.d.secrets.getHfToken();
-      const done = await this.d.downloads.run(name, { part: `${dest}.update.part`, repo: m.repo }, async (signal, progress) => {
+      try {
+        const token = await this.d.secrets.getHfToken();
         await updateModelFile({
-          url: pinnedFileUrl(m.repo, check.revision, m.file), dest, bytes: check.bytes, sha256: check.sha256, signal, authFor: authFor(token), onProgress: progress,
+          url: pinnedFileUrl(m.repo, check.revision, m.file), dest, bytes: check.bytes, sha256: check.sha256, signal: ctl.signal, authFor: authFor(token),
+          onProgress: (received) => {
+            this.updates[name] = { updating: { received, total: check.bytes } };
+            const now = Date.now();
+            if (now - this.progressAt < PROGRESS_MS) return;
+            this.progressAt = now;
+            this.changed();
+          },
+          beforeReplace: async () => {
+            const port = this.d.router.port();
+            if (port !== undefined && this.d.router.state() === 'running') await new RouterClient(`http://127.0.0.1:${port}`).unload(name).catch(() => undefined);
+          },
         });
-        return true;
-      });
-      if (!done) return;
+      } catch (err) {
+        if (err instanceof DownloadError && err.kind === 'cancelled') this.updates[name] = { available: { bytes: check.bytes, ...(check.date ? { date: check.date.slice(0, 10) } : {}) } };
+        else {
+          if (!(err instanceof DownloadError)) this.d.log.error(`local models: updating ${name} failed`, err);
+          const denied = err instanceof DownloadError && (err.status === 401 || err.status === 403);
+          this.updates[name] = denied ? hfProblem(new HfError('auth'), m.repo) : { error: err instanceof DownloadError ? err.message : 'The update failed; see the log.' };
+        }
+        return;
+      } finally {
+        this.updating.delete(name);
+      }
       const entries = userValue('local.models');
       const list = Array.isArray(entries) ? (entries as unknown[]) : [];
       await writeUser('local.models', list.map((e) => (typeof e === 'object' && e !== null && (e as { name?: unknown }).name === name
@@ -352,7 +402,7 @@ export class LocalModelsActions {
   }
 
   private async changeModelsDir(): Promise<void> {
-    if (this.d.downloads.running()) {
+    if (this.d.downloads.running() || this.updating.size > 0) {
       void vscode.window.showWarningMessage('Wait for the downloads to finish, or cancel them, before changing the models folder.');
       return;
     }

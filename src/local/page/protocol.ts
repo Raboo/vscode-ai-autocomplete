@@ -3,7 +3,8 @@ import type { BackendUse } from '../../config/settings';
 
 /** `link`: the repo page on Hugging Face, shown with an access error (401/403). */
 export type DownloadView = { kind: 'none' | 'running' | 'done' | 'failed'; received?: number; error?: string; link?: string };
-export type UpdateView = 'checking' | 'upToDate' | 'gone' | { available: { bytes: number; date?: string } } | { error: string; link?: string };
+/** An update's own state: its progress and failure never change the row's download state (the old file keeps working). */
+export type UpdateView = 'checking' | 'upToDate' | 'gone' | { available: { bytes: number; date?: string } } | { updating: { received: number; total: number } } | { error: string; link?: string };
 
 export interface ModelRow {
   name: string;
@@ -56,6 +57,8 @@ export interface LocalPageState {
     port?: number;
     modelsInMemory: number;
     log: string[];
+    /** Fixed text when the typed Models in memory value was refused. */
+    modelsInMemoryError?: string;
     swapWarning: boolean;
     memoryWarning?: string;
   };
@@ -80,7 +83,7 @@ export type PageMessage =
   | { type: 'hide'; name: string } | { type: 'unhide'; name: string } | { type: 'removeModel'; name: string }
   | { type: 'addRepo'; repo: string } | { type: 'pickFile'; path: string }
   | { type: 'addFile'; repo: string; path: string; name: string; uses: BackendUse[]; contextTokens: number }
-  | { type: 'checkUpdate'; name: string } | { type: 'update'; name: string }
+  | { type: 'checkUpdate'; name: string } | { type: 'update'; name: string } | { type: 'cancelUpdate'; name: string }
   | { type: 'changeModelsDir' } | { type: 'setToken' } | { type: 'removeToken' } | { type: 'openLog' }
   | { type: 'setUpDefault' }
   | { type: 'cancel' };

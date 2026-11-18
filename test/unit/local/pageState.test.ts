@@ -76,6 +76,11 @@ describe('local page state', () => {
     expect(s.models[1]!.update).toBe('checking');
   });
 
+  test('the Models in memory error passes through', () => {
+    expect(pageState(input({ server: { state: 'stopped', log: [], modelsInMemoryError: 'bad' } })).server.modelsInMemoryError).toBe('bad');
+    expect(pageState(input()).server).not.toHaveProperty('modelsInMemoryError');
+  });
+
   test('the default offer shows while no model is downloaded, and while its setup runs', () => {
     expect(pageState(input({ offer: { name: 'b', busy: false } })).offer).toEqual({ name: 'b', label: 'b', bytes: GB, busy: false });
     expect(pageState(input({ offer: { name: 'b', busy: false }, downloads: { a: { kind: 'done' } } })).offer).toBeUndefined();

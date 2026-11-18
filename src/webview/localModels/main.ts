@@ -69,13 +69,13 @@ function onClick(ev: MouseEvent): void {
       return post({ type: target.dataset.action });
     case 'cancel': typed.clear(); checked.clear(); return post({ type: 'cancel' });
     case 'setModelsInMemory': {
-      const n = Math.floor(Number(value('models-in-memory')));
-      if (!Number.isFinite(n) || n < 1) return;
+      // The host checks the value and shows a fixed error for one it refuses.
+      const n = Number(value('models-in-memory'));
       typed.delete('models-in-memory');
       return post({ type: 'setModelsInMemory', n });
     }
     case 'download': case 'cancelDownload': case 'removeFile': case 'load': case 'unload': case 'edit': case 'hide': case 'unhide':
-    case 'removeModel': case 'checkUpdate': case 'update':
+    case 'removeModel': case 'checkUpdate': case 'update': case 'cancelUpdate':
       return post({ type: target.dataset.action, name });
     case 'use': return post({ type: 'use', name, uses: (target.dataset.uses ?? '').split(',').filter((u): u is BackendUse => u === 'completions' || u === 'nextEdit') });
     case 'saveModel': {

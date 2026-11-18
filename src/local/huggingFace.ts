@@ -155,13 +155,19 @@ export async function checkUpdate(m: LocalModel, o: HfOptions): Promise<UpdateCh
 export type UpdateOptions = Pick<
   DownloadOptions,
   'url' | 'bytes' | 'sha256' | 'signal' | 'onProgress' | 'authFor' | 'fetchFn' | 'freeBytes'
-> & { dest: string };
+> & {
+  dest: string;
+  /** Runs once the new file is downloaded and checked, before it replaces `dest` (the page unloads the model here). */
+  beforeReplace?(): Promise<void>;
+};
 
 /** Downloads to `<dest>.update`, then renames over `dest`; on failure `dest` stays untouched. */
 export async function updateModelFile(o: UpdateOptions): Promise<void> {
   const tmp = `${o.dest}.update`;
   try {
-    await downloadModel({ ...o, dest: tmp });
+    const { beforeReplace, ...download } = o;
+    await downloadModel({ ...download, dest: tmp });
+    await beforeReplace?.();
     await rename(tmp, o.dest);
   } catch (err) {
     await rm(tmp, { force: true });

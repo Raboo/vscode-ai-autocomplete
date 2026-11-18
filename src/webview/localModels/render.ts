@@ -45,6 +45,7 @@ function server(s: LocalPageState): string {
     + (v.hint ? `<p class="card-warning warn">${e(v.hint)}</p>` : '')
     + `<p class="line"><label for="models-in-memory">Models in memory</label>`
     + `<input id="models-in-memory" type="number" min="1" step="1" value="${e(String(v.modelsInMemory))}">${button('setModelsInMemory', 'Apply')}</p>`
+    + (v.modelsInMemoryError ? `<p class="card-warning warn" role="alert">${e(v.modelsInMemoryError)}</p>` : '')
     + `<p class="hint">Changing this restarts the server from this window.</p>`
     + (v.swapWarning ? `<p class="card-warning warn">Completions and Next Edit use different models; with 1 model in memory the server swaps between them (seconds each). Use one model for both, or set Models in memory to 2.</p>` : '')
     + (v.memoryWarning ? `<p class="card-warning warn">${e(v.memoryWarning)}</p>` : '')
@@ -57,6 +58,7 @@ function updateText(u: UpdateView | undefined): string {
   if (u === 'upToDate') return 'Up to date';
   if (u === 'gone') return 'The file is no longer in the repo';
   if ('error' in u) return u.error;
+  if ('updating' in u) return `Updating ${formatBytes(u.updating.received)} of ${formatBytes(u.updating.total)}`;
   return `Update available (${formatBytes(u.available.bytes)}${u.available.date ? `, ${u.available.date}` : ''})`;
 }
 
@@ -86,6 +88,7 @@ function modelRow(m: ModelRow): string {
     ...(m.builtIn ? [m.hidden ? button('unhide', 'Unhide', m.name) : button('hide', 'Hide', m.name)]
       : [button('checkUpdate', 'Check for update', m.name), button('removeModel', 'Remove from list', m.name, { cls: 'btn link danger' })]),
     ...(typeof m.update === 'object' && 'available' in m.update ? [button('update', 'Update', m.name, { cls: 'btn primary' })] : []),
+    ...(typeof m.update === 'object' && 'updating' in m.update ? [button('cancelUpdate', 'Cancel update', m.name)] : []),
   ];
   const tags = [...(m.usedFor.length > 0 ? [`In use for ${useList(m.usedFor)}`] : []), ...(m.hidden ? ['Hidden'] : [])];
   return `<li class="card${m.hidden ? ' hidden' : ''}" data-model="${e(m.name)}">`

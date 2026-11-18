@@ -14,7 +14,7 @@ export interface PageStateInput {
   /** Undefined when the router is not running or did not answer. */
   routerModels: RouterModel[] | undefined;
   settings: Settings;
-  server: { state: PoolState; failure?: string; port?: number; log: string[]; binary?: string; version?: string };
+  server: { state: PoolState; failure?: string; port?: number; log: string[]; binary?: string; version?: string; modelsInMemoryError?: string };
   modelsDir: string;
   tokenSet: boolean;
   totalMem: number;
@@ -70,6 +70,7 @@ export function pageState(o: PageStateInput): LocalPageState {
       state: o.server.state,
       ...(o.server.port !== undefined ? { port: o.server.port } : {}),
       modelsInMemory: inMemory, log: o.server.log, swapWarning,
+      ...(o.server.modelsInMemoryError !== undefined ? { modelsInMemoryError: o.server.modelsInMemoryError } : {}),
       ...(memoryWarning !== undefined ? { memoryWarning } : {}),
     },
     settings: { modelsDir: o.modelsDir, tokenSet: o.tokenSet },

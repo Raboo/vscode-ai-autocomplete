@@ -131,6 +131,25 @@ describe('local models page render', () => {
     expect(bad).not.toContain('javascript:');
   });
 
+  test('an update in progress or failed keeps the row downloaded and usable', () => {
+    const running = only(renderPage(state({}, [row({ builtIn: false, download: { kind: 'done' }, load: 'loaded', update: { updating: { received: 2 ** 20, total: 2 ** 30 } } })])), 'm1');
+    expect(running).toContain('Updating 1 MB of 1.0 GB');
+    expect(running).toContain('data-action="cancelUpdate"');
+    expect(running).toContain('data-action="removeFile"');
+    expect(running).toContain('data-action="unload"');
+    expect(running).toContain('data-action="use"');
+    expect(running).not.toContain('data-action="update"');
+    const failed = only(renderPage(state({}, [row({ builtIn: false, download: { kind: 'done' }, update: { error: 'The downloaded file does not match its checksum.' } })])), 'm1');
+    expect(failed).toContain('Downloaded');
+    expect(failed).toContain('does not match its checksum');
+    expect(failed).toContain('data-action="removeFile"');
+  });
+
+  test('a refused Models in memory value shows its fixed error', () => {
+    const html = renderPage(state({ server: { state: 'stopped', modelsInMemory: 1, log: [], swapWarning: false, modelsInMemoryError: 'Models in memory must be a whole number from 1 to 64.' } }));
+    expect(html).toContain('Models in memory must be a whole number from 1 to 64.');
+  });
+
   test('no block element inside a paragraph, no token in the page', () => {
     const html = renderPage(state({ settings: { modelsDir: '/m', tokenSet: true } }, []));
     expect(html).not.toMatch(/<p class="line"><div/);

@@ -1,5 +1,6 @@
 import { sessionLine, type SessionStats } from '../completion/outcomes';
 import type { StatusState } from '../completion/requestStatus';
+import { LOCAL_BACKEND_ID } from '../local/backendEntry';
 
 export interface LastStatus { state: StatusState; detail?: string }
 
@@ -43,7 +44,7 @@ export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs
     ...(s.fim.enabled ? { completionBackend: s.fim.backendId ?? 'none' } : {}),
     ...(s.nextEdit.enabled && s.nextEdit.backendId !== undefined ? { nextEditBackend: s.nextEdit.backendId } : {}),
     nativeNextEdit,
-    ...(s.backends.some((b) => b.id === 'local') ? { local: true as const } : {}),
+    ...(s.backends.some((b) => b.id === LOCAL_BACKEND_ID) ? { local: true as const } : {}),
   };
 }
 

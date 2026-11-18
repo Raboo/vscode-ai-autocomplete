@@ -192,6 +192,20 @@ describe('updateModelFile', () => {
     expect(await exists(join(dir, 'f.gguf.update.part'))).toBe(false);
   });
 
+  it('runs beforeReplace after the download and before the old file is replaced', async () => {
+    await writeFile(join(dir, 'f.gguf'), 'old');
+    handler = (_q, res) => {
+      res.writeHead(200);
+      res.end(newContent);
+    };
+    const seen: string[] = [];
+    await updateModelFile({ ...opts(`${base}/f`), beforeReplace: async () => {
+      seen.push((await readFile(join(dir, 'f.gguf'))).toString(), String(await exists(join(dir, 'f.gguf.update'))));
+    } });
+    expect(seen).toEqual(['old', 'true']);
+    expect((await readFile(join(dir, 'f.gguf'))).toString()).toBe('new file content');
+  });
+
   it('keeps the old file and removes leftovers on a checksum failure', async () => {
     await writeFile(join(dir, 'f.gguf'), 'old');
     handler = (_q, res) => {

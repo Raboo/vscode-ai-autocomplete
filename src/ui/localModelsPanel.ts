@@ -203,6 +203,7 @@ export class LocalModelsPanel implements vscode.Disposable {
           ...(failure !== undefined ? { failure } : {}),
           ...(d.router.port() !== undefined ? { port: d.router.port() } : {}),
           ...(binary !== undefined ? { binary } : {}), ...(version !== undefined ? { version } : {}),
+          ...(view.modelsInMemoryError !== undefined ? { modelsInMemoryError: view.modelsInMemoryError } : {}),
         },
         modelsDir: dir, tokenSet, totalMem: totalmem(), updates: view.updates,
         ...(view.form ? { form: view.form } : {}), ...(view.add ? { add: view.add } : {}),

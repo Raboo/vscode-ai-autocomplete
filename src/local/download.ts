@@ -13,6 +13,8 @@ export class DownloadError extends Error {
   constructor(
     message: string,
     readonly kind: DownloadErrorKind,
+    /** The HTTP status of a refused request (`http` errors only), e.g. 401/403 for a gated Hugging Face repo. */
+    readonly status?: number,
   ) {
     super(message);
     this.name = 'DownloadError';
@@ -142,7 +144,7 @@ async function stream(
       await rm(part, { force: true }); // the partial file does not fit the server's file: start over next time
     }
     await res.body?.cancel();
-    throw new DownloadError(`The server answered with status ${res.status}.`, 'http');
+    throw new DownloadError(`The server answered with status ${res.status}.`, 'http', res.status);
   }
   if (!res.body) {
     throw new DownloadError('The server sent no data.', 'http');

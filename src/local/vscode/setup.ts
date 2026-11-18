@@ -152,7 +152,7 @@ export class Downloads {
       });
     } catch (err) {
       if (err instanceof DownloadError && err.kind === 'cancelled') return undefined;
-      const denied = err instanceof DownloadError && /status 40[13]\b/.test(err.message);
+      const denied = err instanceof DownloadError && (err.status === 401 || err.status === 403);
       this.failures.set(name, denied ? { error: new HfError('auth').message, link: hfRepoPage(o.repo) }
         : { error: err instanceof DownloadError ? err.message : 'The download failed; see the log.' });
       throw err;
@@ -202,9 +202,17 @@ export async function writeAll(writes: SettingWrite[]): Promise<void> {
 }
 
 /**
- * Use for…: writes `local`'s model for these uses and selects `local` for each at the User target. The router starts
- * first when it is not running (its failure shows on the page), and the selection change loads the model.
+ * Writes `local`'s model for these uses, selects `local` for each at the User target, and loads the model on a running
+ * router (the selection may be unchanged, so no settings event loads it). Shared by Use for… and the one-button setup.
  */
+export async function selectModel(d: LocalDeps, name: string, uses: BackendUse[]): Promise<void> {
+  const r = useEdits({ backends: userValue('backends'), name, uses, port: routerPort(d), settings: d.settings() });
+  await writeUser('backends', r.backends);
+  await writeAll(r.writes);
+  if (d.router.state() === 'running') await d.router.warm([name]);
+}
+
+/** Use for… (page): the router starts first when it is not running (its failure shows on the page), then `selectModel`. */
 export async function useModel(d: LocalDeps, name: string, uses: BackendUse[]): Promise<void> {
   const state = d.router.state();
   if (state === 'stopped' || state === 'failed') {
@@ -214,11 +222,7 @@ export async function useModel(d: LocalDeps, name: string, uses: BackendUse[]): 
       d.log.error('local models: llama-server could not start', err);
     }
   }
-  const r = useEdits({ backends: userValue('backends'), name, uses, port: routerPort(d), settings: d.settings() });
-  await writeUser('backends', r.backends);
-  await writeAll(r.writes);
-  // The selection may be unchanged (no settings event loads it): load it now.
-  if (d.router.state() === 'running') await d.router.warm([name]);
+  await selectModel(d, name, uses);
 }
 
 type Selection = { key: (typeof SELECTION_KEYS)[number]; global: unknown; workspace: unknown }[];
@@ -335,10 +339,7 @@ async function setUp(d: LocalDeps, m: LocalModel): Promise<SetupOutcome> {
       startedHere = true;
       await busyWith('Starting the local model server…', () => d.router.start());
     }
-    const r = useEdits({ backends: userValue('backends'), name: m.name, uses: m.uses, port: routerPort(d), settings: d.settings() });
-    await writeUser('backends', r.backends);
-    await writeAll(r.writes);
-    await d.router.warm([m.name]);
+    await selectModel(d, m.name, m.uses);
   } catch (err) {
     await undo(d, m.name, before, startedHere);
     d.log.error(`local model setup (${m.name}) failed`, err);
@@ -400,7 +401,8 @@ async function listFiles(dir: string): Promise<{ path: string; bytes: number }[]
 
 /**
  * AI Autocomplete: Remove Downloaded Models. Offers the files of the model list in the configured models folder (and
- * their partial downloads, except running ones); the router's presets then drop the deleted files.
+ * their partial downloads, except running ones) and `.gguf` files there the list no longer names; the router's presets
+ * then drop the deleted files.
  */
 export async function removeLocalModels(d: LocalDeps): Promise<void> {
   const dir = modelsDir(d.context, d.settings());
@@ -413,13 +415,18 @@ export async function removeLocalModels(d: LocalDeps): Promise<void> {
     }
   }
   const running = d.downloads.parts();
-  const files = (await listFiles(dir)).filter((f) => known.has(f.path) && !running.has(f.path));
+  // Files of the list, and .gguf files the list no longer names (left behind by Remove from list).
+  const files = (await listFiles(dir)).filter((f) => !running.has(f.path) && (known.has(f.path) || /\.gguf$/i.test(f.path)));
   if (files.length === 0) {
     void vscode.window.showInformationMessage('No downloaded models.');
     return;
   }
   const picks = await vscode.window.showQuickPick(
-    files.map((f) => ({ label: known.get(f.path) ?? relative(dir, f.path), description: `${size(f.bytes)}${f.path.endsWith('.part') ? ' — partial download' : ''}`, detail: relative(dir, f.path), file: f })),
+    files.map((f) => ({
+      label: known.get(f.path) ?? relative(dir, f.path),
+      description: `${size(f.bytes)}${f.path.endsWith('.part') ? ' — partial download' : ''}${known.has(f.path) ? '' : ' — not in the model list'}`,
+      detail: relative(dir, f.path), file: f,
+    })),
     { canPickMany: true, placeHolder: 'Delete which downloaded models?' },
   );
   if (!picks || picks.length === 0) return;

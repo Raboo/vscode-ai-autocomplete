@@ -12,13 +12,16 @@ import { Debouncer, InFlight } from './completion/scheduler';
 import { isLocalEndpoint, isObviouslyLocal, memoizeIsLocal } from './config/localOnly';
 import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
+import { RECIPES, type Recipe } from './local/recipes';
+import { LocalServers } from './local/vscode/servers';
+import { removeLocalModels, setUpLocalModel, type SetupDeps } from './local/vscode/setup';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
-import { registerCommands, SNOOZE_KEY } from './ui/commands';
+import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { StatusBar } from './ui/statusBar';
-import { activity } from './ui/statusModel';
+import { activity, menuInputs } from './ui/statusModel';
 
 const LOCAL_DEBOUNCE_MS = 75;
 const REMOTE_DEBOUNCE_MS = 250;
@@ -26,7 +29,18 @@ const MIN_DEBOUNCE_MS = 50;
 const MAX_DEBOUNCE_MS = 600;
 const IS_LOCAL_TTL_MS = 60_000;
 
-export function activate(context: vscode.ExtensionContext): { status: StatusBar; secrets: Secrets; backendsPanel: () => BackendsPanel | undefined; nativeNextEdit: boolean; nextEditPending: () => ReturnType<NextEditController['pendingEdit']> } {
+/** Kept for deactivate(), which has no context to reach the manager through. */
+let localServers: LocalServers | undefined;
+
+export function activate(context: vscode.ExtensionContext): {
+  status: StatusBar;
+  secrets: Secrets;
+  backendsPanel: () => BackendsPanel | undefined;
+  nativeNextEdit: boolean;
+  nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
+  /** Test runs only: swaps the recipes setup offers and the servers may start. */
+  local?: { setRecipes(r: Recipe[] | undefined): void };
+} {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
   sub(channel);
@@ -54,10 +68,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     }
     if (settings.backends.length === 0 && !warnedNoBackends) {
       warnedNoBackends = true;
-      void vscode.window.showInformationMessage('AI Autocomplete: no backends configured.', 'Add Backend', 'Open Settings').then((c) => {
-        if (c === 'Add Backend') manageBackends({ add: true });
-        else if (c) openSettings();
-      });
+      offerFirstBackend('AI Autocomplete needs a model to complete code. Set up a local model, or connect a server you already run.');
     }
   };
 
@@ -72,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     return r.problems;
   };
 
-  const status = new StatusBar({ enabled: () => activity(settings).on, note: () => activity(settings).note, snoozedUntil, localOnly: () => settings.privacy.localOnly });
+  const status = new StatusBar({ enabled: () => activity(settings).on, menu: () => menuInputs(settings, false), snoozedUntil, localOnly: () => settings.privacy.localOnly });
   sub(status);
 
   const cache = new SuggestionCache();
@@ -172,8 +183,30 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
     }),
   );
 
+  // Tests swap in their own recipes, for setup and for the servers it records alike.
+  let testRecipes: readonly Recipe[] | undefined;
+  const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
+  const servers = new LocalServers({
+    context,
+    log,
+    settings: () => settings,
+    recipes,
+    showLog: () => channel.show(true),
+    // Requests that failed while the model loaded may have opened the backoff circuit: the server answers now.
+    onReady: (id) => {
+      backoffs.get(id)?.reset();
+      // Only the completion backend's error is shown; another backend becoming ready must not hide it.
+      if (id === settings.fim.backendId) provider.clearError();
+    },
+  });
+  localServers = servers;
+  sub(servers);
+  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };
+
   for (const d of registerCommands({
     context,
+    localServers: servers,
+    localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
     status,
     secrets,
     channel,
@@ -203,7 +236,10 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
   const onSettingsChanged = (): void => {
     // Running requests were planned with the old settings (backend, exclusions, localOnly).
     inflight.abortEverything();
+    const before = settings;
     const problems = rebuild();
+    // A local backend that became selected starts its server; one no longer selected (or removed) stops it.
+    void servers.selectionChanged(before, settings);
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
@@ -225,7 +261,29 @@ export function activate(context: vscode.ExtensionContext): { status: StatusBar;
 
   warnOnce(rebuild());
   status.setLocalLock(settings.privacy.localOnly);
-  return { status, secrets, backendsPanel: () => BackendsPanel.current(), nativeNextEdit: native, nextEditPending: () => nextEdit.pendingEdit() };
+  // Not awaited: a model can take a minute to load, and activation must not wait for it.
+  void servers.startSelected();
+  return {
+    status,
+    secrets,
+    backendsPanel: () => BackendsPanel.current(),
+    nativeNextEdit: native,
+    nextEditPending: () => nextEdit.pendingEdit(),
+    ...(context.extensionMode === vscode.ExtensionMode.Test
+      ? {
+          local: {
+            setRecipes: (r: Recipe[] | undefined) => {
+              testRecipes = r;
+            },
+          },
+        }
+      : {}),
+  };
 }
 
-export function deactivate(): void {}
+/** Stops the llama-servers this window started (windows that adopted one start their own); VS Code waits briefly for the promise. */
+export function deactivate(): Promise<void> | undefined {
+  const servers = localServers;
+  localServers = undefined;
+  return servers?.stopAll();
+}

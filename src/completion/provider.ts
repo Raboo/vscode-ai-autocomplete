@@ -12,8 +12,9 @@ import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capab
 import { toItemText, type NextEditShow } from '../nextEdit/diff';
 import type { NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
-import { buildFimWindow, type ExtraContextRing } from './context';
+import { buildFimWindowIn, type ExtraContextRing, type LineSource } from './context';
 import { docPath } from './contextTracker';
+import { DetectedModels } from './detectedModels';
 import { contextCaps, resolveFim } from './effective';
 import { CompletionAccumulator, shouldCompleteMultiline } from './filters';
 import { gate } from './gate';
@@ -74,6 +75,12 @@ interface Spot {
   pos: vscode.Position;
   lineSuffix: string;
   backendId: string;
+  call: Call;
+}
+
+/** One call of the provider: whether FIM's outcome was already told to Next Edit. */
+interface Call {
+  reported: boolean;
 }
 
 /** A failure's status detail, plus "retrying in N s" while the backend backs off. */
@@ -83,7 +90,7 @@ function withRetry(detail: string, backoff: ErrorBackoff): string {
 }
 
 export class FimProvider implements vscode.InlineCompletionItemProvider {
-  private readonly models = new WeakMap<FimBackend, string>();
+  private readonly models = new DetectedModels<FimBackend>();
   private readonly logged = new Set<string>();
   /** Backends whose last request failed, with the failure's status detail. */
   private readonly failing = new Map<string, string>();
@@ -95,8 +102,9 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     this.requests = new RequestStatus(d.status);
   }
 
-  /** Shows idle again (after "Retry now" or an API key change); a request still running reports its own outcome. */
+  /** Shows idle again (after "Retry now", an API key change or a local server that became ready); a request still running reports its own outcome. Model detection is tried again too. */
   clearError(): void {
+    this.models.forgetMisses();
     this.requests.report({ state: 'idle' });
   }
 
@@ -120,14 +128,20 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const cancel = new AbortController();
     const sub = token.onCancellationRequested(() => cancel.abort());
     if (token.isCancellationRequested) cancel.abort();
+    const version = doc.version;
+    const call: Call = { reported: false };
+    let items: vscode.InlineCompletionItem[] = [];
     try {
-      return await this.provide(doc, pos, ctx, cancel.signal);
+      items = await this.provide(doc, pos, ctx, cancel.signal, call);
     } catch (err) {
       this.d.log.error('inline completion failed', err);
-      return [];
     } finally {
       sub.dispose();
     }
+    // FIM showed nothing without an answer (a gate, local-only, a backoff, a failure): Next Edit may still ask after an edit.
+    // The controller applies its own checks (switch, snooze, excluded files) before it asks.
+    if (!call.reported && !cancel.signal.aborted && doc.version === version) this.d.nextEdit?.fimResult(doc.uri.toString(), version, false);
+    return items;
   }
 
   /**
@@ -138,11 +152,14 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     if ((reason.kind as number) === 1 && this.nextEditItems.has(item)) this.d.nextEdit?.rejected();
   }
 
-  private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal): Promise<vscode.InlineCompletionItem[]> {
+  private async provide(doc: vscode.TextDocument, pos: vscode.Position, ctx: vscode.InlineCompletionContext, signal: AbortSignal, call: Call): Promise<vscode.InlineCompletionItem[]> {
     if (signal.aborted) return [];
     // A Next Edit result for this document version is shown alone; the controller already applied the gate when it asked.
     const next = this.d.nextEdit?.itemFor(doc, pos);
-    if (next) return [this.nextEditItem(next.show, doc, pos)];
+    if (next) {
+      call.reported = true;
+      return [this.nextEditItem(next.show, doc, pos)];
+    }
     const s = this.d.getSettings();
     const line = doc.lineAt(pos.line).text;
     const linePrefix = line.slice(0, pos.character);
@@ -194,11 +211,17 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     // The window and the cache key use values that do not depend on the model (only a template/preset depends on it).
     const early = resolveFim(backend.config, undefined, s).values;
     const caps = contextCaps(early.contextTokens);
-    const win = buildFimWindow(doc.getText(), doc.offsetAt(pos), { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
+    // Only the lines the window may use are read: not the whole document on every keystroke.
+    const lines: LineSource = {
+      lineCount: doc.lineCount,
+      text: (first, last) => doc.getText(new vscode.Range(first, 0, last, doc.lineAt(last).text.length)),
+      offsetAt: (l, character) => doc.offsetAt(new vscode.Position(l, character)),
+    };
+    const win = buildFimWindowIn(lines, pos.line, pos.character, { prefixLines: early.prefixLines, suffixLines: early.suffixLines, maxPrefixChars: caps.maxPrefixChars, maxSuffixChars: caps.maxSuffixChars });
     // The version the window was read from: FIM's outcome is reported to Next Edit for it.
     const version = doc.version;
     const uri = doc.uri.toString();
-    const spot: Spot = { doc, pos, lineSuffix, backendId: id };
+    const spot: Spot = { doc, pos, lineSuffix, backendId: id, call };
     // A manual trigger (Alt+\) asks for a fresh suggestion, e.g. after an empty one was cached; its result is still cached.
     const cached = invoked ? undefined : this.d.cache.find(uri, win.prefix, win.suffix);
     if (cached !== undefined) return this.reported(cached, spot, version);
@@ -360,15 +383,19 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     return { state: 'error', detail: withRetry(detail, j.backoff) };
   }
 
-  /** Model id from settings, else detected once per backend instance (only a detected id is remembered). */
+  /** Model id from settings, else detected once per backend instance; a detection that found nothing is not repeated for 30 s. */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     if (backend.config.fimModel) return backend.config.fimModel;
     const known = this.models.get(backend);
     if (known !== undefined) return known;
+    if (!this.models.shouldDetect(backend)) return undefined;
     const detected = await backend.detectModel(signal);
-    if (detected !== undefined && !signal.aborted) {
+    if (signal.aborted) return detected;
+    if (detected !== undefined) {
       this.models.set(backend, detected);
       this.d.log.info(`backend "${backend.config.id}": detected model ${detected}`);
+    } else {
+      this.models.missed(backend);
     }
     return detected;
   }
@@ -399,6 +426,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
 
   /** FIM's answer, told to Next Edit while the document is still at the window's version: Next Edit only asks when FIM had nothing. */
   private reported(text: string, at: Spot, version: number): vscode.InlineCompletionItem[] {
+    at.call.reported = true;
     if (at.doc.version === version) this.d.nextEdit?.fimResult(at.doc.uri.toString(), version, text !== '');
     return this.items(text, at);
   }

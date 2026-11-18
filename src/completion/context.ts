@@ -78,6 +78,31 @@ export function buildFimWindow(text: string, offset: number, o: FimWindowOptions
   return { prefix: text.slice(startOffset, cursor), suffix: text.slice(cursor, endOffset), startLine, endLine };
 }
 
+/** A document read by line range, so a keystroke does not copy the whole text. */
+export interface LineSource {
+  readonly lineCount: number;
+  /** The text from the start of line `first` to the end of line `last` (without its line break). */
+  text(first: number, last: number): string;
+  offsetAt(line: number, character: number): number;
+}
+
+/**
+ * The lines buildFimWindow can use for a cursor on `cursorLine`: from the step-aligned prefix start (a multiple of the
+ * step, so the window over just these lines starts on the same line) to suffixLines below the cursor.
+ */
+export function fimLineRange(cursorLine: number, lineCount: number, o: Pick<FimWindowOptions, 'prefixLines' | 'suffixLines'>): { first: number; last: number } {
+  const step = Math.max(1, Math.floor(o.prefixLines / 4));
+  const first = Math.max(0, Math.floor((cursorLine - o.prefixLines) / step) * step);
+  return { first, last: Math.max(cursorLine, Math.min(lineCount - 1, cursorLine + o.suffixLines)) };
+}
+
+/** buildFimWindow over the lines of fimLineRange only; the same window as over the whole text. */
+export function buildFimWindowIn(src: LineSource, cursorLine: number, character: number, o: FimWindowOptions): ReturnType<typeof buildFimWindow> {
+  const { first, last } = fimLineRange(cursorLine, src.lineCount, o);
+  const w = buildFimWindow(src.text(first, last), src.offsetAt(cursorLine, character) - src.offsetAt(first, 0), o);
+  return { ...w, startLine: w.startLine + first, endLine: w.endLine + first };
+}
+
 interface Chunk {
   path: string;
   startLine: number;

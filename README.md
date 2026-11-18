@@ -4,7 +4,34 @@
 
 Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no agents and no telemetry. It is self-hosted first, working with llama.cpp, LM Studio and vLLM, and it also supports Mistral Codestral, Strata and OpenRouter.
 
-**Status: pre-release.**
+- **Ghost-text completions** as you type, from a fill-in-the-middle model; `Tab` accepts.
+- **Next Edit** suggests the change that follows the one you just made, such as a rename carried to the lines below.
+- **Local models in one step:** Set Up Local Model downloads a small model and runs it with llama.cpp or LM Studio.
+- **Your own server or a hosted API:** llama.cpp, LM Studio, Ollama, vLLM, Mistral Codestral, OpenRouter and other OpenAI-compatible servers.
+- **Private by design:** no telemetry, credential files excluded by default, and a local-only switch.
+
+## Quick start
+
+- Run **AI Autocomplete: Set Up Local Model** from the Command Palette and pick a runtime and a model, or
+- run **AI Autocomplete: Manage Backends**, press **+ Add backend** and connect a server you already run.
+
+Then start typing in a code file and press `Tab` to accept a suggestion.
+
+## How it looks
+
+**Completions:** ghost text at the cursor, accepted with `Tab`.
+
+![Ghost text completion of a TypeScript function body](images/completion.png)
+
+**Next Edit:** after renaming `r` to `radius` in one function, the extension suggests the same rename further down. `Tab` jumps to it and applies it; `Esc` dismisses it. With VS Code's native inline-edit view enabled, the suggestion shows in that view instead.
+
+![Next Edit suggesting the rename on lines 8 and 9](images/next-edit.png)
+
+**Status bar menu** and the **Backends page:**
+
+![The status bar menu](images/status-menu.png)
+
+![The Backends page with a completion backend and a Next Edit backend](images/backends-page.png)
 
 ## Getting started
 
@@ -21,7 +48,7 @@ On Linux and Windows, download a build from the [llama.cpp releases](https://git
 
 ### 2. Point the extension at it
 
-Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Add Backend** button of the "no backends configured" notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, say what it is used for, pick its models from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends built-in samples, never your code.
+Run **AI Autocomplete: Manage Backends** from the Command Palette. The status bar menu, the **Connect a Server** button of the first-run notification and the link in the `aiAutocomplete.backends` setting open the same page. The Backends page lists your backends and lets you add one, say what it is used for, pick its models from the server's list, set a key, test the connection and tune its completion settings. Saving a backend from the page rewrites the whole `aiAutocomplete.backends` array in your user settings, so comments inside that array are lost. The test sends built-in samples, never your code.
 
 Or edit the settings by hand. Open your user settings (**Preferences: Open User Settings (JSON)**) and add:
 
@@ -37,6 +64,47 @@ Start typing and suggestions appear as ghost text; press `Tab` to accept one. To
 If the server is not running yet, the status bar shows an error and the extension retries on its own after a while. Run **AI Autocomplete: Retry Now** (also in the status bar menu) to retry at once.
 
 Backends go in your user settings only; see [Privacy](#privacy) for why.
+
+### Local models
+
+**AI Autocomplete: Set Up Local Model** does the steps above for you. It is also in the status bar menu (**Set up local model...**) and on the Backends page (the button next to **+ Add backend**). It works in local windows only, not in a remote window.
+
+It asks for a runtime and a model, and then:
+
+1. downloads the model file with a progress notification (Cancel stops it; running the command again resumes from the partial file);
+2. starts the model;
+3. adds a backend, selects it for what the model can do (completions, Next Edit or both) and runs the Test from the Backends page;
+4. shows the result in a notification. If the Test fails, the backend stays and the notification offers **Open Backends**.
+
+If a step before the Test fails, setup writes no backend, puts your selection settings back and stops the server it started. If the backend already exists, setup asks before it replaces it.
+
+**Runtimes.** Neither one is installed for you. The picker shows how to install one that is missing.
+
+- **llama-server** (from llama.cpp). VS Code starts it on `127.0.0.1` (port 8012, or a free port if that one is taken). It starts when its backend is selected for completions or Next Edit, at VS Code start or when you select it, and stops when you select another backend. All VS Code windows share one server: a window that finds it already running on its port uses it. VS Code stops it when the window that started it closes; other windows take it over. If it stops unexpectedly, a notification says so. The backend id is `local-<model>`, for example `local-sweep-1-5b`.
+- **LM Studio**, through its `lms` command. Setup imports the file into LM Studio, starts LM Studio's server if it is off and loads the model under the model name in the table below. LM Studio keeps running on its own, and setup never stops it. The backend id ends in `-lmstudio`, for example `local-sweep-1-5b-lmstudio`.
+
+If a command is not on PATH or in the usual install places, set `aiAutocomplete.local.llamaServerPath` or `aiAutocomplete.local.lmsPath` in your user settings. Both are machine-scoped: a workspace cannot set them.
+
+**Models.** Each file is a GGUF, pinned to one Hugging Face revision and checked by sha256 after the download. The context size is 8192 for all of them. A model whose file is more than 40% of your memory is marked "may not fit in memory".
+
+| Model | Size | Use | Licence | Model name |
+| --- | --- | --- | --- | --- |
+| Sweep Next Edit 1.5B (recommended) | 1.5 GB | completions and Next Edit | Apache-2.0 | `sweep-next-edit-1.5b` |
+| Qwen2.5-Coder 1.5B | 1.6 GB | completions | Apache-2.0 | `qwen2.5-coder-1.5b` |
+| Qwen2.5-Coder 3B | 3.3 GB | completions | Apache-2.0 | `qwen2.5-coder-3b` |
+| Qwen2.5-Coder 7B | 8.1 GB | completions | Apache-2.0 | `qwen2.5-coder-7b` |
+| Mellum 4B | 4.3 GB | completions | Apache-2.0 | `mellum-4b-base` |
+
+Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list. Set them up by hand on the Backends page. LM Studio runs these GGUF files on its llama.cpp engine; to use an MLX model, add it by hand too.
+
+**Where files go.** In VS Code's global storage for the extension, under `models/<owner>/<repo>/<file>`. On macOS that is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
+
+**Stopping and removing.**
+
+- **AI Autocomplete: Stop Local Models** stops the llama-server processes now, in all windows. They start again when VS Code starts (or a window opens) with their backends still selected, or when you select their backend again. It does not touch LM Studio.
+- **AI Autocomplete: Remove Downloaded Models** lists the files (partial downloads too, except one this window is downloading) and deletes the ones you tick, after you confirm. It stops any managed server that uses a deleted file. A model imported into LM Studio is a hard link to the file, so the data stays on disk until you also remove the model in LM Studio. A backend whose file was deleted stops working until you set it up again.
+
+The only request that leaves your machine is the download from `huggingface.co` (which redirects to Hugging Face's file servers). Setup sends nothing else off the machine, and the local backend it adds is on `127.0.0.1`.
 
 ### Other backends
 
@@ -75,7 +143,7 @@ You can list several backends and switch between them with **AI Autocomplete: Se
 Click **AI** in the status bar for the menu:
 
 - **Turn off AI Autocomplete** stops completions and Next Edit together (the `aiAutocomplete.enabled` setting); **Turn on AI Autocomplete** brings back exactly what you had, because both backend choices stay. The status bar shows the off icon meanwhile. **AI Autocomplete: Turn On/Off** in the Command Palette does the same.
-- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions off".
+- **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.fim.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions: off".
 - **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
 
 ### What a backend is used for
@@ -84,7 +152,7 @@ Each backend has **Use for** checkboxes on the Backends page: **Completions**, *
 
 - **Model** shows only with Completions ticked, and **Next Edit model** only with Next Edit ticked. With both ticked, an empty Next Edit model means the same model as for completions. With only Next Edit ticked, an empty Next Edit model means the model the server lists (or the one you pick from its list). The Next Edit model's hint says which format the model will use: "Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format" or "chat prompt (chatXtab)".
 - At least one use must stay ticked. Unticking a use removes that use's model when you save.
-- Each backend's card says what it is used for ("Completions · Next Edit", "Completions only" or "Next Edit only") and has **Use for completions** and **Use for Next Edit** buttons, with an "in use" badge on the backend that is selected.
+- Each backend's card says what it is used for ("Completions · Next Edit", "Completions only" or "Next Edit only") and has **Use for completions** and **Use for Next Edit** buttons, with a "Completions" or "Next Edit" badge on the backend selected for it.
 - **Select Completion Backend** (the menu's **Completions** entry) lists only backends used for completions. **Select Next Edit Backend** lists only backends used for Next Edit (and Off). **Set API Key** lists all backends.
 - **Test connection** runs one check per ticked use: the completion steps with Completions ticked, and then a Next Edit step with Next Edit ticked. A backend with both uses gets the Next Edit step only when it has a Next Edit model or is the backend selected for Next Edit, so a completions-only setup that predates `use` tests as before; a Next Edit-only backend always gets it. The Next Edit step sends a built-in sample edit (a renamed variable) through the same format and request code the editor uses, and passes when the model suggests an edit. It shows a warning when the model answered but suggested no edit, or when the answer was cut at its token limit, and a failure when the answer could not be read or the model keeps thinking.
 
@@ -213,16 +281,16 @@ A value outside its limits is ignored, and a warning names it. The region settin
 
 ## Privacy
 
-- No telemetry. The extension sends nothing except completion requests to the backend you configure.
+- No telemetry. The extension sends nothing except completion requests to the backend you configure, and the model download from `huggingface.co` when you run **Set Up Local Model** (see [Local models](#local-models)).
 - Next Edit, when you choose a backend for it, sends the region around the cursor, clipped pages of the current file and the current file's recent edits to that backend; see [Next Edit](#next-edit).
 - Your code (the text around the cursor, plus snippets of other open or recently edited files while `aiAutocomplete.fim.extraContext` is on) goes only to that backend. Extra context comes only from files in your workspace (or new, unsaved files) that completions are allowed in (not from files matching `aiAutocomplete.fim.disableInFiles` or in a language listed in `aiAutocomplete.fim.disableInLanguages`).
 - OpenRouter forwards your code to the model's provider. The extension sends no attribution headers to it.
 - Requests never follow HTTP redirects, so a server cannot forward your code to another host.
 - With a Mistral backend on `codestral.mistral.ai` or `api.mistral.ai`, a 401 or 403 answer is retried once on the other Mistral host, with the same request and key.
 - API keys live in VS Code's secret storage, never in settings files.
-- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
+- Endpoint settings (`aiAutocomplete.backends`, `aiAutocomplete.modelOverrides`, `aiAutocomplete.debug.logPrompts`) and the paths of the local runtimes (`aiAutocomplete.local.llamaServerPath`, `aiAutocomplete.local.lmsPath`) are read from your user settings only. A workspace's `.vscode/settings.json` cannot redirect your code to another host. It can pick which of your backends to use (`aiAutocomplete.fim.backend`), but only from the ones you defined.
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
-- Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem` and `*.key`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
+- Files matching `aiAutocomplete.fim.disableInFiles` (by default `.env`, `.env.*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, `*.tfvars`, `*.p12`, `*.pfx`, `.netrc`, `.docker/config.json` and SSH keys `id_rsa*` and `id_ed25519*`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.
 - Known limitation: the local-only check resolves the backend's hostname before the request, and the request then does its own lookup. It guards against a misconfigured `baseUrl`, not against a hostile DNS server that answers differently the second time. Use an IP address in `baseUrl` if that matters to you.
 

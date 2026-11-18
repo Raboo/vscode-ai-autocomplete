@@ -57,4 +57,4 @@ export type PageMessage =
   | { type: 'ready' } | { type: 'add' } | { type: 'edit'; id: string } | { type: 'cancel' } | { type: 'formChanged'; form: BackendForm }
   | { type: 'save'; form: BackendForm; apiKey?: string } | { type: 'remove'; id: string } | { type: 'use'; id: string } | { type: 'useNextEdit'; id: string } | { type: 'test'; id: string }
   | { type: 'testForm'; form: BackendForm; apiKey?: string } | { type: 'reloadModels'; form: BackendForm; apiKey?: string }
-  | { type: 'removeKey'; id: string } | { type: 'openSettings' };
+  | { type: 'removeKey'; id: string } | { type: 'openSettings' } | { type: 'setUpLocal' };

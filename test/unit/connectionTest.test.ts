@@ -83,7 +83,7 @@ describe('runConnectionTest', () => {
   test('refuses a non-local URL under localOnly without any request', async () => {
     const f = fake();
     const { res } = await run(f, { localOnly: true, isLocal: async () => false });
-    expect(res.steps).toEqual([{ id: 'reach', state: 'fail', text: 'local only is on in this workspace' }]);
+    expect(res.steps).toEqual([{ id: 'reach', state: 'fail', text: 'Local only is on in this workspace' }]);
     expect(f.listModels).not.toHaveBeenCalled();
     expect(f.streamFim).not.toHaveBeenCalled();
   });
@@ -96,7 +96,7 @@ describe('runConnectionTest', () => {
     expect(r404.res.steps[0]).toMatchObject({ text: 'HTTP 404', hint: 'check the URL; OpenAI-compatible servers usually end in /v1' });
     const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
     const rc = await run(fake({ info: refused }));
-    expect(rc.res.steps[0]).toMatchObject({ text: 'connection refused', hint: 'is the server running?' });
+    expect(rc.res.steps[0]).toMatchObject({ text: 'Connection refused', hint: 'is the server running?' });
     expect(rc.res.steps).toHaveLength(1);
   });
 
@@ -104,7 +104,7 @@ describe('runConnectionTest', () => {
     const f = fake({ info: { models: ['a', 'b'], contextWindows: {} } });
     const { res } = await run(f);
     expect(res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn']]);
-    expect(res.steps[1].text).toBe('the server lists 2 models; choose one');
+    expect(res.steps[1].text).toBe('The server lists 2 models; choose one');
     expect(f.streamFim).not.toHaveBeenCalled();
   });
 
@@ -142,12 +142,12 @@ describe('runConnectionTest', () => {
     const hint = 'set the prompt mode to auto';
     const native = fake({ native: false, config: { kind: 'openai', fimModel: 'qwen2.5-coder-7b', fimMode: 'native' } });
     const n = await run(native);
-    expect(n.res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'prompt mode "native" does not work with this server', hint });
+    expect(n.res.steps[1]).toMatchObject({ id: 'model', state: 'warn', text: 'Prompt mode "native" does not work with this server', hint });
     expect(native.streamFim).not.toHaveBeenCalled();
     const mistral = fake({ config: { kind: 'mistral', fimModel: 'codestral-latest', fimMode: 'template' } });
     const m = await run(mistral);
     expect(m.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn']]);
-    expect(m.res.steps[1]).toMatchObject({ text: 'prompt mode "template" does not work with this server', hint });
+    expect(m.res.steps[1]).toMatchObject({ text: 'Prompt mode "template" does not work with this server', hint });
   });
 
   test('backend template seed-coder makes a template-less model pass', async () => {
@@ -178,13 +178,13 @@ describe('runConnectionTest', () => {
 
   test('empty completion warns', async () => {
     const { res } = await run(fake({ chunks: [''] }));
-    expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'warn', text: 'the server answered but returned no completion' });
+    expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'warn', text: 'The server answered but returned no completion' });
   });
 
   test('a timeout after only blank lines fails as a timeout', async () => {
     const timeout = Object.assign(new Error('t'), { name: 'TimeoutError' });
     const { res } = await run(fake({ chunks: ['\n\na'], failAfter: timeout }));
-    expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'fail', text: 'timed out' });
+    expect(res.steps.find((s) => s.id === 'completion')).toMatchObject({ state: 'fail', text: 'Timed out' });
     expect(completionServed(res)).toBe(false);
   });
 
@@ -195,7 +195,7 @@ describe('runConnectionTest', () => {
 
   test('context overflow warns; no window → no context step', async () => {
     const over = await run(fake({ info: { models: ['m'], contextWindows: { m: 1000 } }, config: { fim: { contextTokens: 4700, maxTokens: 128 } } }));
-    expect(over.res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 128 is more than the server's 1000" });
+    expect(over.res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "Context size 4700 + max tokens 128 is more than the server's 1000" });
     const none = await run(fake());
     expect(none.res.steps.map((s) => s.id)).toEqual(['reach', 'model', 'completion']);
   });
@@ -231,7 +231,7 @@ describe('runConnectionTest', () => {
     const f = fake();
     f.backend.routes = () => { throw new Error('SECRET-MESSAGE'); };
     await run(f, { log: odd });
-    expect(JSON.stringify(odd.debug.mock.calls)).toContain('connection test model: fail in 0 ms: request failed');
+    expect(JSON.stringify(odd.debug.mock.calls)).toContain('connection test model: fail in 0 ms: Request failed');
     expect(JSON.stringify(odd.debug.mock.calls)).not.toContain('SECRET');
   });
 
@@ -240,7 +240,7 @@ describe('runConnectionTest', () => {
     const off = mk();
     const { res } = await run(fake({ chunks: new StreamError('SECRET memory guard') }), { log: off });
     expect(res.steps.at(-1)).toEqual({
-      id: 'completion', state: 'fail', text: 'the server returned an error',
+      id: 'completion', state: 'fail', text: 'The server returned an error',
       hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message', ms: 0,
     });
     expect(completionServed(res)).toBe(false);
@@ -254,7 +254,7 @@ describe('runConnectionTest', () => {
     const f = fake();
     f.backend.routes = () => { throw new Error('kaput'); };
     const { res } = await run(f);
-    expect(res.steps.at(-1)).toMatchObject({ state: 'fail', text: 'request failed' });
+    expect(res.steps.at(-1)).toMatchObject({ state: 'fail', text: 'Request failed' });
   });
 
   test('SAMPLE', () => {
@@ -266,11 +266,11 @@ describe('invalidAnswerText', () => {
   test('puts each fixed reason of the formats in plain words, with a fallback', () => {
     for (const why of ['noFence', 'truncated', 'special', 'empty', 'tooLong', 'markers', 'range', 'glued']) {
       const text = invalidAnswerText(why);
-      expect(text).toMatch(/^the answer could not be read \([a-z ]+\)$/);
+      expect(text).toMatch(/^The answer could not be read \([a-z ]+\)$/);
       expect(text).not.toMatch(/\((noFence|truncated|special|empty|tooLong|markers|range|glued)\)/);
     }
-    expect(invalidAnswerText('somethingNew')).toBe('the answer could not be read (it was not in the expected format)');
-    expect(invalidAnswerText('constructor')).toBe('the answer could not be read (it was not in the expected format)');
+    expect(invalidAnswerText('somethingNew')).toBe('The answer could not be read (it was not in the expected format)');
+    expect(invalidAnswerText('constructor')).toBe('The answer could not be read (it was not in the expected format)');
   });
 });
 
@@ -331,7 +331,7 @@ describe('the Next Edit step', () => {
   test('the step runs after a completion-step warning, but not after a reach failure', async () => {
     const warned = await run(fake({ ...noNative, info: { models: ['a', 'b'], contextWindows: {} }, config: { kind: 'llamacpp', use: { completions: true, nextEdit: true } } }), { settings: selected });
     expect(warned.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'warn']]);
-    expect(warned.res.steps[2].text).toBe('the server lists 2 models; choose a Next Edit model');
+    expect(warned.res.steps[2].text).toBe('The server lists 2 models; choose a Next Edit model');
     const zetaOnCompletions = await run(fake({ ...noNative, chunks: [zetaRewrite], config: { kind: 'llamacpp', fimModel: 'zeta-2.1', use: { completions: true, nextEdit: true } } }), { settings: selected });
     expect(zetaOnCompletions.res.steps.map((s) => [s.id, s.state])).toEqual([['reach', 'ok'], ['model', 'warn'], ['nextEdit', 'ok']]);
     const down = await run(fake({ info: new HttpError(500, '', 'u'), config: { use: { completions: true, nextEdit: true } } }));
@@ -386,7 +386,7 @@ describe('the Next Edit step', () => {
     const same = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|><|marker_1|>'] }));
     expect(same.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn', text: 'Next Edit in 0 ms with zeta-2.1 (Zeta 2.1 format): answered, no edit suggested' });
     const bad = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_9|>x'] }));
-    expect(bad.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'the answer could not be read (it lacked the expected markers)' });
+    expect(bad.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'fail', text: 'The answer could not be read (it lacked the expected markers)' });
     const cut = await run(fake({ ...noNative, config: ZETA, chunks: ['<|marker_1|>def'], onStream: (r) => r.onTruncated?.() }));
     expect(cut.res.steps[1]).toMatchObject({ id: 'nextEdit', state: 'warn' });
     expect(cut.res.steps[1].text).toMatch(/cut at max tokens/);
@@ -440,7 +440,7 @@ describe('the Next Edit step', () => {
     expect(JSON.stringify(off.debug.mock.calls)).toContain('connection test nextEdit: fail in 0 ms: HTTP 500');
     expect(JSON.stringify(off.debug.mock.calls)).not.toContain('SECRET');
     const odd = await run(fake({ ...noNative, config: ZETA, chunks: new StreamError('SECRET memory guard') }), { log: off });
-    expect(odd.res.steps[1]).toMatchObject({ state: 'fail', text: 'the server returned an error' });
+    expect(odd.res.steps[1]).toMatchObject({ state: 'fail', text: 'The server returned an error' });
     expect(JSON.stringify(off.debug.mock.calls)).not.toContain('SECRET');
   });
 
@@ -487,19 +487,19 @@ describe('explainFailure', () => {
   test('never includes server body text', () => {
     const e = explainFailure(new HttpError(500, 'SECRET-BODY', 'http://secret.example/path'));
     expect(JSON.stringify(e)).not.toMatch(/SECRET|example/);
-    expect(explainFailure(new Error('SECRET-MESSAGE'))).toEqual({ text: 'request failed' });
+    expect(explainFailure(new Error('SECRET-MESSAGE'))).toEqual({ text: 'Request failed' });
   });
   test('mapping', () => {
     expect(explainFailure(new HttpError(302, '', 'u'))).toEqual({ text: 'HTTP 302', hint: 'redirects are not followed' });
     expect(explainFailure(new HttpError(403, '', 'u'))).toEqual({ text: 'HTTP 403', hint: 'check the API key' });
     expect(explainFailure(new HttpError(500, '', 'u'))).toEqual({ text: 'HTTP 500' });
-    expect(explainFailure(Object.assign(new Error('t'), { name: 'TimeoutError' }))).toEqual({ text: 'timed out' });
-    expect(explainFailure(new TypeError('x', { cause: { code: 'ENOTFOUND' } }))).toEqual({ text: 'host not found' });
-    expect(explainFailure(new TypeError('x', { cause: { code: 'EAI_AGAIN' } }))).toEqual({ text: 'host not found' });
-    expect(explainFailure(new MissingApiKeyError('b'))).toEqual({ text: 'no API key stored', hint: 'enter the key in the API key field' });
-    expect(explainFailure(new SyntaxError('bad json'))).toEqual({ text: 'request failed' });
+    expect(explainFailure(Object.assign(new Error('t'), { name: 'TimeoutError' }))).toEqual({ text: 'Timed out' });
+    expect(explainFailure(new TypeError('x', { cause: { code: 'ENOTFOUND' } }))).toEqual({ text: 'Host not found' });
+    expect(explainFailure(new TypeError('x', { cause: { code: 'EAI_AGAIN' } }))).toEqual({ text: 'Host not found' });
+    expect(explainFailure(new MissingApiKeyError('b'))).toEqual({ text: 'No API key stored', hint: 'enter the key in the API key field' });
+    expect(explainFailure(new SyntaxError('bad json'))).toEqual({ text: 'Request failed' });
     expect(explainFailure(new StreamError('SECRET-MESSAGE'))).toEqual({
-      text: 'the server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message',
+      text: 'The server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message',
     });
   });
 
@@ -642,7 +642,7 @@ describe('explainFailure', () => {
       const info = { models: [chatCfg.fimModel], contextWindows: { [chatCfg.fimModel]: 4750 } };
       const f = fake({ config: chatCfg, caps, info, chatEvents: ev('<COMPLETION>a + b;') });
       const { res } = await run(f);
-      expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "context size 4700 + max tokens 80 is more than the server's 4750" });
+      expect(res.steps.at(-1)).toMatchObject({ id: 'context', state: 'warn', text: "Context size 4700 + max tokens 80 is more than the server's 4750" });
     });
 
     test('context step ignores inherited keys', async () => {

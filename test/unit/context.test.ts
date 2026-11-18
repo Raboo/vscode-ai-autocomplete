@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildFimWindow, ExtraContextRing } from '../../src/completion/context';
+import { buildFimWindow, buildFimWindowIn, ExtraContextRing, fimLineRange, type LineSource } from '../../src/completion/context';
 import { contextCaps } from '../../src/completion/effective';
 
 const doc = (n: number, w = 10) => Array.from({ length: n }, (_, i) => String(i).padStart(w, '0'));
@@ -130,6 +130,59 @@ describe('stepped prefix window', () => {
     expect(w.prefix).toBe('lin');
     const w2 = buildFimWindow(text, at(50, 5), { ...o, maxPrefixChars: 3 });
     expect(w2.prefix).toBe('ne5');
+  });
+});
+
+/** A document read by line range, as the provider reads a VS Code document. */
+function source(text: string): LineSource & { read: number } {
+  const lines = text.split(/\r?\n/);
+  const starts = [0];
+  for (let nl = text.indexOf('\n'); nl !== -1; nl = text.indexOf('\n', nl + 1)) starts.push(nl + 1);
+  const src = {
+    read: 0,
+    lineCount: lines.length,
+    offsetAt: (line: number, character: number) => starts[line] + character,
+    text(first: number, last: number) {
+      const t = text.slice(starts[first], starts[last] + lines[last].length);
+      src.read += t.length;
+      return t;
+    },
+  };
+  return src;
+}
+
+describe('buildFimWindowIn', () => {
+  const cases: [string, string, typeof OPTS][] = [
+    ['LF', doc(900, 12).join('\n'), OPTS],
+    ['CRLF', doc(900, 12).join('\r\n'), OPTS],
+    ['prefix cap binds', doc(900, 40).join('\n'), { ...OPTS, maxPrefixChars: 1000, maxSuffixChars: 300 }],
+    ['long cursor line', [...doc(300), 'x'.repeat(9000), ...doc(300)].join('\n'), OPTS],
+    ['short file', doc(5).join('\n'), OPTS],
+    ['empty', '', OPTS],
+  ];
+  test.each(cases)('gives the same window as the whole text (%s)', (_, text, o) => {
+    const lines = text.split(/\r?\n/);
+    for (let line = 0; line < lines.length; line += 7) {
+      for (const character of [0, Math.floor(lines[line].length / 2), lines[line].length]) {
+        const src = source(text);
+        const offset = src.offsetAt(line, character);
+        expect(buildFimWindowIn(src, line, character, o), `line ${line}:${character}`).toEqual(buildFimWindow(text, offset, o));
+      }
+    }
+  });
+
+  test('reads only the lines the window may use', () => {
+    const text = doc(5000, 12).join('\n');
+    const src = source(text);
+    buildFimWindowIn(src, 2500, 3, OPTS);
+    expect(src.read).toBeLessThan(13 * (OPTS.prefixLines + OPTS.suffixLines + OPTS.prefixLines / 4 + 2));
+  });
+
+  test('the range starts at the step-aligned prefix start and ends suffixLines below the cursor', () => {
+    expect(fimLineRange(250, 500, OPTS)).toEqual({ first: 50, last: 310 });
+    expect(fimLineRange(251, 500, OPTS)).toEqual({ first: 50, last: 311 });
+    expect(fimLineRange(10, 500, OPTS)).toEqual({ first: 0, last: 70 });
+    expect(fimLineRange(480, 500, OPTS)).toEqual({ first: 250, last: 499 });
   });
 });
 

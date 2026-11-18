@@ -30,6 +30,19 @@ export interface Settings {
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
+  /** Machine-scoped paths of the local runtimes; unset means look on PATH and in the usual places. */
+  local: { llamaServerPath?: string; lmsPath?: string };
+}
+
+/** Files whose content is never sent by default: environment files, keys and credential stores. */
+export const DEFAULT_DISABLE_IN_FILES: readonly string[] = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*'];
+
+/**
+ * Where a choice made in the UI (a switch, a selected backend) is written: the workspace only when it already sets the
+ * key (a user setting would not take effect over it), otherwise user settings, so the repo's .vscode/settings.json stays untouched.
+ */
+export function writesToWorkspace(i: Inspected<unknown> | undefined): boolean {
+  return i?.workspaceValue !== undefined;
 }
 
 export interface Inspected<T> {
@@ -231,6 +244,10 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     const i = src.inspect<T>(key);
     return i?.globalValue ?? i?.defaultValue ?? fallback;
   };
+  const localPath = (key: string): string | undefined => {
+    const v = machine<unknown>(key, '');
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+  };
   const resource = <T>(key: string, fallback: T): T => {
     const i = src.inspect<T>(key);
     return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue ?? i?.defaultValue ?? fallback;
@@ -342,7 +359,7 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
       suffixLines: num('fim.suffixLines', 60),
       extraContext: resource('fim.extraContext', true),
       disableInLanguages: strs('fim.disableInLanguages', ['plaintext']),
-      disableInFiles: unionStrs('fim.disableInFiles', ['**/.env', '**/.env.*', '**/*.pem', '**/*.key']),
+      disableInFiles: unionStrs('fim.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),
       skipMidWord: resource('fim.skipMidWord', true),
     },
     nextEdit: {
@@ -359,6 +376,10 @@ export function parseSettings(src: RawSettingsSource): { settings: Settings; pro
     privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,
     debug: { logPrompts: machine('debug.logPrompts', false) },
+    local: {
+      ...(localPath('local.llamaServerPath') !== undefined ? { llamaServerPath: localPath('local.llamaServerPath') } : {}),
+      ...(localPath('local.lmsPath') !== undefined ? { lmsPath: localPath('local.lmsPath') } : {}),
+    },
   };
   return { settings, problems };
 }

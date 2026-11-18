@@ -187,6 +187,10 @@ export class BackendsPanel implements vscode.Disposable {
       case 'openSettings':
         await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:raboo.ai-autocomplete');
         return;
+      case 'setUpLocal':
+        // Not awaited: a download can take minutes, and the page's other messages must not wait for it.
+        void vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
+        return;
     }
   }
 

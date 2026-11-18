@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   CompletionAccumulator,
   levenshteinRatio,
+  nearlySame,
   shouldCompleteMultiline,
   type StreamFilterOptions,
 } from '../../src/completion/filters';
@@ -107,6 +108,19 @@ describe('CompletionAccumulator', () => {
     const acc = new CompletionAccumulator(opts({ suffix: '\r\n  return x;\r\n}' }));
     expect(acc.push('a = 1;\r\n  return x;\r\n')).toBe(true);
     expect(acc.text).toBe('a = 1;');
+  });
+});
+
+describe('nearlySame', () => {
+  test('agrees with the Levenshtein ratio under the threshold', () => {
+    const words = ['', 'a', 'return x;', 'return x', 'return  x;', 'return y;', 'const value = compute(input);', 'const value = compute(input)', 'x'.repeat(40), 'x'.repeat(44), 'x'.repeat(45)];
+    for (const a of words) for (const b of words) expect(nearlySame(a, b, 0.1), `${a} / ${b}`).toBe(levenshteinRatio(a, b) < 0.1);
+  });
+
+  test('a length difference at the threshold rules it out without the distance', () => {
+    // 10 of 100 characters differ in length alone: the ratio is at least 0.1.
+    expect(nearlySame('x'.repeat(90), 'x'.repeat(100), 0.1)).toBe(false);
+    expect(nearlySame('x'.repeat(91), 'x'.repeat(100), 0.1)).toBe(true);
   });
 });
 

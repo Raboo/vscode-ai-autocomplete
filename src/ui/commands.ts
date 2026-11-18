@@ -4,11 +4,11 @@ import { homedir } from 'node:os';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
-import { usesFor, type BackendUse } from '../config/settings';
+import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
-import { menuEntries, menuInputs } from './statusModel';
+import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -37,27 +37,44 @@ export interface CommandDeps {
   nextEditTab(): Promise<void>;
   /** Esc on a Next Edit shown as decorations. */
   nextEditDismiss(): void;
+  /** The local llama-servers; `stopEverywhere` stops them in every window and says whether any was running. */
+  localServers: { stopEverywhere(): Promise<boolean> };
+  /** Set Up Local Model (the argument skips the pickers) and Remove Downloaded Models. */
+  localModels: { setUp(arg: unknown): Promise<unknown>; remove(): Promise<void> };
 }
 
-/** Turns a switch on or off where its value comes from: the workspace when it sets one, otherwise user settings. */
-async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+/** Writes `key` where its value comes from: the workspace when it sets one, otherwise user settings. */
+async function update(key: string, value: unknown): Promise<void> {
   const config = vscode.workspace.getConfiguration('aiAutocomplete');
-  const target = config.inspect(key)?.workspaceValue !== undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await config.update(key, on, target);
+  await config.update(key, value, writesToWorkspace(config.inspect(key)) ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
 }
 
-/** Selects the completion backend: in the workspace when a folder is open, otherwise in user settings. Completions turned off are turned back on. */
+/** Turns a switch on or off where its value comes from. */
+async function setSwitch(key: 'enabled' | 'fim.enabled' | 'nextEdit.enabled', on: boolean): Promise<void> {
+  await update(key, on);
+}
+
+/** Selects the completion backend in user settings, or in the workspace when it already selects one. Completions turned off are turned back on. */
 export async function useBackend(id: string): Promise<void> {
-  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await vscode.workspace.getConfiguration('aiAutocomplete').update('fim.backend', id, target);
+  await update('fim.backend', id);
   if (!readSettings().settings.fim.enabled) await setSwitch('fim.enabled', true);
 }
 
-/** Selects the Next Edit backend, in the same place `useBackend` writes. Next Edit turned off is turned back on. */
+/** Selects the Next Edit backend, by the same rule as `useBackend`. Next Edit turned off is turned back on. */
 export async function useNextEditBackend(id: string): Promise<void> {
-  const target = (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-  await vscode.workspace.getConfiguration('aiAutocomplete').update('nextEdit.backend', id, target);
+  await update('nextEdit.backend', id);
   if (!readSettings().settings.nextEdit.enabled) await setSwitch('nextEdit.enabled', true);
+}
+
+/** Tells the user there is no backend yet, with the two ways to get one: a local model, or a server they already run. */
+export function offerFirstBackend(message: string): void {
+  const local = 'Set Up Local Model';
+  const server = 'Connect a Server';
+  void vscode.window.showInformationMessage(message, local, server).then((c) => {
+    if (c === local) return vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
+    if (c === server) return vscode.commands.executeCommand('aiAutocomplete.manageBackends', { add: true });
+    return undefined;
+  });
 }
 
 /** The command argument as OpenOptions; anything else opens the page as it is. */
@@ -73,7 +90,7 @@ const USE_NAMES: Record<BackendUse, string> = { completions: 'completions', next
 function pickableBackends(use?: BackendUse): string[] | undefined {
   const all = readSettings().settings.backends;
   if (all.length === 0) {
-    void vscode.window.showInformationMessage('AI Autocomplete: no backends configured. Add one to "aiAutocomplete.backends" in your user settings.');
+    offerFirstBackend('AI Autocomplete: no backends yet.');
     return undefined;
   }
   const ids = all.filter((b) => use === undefined || usesFor(b, use)).map((b) => b.id);
@@ -112,9 +129,13 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit()));
-      const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
-      if (!pick) return;
+      const groups = menuGroups(menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit())));
+      const items = groups.flatMap((g): (vscode.QuickPickItem & { id?: string })[] => [
+        ...(g.title ? [{ label: g.title, kind: vscode.QuickPickItemKind.Separator }] : []),
+        ...g.entries,
+      ]);
+      const pick = await vscode.window.showQuickPick(items, { placeHolder: 'AI Autocomplete' });
+      if (!pick?.id) return;
       if (pick.id === 'resume') await resume();
       else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),
@@ -184,6 +205,12 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('nextEditAccepted', () => d.nextEditAccepted()),
     reg('nextEditTab', () => d.nextEditTab()),
     reg('nextEditDismiss', () => d.nextEditDismiss()),
+    reg('stopLocalModels', async () => {
+      const stopped = await d.localServers.stopEverywhere();
+      void vscode.window.showInformationMessage(stopped ? 'Stopped local models in all windows.' : 'No local models are running.');
+    }),
+    reg('setUpLocalModel', (arg) => d.localModels.setUp(arg)),
+    reg('removeLocalModels', () => d.localModels.remove()),
     reg('enableNativeNextEdit', async () => {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');

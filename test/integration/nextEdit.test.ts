@@ -25,7 +25,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display'];
+const TOUCHED = ['backends', 'enabled', 'fim.backend', 'fim.enabled', 'fim.extraContext', 'fim.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display', 'privacy.localOnly'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -345,6 +345,29 @@ suite('Next Edit', () => {
       assert.equal(editor.document.getText(), CIRCLE.join('\n'));
       assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
     });
+  });
+
+  test('Next Edit asks when local-only blocks a hosted completion backend', async () => {
+    // FIM shows nothing without an answer (it never sends), and that still lets Next Edit ask on the local backend.
+    // 203.0.113.1 is a documentation address: not local, and never contacted.
+    const m = await startMockServer({ alias: MODEL, chat: EMPTY_FIM, nextEdit: { content: fence([...GREETED, RETURN_LINE]) } });
+    try {
+      await configure({
+        backends: [
+          { id: 'hosted', kind: 'openai', baseUrl: 'http://203.0.113.1/v1', fimModel: MODEL, use: 'completions' },
+          { id: BACKEND_ID, kind: 'openai', hostFlavor: 'strata', baseUrl: `${m.baseUrl}/v1`, fimModel: MODEL, use: 'nextEdit' },
+        ],
+        'fim.backend': 'hosted',
+        'nextEdit.backend': BACKEND_ID,
+        'privacy.localOnly': true,
+      });
+      const editor = await open(GREET);
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.equal(m.requests.filter((r) => isChat(r) && !isNextEdit(r)).length, 0, `mock saw ${seen(m)}`);
+    } finally {
+      await m.close();
+    }
   });
 
   test('an excluded file sends no Next Edit request', async () => {

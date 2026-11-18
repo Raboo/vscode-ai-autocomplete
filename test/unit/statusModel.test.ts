@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { activity, displayState, menuEntries, menuInputs, noCompletionBackend, type MenuInputs } from '../../src/ui/statusModel';
+import { activity, displayState, hhmm, menuEntries, menuGroups, menuInputs, noCompletionBackend, stateName, tooltipLines, type MenuInputs } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
 describe('displayState', () => {
@@ -28,7 +28,8 @@ describe('displayState', () => {
 describe('menuEntries', () => {
   const M = (patch: Partial<MenuInputs> = {}): MenuInputs => ({ backendCount: 1, enabled: true, nativeNextEdit: false, ...patch });
   const ids = (state: Parameters<typeof menuEntries>[0], count = 1, native = false) => menuEntries(state, M({ backendCount: count, nativeNextEdit: native })).map((e) => e.id);
-  const SETUP = ['toggleEnabled', 'snooze', 'selectBackend', 'selectNextEditBackend'];
+  const BACKENDS = ['selectBackend', 'selectNextEditBackend'];
+  const PAUSE = ['toggleEnabled', 'snooze'];
   test('lists Retry now first while the status is error', () => {
     expect(menuEntries('error', M())[0]).toEqual({ label: 'Retry now', id: 'retry' });
     expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);
@@ -40,14 +41,14 @@ describe('menuEntries', () => {
     expect(ids('error')).not.toContain('resume');
   });
   test('lists Retry now after the setup entries otherwise', () => {
-    expect(ids('idle')).toEqual([...SETUP, 'enableNativeNextEdit', 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle')).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(ids('loading')).toEqual(ids('idle'));
   });
   test('no separate completions toggle: the Completions entry turns them off', () => {
     expect(ids('idle')).not.toContain('toggle');
   });
   test('the native UI entry is absent once the native UI is on; Settings stays', () => {
-    expect(ids('idle', 1, true)).toEqual([...SETUP, 'manageBackends', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('idle', 1, true)).toEqual([...BACKENDS, 'manageBackends', 'setUpLocalModel', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
     expect(menuEntries('idle', M()).find((e) => e.id === 'enableNativeNextEdit')).toEqual({ label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' });
     expect(menuEntries('idle', M()).find((e) => e.id === 'openSettings')).toEqual({ label: 'Settings...', id: 'openSettings' });
   });
@@ -62,15 +63,28 @@ describe('menuEntries', () => {
     expect(label(undefined)).toBe('Completions: off');
   });
   test('the switch says what it will do', () => {
-    expect(menuEntries('idle', M())[0]).toEqual({ label: 'Turn off AI Autocomplete', id: 'toggleEnabled' });
-    expect(menuEntries('disabled', M({ enabled: false }))[0]).toEqual({ label: 'Turn on AI Autocomplete', id: 'toggleEnabled' });
+    expect(menuEntries('idle', M()).find((e) => e.id === 'toggleEnabled')).toEqual({ label: 'Turn off AI Autocomplete', id: 'toggleEnabled' });
+    expect(menuEntries('disabled', M({ enabled: false })).find((e) => e.id === 'toggleEnabled')).toEqual({ label: 'Turn on AI Autocomplete', id: 'toggleEnabled' });
   });
-  test('Manage backends comes first when no backend exists', () => {
+  test('Set up local model comes right after Manage backends', () => {
+    // With no backend, both lead the menu; otherwise they follow the backend pickers.
+    expect(menuEntries('idle', M()).find((e) => e.id === 'setUpLocalModel')).toEqual({ label: 'Set up local model...', id: 'setUpLocalModel' });
+    for (const count of [0, 1]) {
+      for (const state of ['idle', 'error', 'snoozed'] as const) {
+        const list = ids(state, count);
+        expect(list.indexOf('setUpLocalModel')).toBe(list.indexOf('manageBackends') + 1);
+      }
+    }
+  });
+  test('Manage backends and Set up local model come first when no backend exists', () => {
     expect(menuEntries('idle', M({ backendCount: 0 }))[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
-    expect(ids('idle', 0)).toEqual(['manageBackends', ...SETUP, 'enableNativeNextEdit', 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
-    expect(ids('error', 0).slice(0, 2)).toEqual(['manageBackends', 'retry']);
-    expect(ids('snoozed', 0).slice(0, 2)).toEqual(['manageBackends', 'resume']);
-    for (const state of ['idle', 'error', 'snoozed'] as const) expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+    expect(ids('idle', 0)).toEqual(['manageBackends', 'setUpLocalModel', ...BACKENDS, 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'about']);
+    expect(ids('error', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'retry']);
+    expect(ids('snoozed', 0).slice(0, 3)).toEqual(['manageBackends', 'setUpLocalModel', 'resume']);
+    for (const state of ['idle', 'error', 'snoozed'] as const) {
+      expect(ids(state, 0).filter((id) => id === 'manageBackends')).toHaveLength(1);
+      expect(ids(state, 0).filter((id) => id === 'setUpLocalModel')).toHaveLength(1);
+    }
   });
 });
 
@@ -104,7 +118,7 @@ describe('activity', () => {
     expect(activity(S(true, true, true))).toEqual({ on: true });
   });
   test('completions off with Next Edit running stays on and says so', () => {
-    expect(activity(S(true, false, true))).toEqual({ on: true, note: 'Completions off' });
+    expect(activity(S(true, false, true))).toEqual({ on: true });
   });
   test('off when neither runs: completions off and Next Edit off, disabled or without a backend', () => {
     expect(activity(S(true, false, false))).toEqual({ on: false });
@@ -144,6 +158,71 @@ describe('noCompletionBackend', () => {
     const { state, detail } = noCompletionBackend(2);
     expect(state).toBe('idle');
     expect(detail).toBe('No backend is used for completions');
-    expect(menuEntries(state, { backendCount: 2, enabled: true, nextEditBackend: 'zeta', nativeNextEdit: false })[0].id).toBe('toggleEnabled');
+    expect(menuEntries(state, { backendCount: 2, enabled: true, nextEditBackend: 'zeta', nativeNextEdit: false })[0].id).toBe('selectBackend');
   });
+});
+
+describe('tooltip', () => {
+  const M = (patch: Partial<MenuInputs> = {}): MenuInputs => ({ backendCount: 1, enabled: true, nativeNextEdit: false, completionBackend: 'coder', nextEditBackend: 'zeta', ...patch });
+  const at = new Date(2026, 10, 18, 9, 5).getTime();
+  test('friendly state names', () => {
+    expect(stateName('idle', 0)).toBe('Ready');
+    expect(stateName('loading', 0)).toBe('Requesting…');
+    expect(stateName('error', 0)).toBe('Error');
+    expect(stateName('disabled', 0)).toBe('Turned off');
+    expect(stateName('snoozed', Number.MAX_SAFE_INTEGER)).toBe('Snoozed');
+    expect(stateName('snoozed', at)).toBe('Snoozed until 09:05');
+    expect(hhmm(new Date(2026, 0, 1, 23, 59).getTime())).toBe('23:59');
+  });
+  test('lists the state, its detail, both backends, local-only and the accepted count', () => {
+    expect(tooltipLines({ shown: { state: 'error', detail: 'coder: HTTP 503' }, snoozedUntil: 0, locked: true, accepted: 3, menu: M() })).toEqual([
+      'AI Autocomplete: Error',
+      'coder: HTTP 503',
+      'Completions: coder',
+      'Next Edit: zeta',
+      'Local only: requests go to loopback or private-network hosts only',
+      'Accepted this session: 3',
+    ]);
+  });
+  test('a feature without a backend reads off', () => {
+    expect(tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, accepted: 0, menu: M({ completionBackend: undefined, nextEditBackend: undefined }) })).toEqual([
+      'AI Autocomplete: Ready',
+      'Completions: off',
+      'Next Edit: off',
+      'Accepted this session: 0',
+    ]);
+  });
+  test('a snooze with an end time names it', () => {
+    expect(tooltipLines({ shown: { state: 'snoozed' }, snoozedUntil: at, locked: false, accepted: 0, menu: M() })[0]).toBe('AI Autocomplete: Snoozed until 09:05');
+  });
+});
+
+describe('menuGroups', () => {
+  const M = (patch: Partial<MenuInputs> = {}): MenuInputs => ({ backendCount: 1, enabled: true, nativeNextEdit: false, ...patch });
+  const shape = (state: Parameters<typeof menuEntries>[0], m = M()) => menuGroups(menuEntries(state, m)).map((g) => [g.title, g.entries.map((e) => e.id)]);
+  test('groups the entries under Backends, Pause and Help, keeping their order', () => {
+    expect(shape('idle')).toEqual([
+      ['Backends', ['selectBackend', 'selectNextEditBackend', 'manageBackends', 'setUpLocalModel', 'enableNativeNextEdit']],
+      ['Pause', ['toggleEnabled', 'snooze']],
+      ['Help', ['openSettings', 'setApiKey', 'retry', 'showLog', 'about']],
+    ]);
+  });
+  test('Retry and Resume stay first, above every group', () => {
+    expect(shape('error')[0]).toEqual([undefined, ['retry']]);
+    expect(shape('snoozed')[0]).toEqual([undefined, ['resume']]);
+    expect(shape('error').flatMap(([, ids]) => ids).filter((id) => id === 'retry')).toHaveLength(1);
+  });
+  test('with no backend, Manage backends and Set up local model come first', () => {
+    expect(shape('idle', M({ backendCount: 0 }))[0]).toEqual([undefined, ['manageBackends', 'setUpLocalModel']]);
+    expect(shape('error', M({ backendCount: 0 })).slice(0, 2)).toEqual([[undefined, ['manageBackends', 'setUpLocalModel']], [undefined, ['retry']]]);
+  });
+  test('no entry is lost or doubled', () => {
+    for (const state of ['idle', 'error', 'snoozed'] as const) {
+      for (const count of [0, 1]) {
+        const flat = menuGroups(menuEntries(state, M({ backendCount: count }))).flatMap((g) => g.entries.map((e) => e.id));
+        expect(flat.sort()).toEqual(ids(state, count).sort());
+      }
+    }
+  });
+  const ids = (state: Parameters<typeof menuEntries>[0], count: number) => menuEntries(state, M({ backendCount: count })).map((e) => e.id);
 });

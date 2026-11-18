@@ -173,6 +173,7 @@ function onClick(ev: MouseEvent): void {
     case 'add':
     case 'cancel':
     case 'openSettings':
+    case 'setUpLocal':
       post({ type: action });
       break;
     case 'edit':

@@ -1,12 +1,16 @@
 import * as vscode from 'vscode';
 import type { RecentSnippets } from '../nextEdit/history';
 import type { ExtraContextRing } from './context';
+import { promptPath } from './promptPath';
 
 const SELECTION_DEBOUNCE_MS = 1000;
 
-/** The path prompts, diffs and snippets name a document by: relative to its workspace folder, led by the folder's name in a multi-root workspace. */
+/**
+ * The path prompts, diffs and snippets name a document by: relative to its workspace folder, led by the folder's name in a
+ * multi-root workspace; only the file name for a file outside the workspace.
+ */
 export function docPath(uri: vscode.Uri): string {
-  return vscode.workspace.asRelativePath(uri);
+  return promptPath(uri.path, vscode.workspace.asRelativePath(uri), inProject(uri));
 }
 
 /** Unsaved files and files inside a workspace folder, in any scheme (a remote window's files are `vscode-remote:`). */

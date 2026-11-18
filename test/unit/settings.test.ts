@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, type Inspected, type RawSettingsSource } from '../../src/config/settings';
+import { FIM_LIMITS, THINKING_STRATEGIES, parseBackendEntry, parseSettings, withFolderValues, writesToWorkspace, type Inspected, type RawSettingsSource } from '../../src/config/settings';
 
 function src(map: Record<string, Inspected<unknown>>): RawSettingsSource {
   return { inspect: <T>(key: string) => map[key] as Inspected<T> | undefined };
@@ -22,6 +22,14 @@ describe('parseSettings', () => {
     expect(settings.debug.logPrompts).toBe(false);
     expect(settings.enabled).toBe(true);
   });
+  test('local runtime paths are machine-scoped: workspace values are ignored, "" is unset', () => {
+    const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' }, 'local.lmsPath': { workspaceValue: '/evil/lms' } }));
+    expect(a.settings.local).toEqual({});
+    const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' }, 'local.lmsPath': { globalValue: '/opt/lms' } }));
+    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server', lmsPath: '/opt/lms' });
+    const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' }, 'local.lmsPath': { defaultValue: '' } }));
+    expect(c.settings.local).toEqual({});
+  });
   test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));
     expect(r.settings.enabled).toBe(false);
@@ -35,6 +43,11 @@ describe('parseSettings', () => {
   test('workspaceFolderValue wins for resource keys', () => {
     const { settings } = parseSettings(src({ 'fim.maxTokens': { globalValue: 1, workspaceValue: 2, workspaceFolderValue: 3 } }));
     expect(settings.fim.maxTokens).toBe(3);
+  });
+  test('fim.backend default "" means the first completion backend, without a problem', () => {
+    const { settings, problems } = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { defaultValue: '' } }));
+    expect(settings.fim.backendId).toBe('a');
+    expect(problems).toEqual([]);
   });
   test('unknown fim.backend falls back to first backend with a problem', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, 'fim.backend': { workspaceValue: 'nope' } }));
@@ -112,7 +125,7 @@ describe('parseSettings', () => {
       enabled: true, backendId: 'a', debounceMs: null, multiline: 'auto', maxTokens: 128,
       prefixLines: 200, suffixLines: 60, extraContext: true,
       disableInLanguages: ['plaintext'],
-      disableInFiles: ['**/.env', '**/.env.*', '**/*.pem', '**/*.key'],
+      disableInFiles: ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/.npmrc', '**/.pypirc', '**/*.tfvars', '**/*.p12', '**/*.pfx', '**/.netrc', '**/.docker/config.json', '**/id_rsa*', '**/id_ed25519*'],
       skipMidWord: true,
     });
     expect(settings.privacy.localOnly).toBe(false);
@@ -310,5 +323,15 @@ describe('backend use', () => {
     const { settings, problems } = parseSettings(src({ backends: { globalValue: [{ ...B('c'), use: ['completions'] }] }, 'nextEdit.backend': { globalValue: 'c' } }));
     expect(settings.nextEdit.backendId).toBeUndefined();
     expect(problems.join()).toMatch(/nextEdit\.backend: backend "c" is not used for Next Edit/);
+  });
+});
+
+describe('writesToWorkspace', () => {
+  test('a choice goes to user settings unless the workspace already sets the key', () => {
+    expect(writesToWorkspace(undefined)).toBe(false);
+    expect(writesToWorkspace({ defaultValue: '', globalValue: 'a' })).toBe(false);
+    expect(writesToWorkspace({ workspaceFolderValue: 'a' })).toBe(false);
+    expect(writesToWorkspace({ globalValue: 'a', workspaceValue: 'b' })).toBe(true);
+    expect(writesToWorkspace({ workspaceValue: false })).toBe(true);
   });
 });

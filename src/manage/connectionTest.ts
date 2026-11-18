@@ -38,8 +38,10 @@ const INVALID_ANSWER: Record<string, string> = {
   glued: 'a line ran into the next marker',
 };
 export function invalidAnswerText(why: string): string {
-  return `the answer could not be read (${Object.hasOwn(INVALID_ANSWER, why) ? INVALID_ANSWER[why] : 'it was not in the expected format'})`;
+  return `The answer could not be read (${Object.hasOwn(INVALID_ANSWER, why) ? INVALID_ANSWER[why] : 'it was not in the expected format'})`;
 }
+/** Shared lowercase texts (also shown after "<id>: " in the status bar) start a step's sentence with a capital. */
+const sentence = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const MAX_LINES = 16;
 const SHOWN_CHARS = 80;
 
@@ -65,8 +67,8 @@ export interface ConnectionTestResult { steps: TestStep[]; model?: string; info?
 
 /** Fixed text for a failure; never quotes server output. */
 export function explainFailure(err: unknown): { text: string; hint?: string } {
-  if (err instanceof MissingApiKeyError) return { text: 'no API key stored', hint: 'enter the key in the API key field' };
-  if (err instanceof StreamError) return { text: 'the server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message' };
+  if (err instanceof MissingApiKeyError) return { text: 'No API key stored', hint: 'enter the key in the API key field' };
+  if (err instanceof StreamError) return { text: 'The server returned an error', hint: 'turn on aiAutocomplete.debug.logPrompts and test again to log its message' };
   if (err instanceof HttpError) {
     const s = err.status;
     if (s === 401 || s === 403) return { text: `HTTP ${s}`, hint: 'check the API key' };
@@ -74,11 +76,11 @@ export function explainFailure(err: unknown): { text: string; hint?: string } {
     if (s >= 300 && s < 400) return { text: `HTTP ${s}`, hint: 'redirects are not followed' };
     return { text: `HTTP ${s}` };
   }
-  if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return { text: 'timed out' };
+  if ((err as { name?: unknown } | null)?.name === 'TimeoutError') return { text: 'Timed out' };
   const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
-  if (code === 'ECONNREFUSED') return { text: 'connection refused', hint: 'is the server running?' };
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return { text: 'host not found' };
-  return { text: 'request failed' };
+  if (code === 'ECONNREFUSED') return { text: 'Connection refused', hint: 'is the server running?' };
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return { text: 'Host not found' };
+  return { text: 'Request failed' };
 }
 
 /** The server answered the sample completion; a slow or empty answer still is one. The completion steps stop at their first failure or warning (the Next Edit step still runs after one), so a completion step that did not fail means reach passed too. */
@@ -111,7 +113,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const { backend, settings } = i;
     const cfg = backend.config;
     if (i.localOnly && !(await i.isLocal(cfg.baseUrl))) {
-      const text = 'local only is on in this workspace';
+      const text = 'Local only is on in this workspace';
       emit({ id: 'reach', state: 'fail', text }, undefined, text);
       return result;
     }
@@ -151,7 +153,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       stageStart = now();
       const model = cfg.fimModel ?? (info.models.length === 1 ? info.models[0] : undefined);
       if (model === undefined) {
-        emit({ id: 'model', state: 'warn', text: `the server lists ${info.models.length} models; choose one` }, stageStart);
+        emit({ id: 'model', state: 'warn', text: `The server lists ${info.models.length} models; choose one` }, stageStart);
         return;
       }
       result.model = model;
@@ -174,7 +176,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
             hint: noRouteFix(caps.chat, cfg.kind),
           }, stageStart);
         }
-        else emit({ id: 'model', state: 'warn', text: noRouteText(why, cfg.fimMode), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
+        else emit({ id: 'model', state: 'warn', text: sentence(noRouteText(why, cfg.fimMode)), ...(why === 'mode' ? { hint: 'set the prompt mode to auto' } : {}) }, stageStart);
         return;
       }
       // A Template chosen for another model is worth a warning, but the test still shows what this one answers.
@@ -273,9 +275,9 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       const elapsed = now() - stageStart;
       if (settings.debug.logPrompts) i.log.debug(`connection test sample completion: ${JSON.stringify(text)}`);
       if (text === '' && collected.timedOut) {
-        emit({ id: 'completion', state: 'fail', text: 'timed out' }, stageStart, 'timed out');
+        emit({ id: 'completion', state: 'fail', text: 'Timed out' }, stageStart, 'timed out');
       } else if (text === '') {
-        emit({ id: 'completion', state: 'warn', text: 'the server answered but returned no completion' }, stageStart);
+        emit({ id: 'completion', state: 'warn', text: 'The server answered but returned no completion' }, stageStart);
       } else if (collected.timedOut || elapsed > limit) {
         const hint = collected.timedOut ? `timed out after ${TEST_TIMEOUT_MS} ms; only the complete lines are shown` : `slower than the ${limit} ms timeout; run the test again if the model was loading`;
         emit({ id: 'completion', state: 'warn', text: `Test completion in ${elapsed} ms: "${text.slice(0, SHOWN_CHARS)}"`, hint }, stageStart);
@@ -298,7 +300,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
       const window = Object.hasOwn(info.contextWindows, model) ? info.contextWindows[model] : undefined;
       if (window !== undefined) {
         if (values.contextTokens + maxTokens > window) {
-          emit({ id: 'context', state: 'warn', text: `context size ${values.contextTokens} + max tokens ${maxTokens} is more than the server's ${window}` }, stageStart);
+          emit({ id: 'context', state: 'warn', text: `Context size ${values.contextTokens} + max tokens ${maxTokens} is more than the server's ${window}` }, stageStart);
         } else {
           emit({ id: 'context', state: 'ok', text: `Server context window: ${window} tokens` }, stageStart);
         }
@@ -309,7 +311,7 @@ export async function runConnectionTest(i: ConnectionTestInput, onStep: (s: Test
     const nextEditStep = async (listed: ServerInfo): Promise<void> => {
       const model = nextEditModel(cfg, listed.models.length === 1 ? listed.models[0] : undefined);
       if (model === undefined) {
-        emit({ id: 'nextEdit', state: 'warn', text: `the server lists ${listed.models.length} models; choose a Next Edit model` }, stageStart);
+        emit({ id: 'nextEdit', state: 'warn', text: `The server lists ${listed.models.length} models; choose a Next Edit model` }, stageStart);
         return;
       }
       // A Next Edit-only backend has no completion step to detect the model: the page keeps the one the server lists.

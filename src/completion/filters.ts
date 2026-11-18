@@ -24,6 +24,16 @@ export function levenshteinRatio(a: string, b: string): number {
   return prev[b.length] / max;
 }
 
+/**
+ * Whether the Levenshtein ratio of `a` and `b` is under `threshold`. The distance is at least the length difference, so a
+ * difference of `threshold * longer length` or more rules it out without computing the distance.
+ */
+export function nearlySame(a: string, b: string, threshold: number): boolean {
+  const longer = Math.max(a.length, b.length);
+  if (longer > 0 && Math.abs(a.length - b.length) >= threshold * longer) return false;
+  return levenshteinRatio(a, b) < threshold;
+}
+
 const FUZZY_MIN_LENGTH = 4;
 const FUZZY_MAX_RATIO = 0.1;
 const MAX_IDENTICAL_LINES = 3;
@@ -131,7 +141,7 @@ export class CompletionAccumulator {
         if (t === '') continue;
         if (
           t === this.nextLine ||
-          (t.length >= FUZZY_MIN_LENGTH && levenshteinRatio(t, this.nextLine) < FUZZY_MAX_RATIO)
+          (t.length >= FUZZY_MIN_LENGTH && nearlySame(t, this.nextLine, FUZZY_MAX_RATIO))
         ) {
           return { text: complete.slice(0, i).join('\n'), stop: true };
         }

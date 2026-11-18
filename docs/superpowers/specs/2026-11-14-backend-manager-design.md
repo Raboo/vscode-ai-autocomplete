@@ -51,7 +51,7 @@ This reverses the main design's non-goal "a settings webview". That non-goal now
 
 - Command **AI Autocomplete: Manage Backends** (`aiAutocomplete.manageBackends`).
 - Status-bar menu entry "Manage backends...", placed first while no backend is configured.
-- The "no backends configured" notification gets an "Add Backend" button. It opens the page with a new card already in edit mode.
+- The first-run "needs a model" notification has "Set Up Local Model" and "Connect a Server" buttons; the second opens the page with a new card already in edit mode.
 - A command link at the top of the `aiAutocomplete.backends` setting description: `[Manage backends](command:aiAutocomplete.manageBackends)`. VS Code's settings editor opens description links with `allowCommands: true` (checked in `settingsTree.ts`).
 - When a model has no template, clicking the status bar opens the page with that backend's card expanded.
 
@@ -59,7 +59,7 @@ There is one page at a time. Opening it again reveals the existing tab.
 
 **Header line:**
 
-- "Backends", then the general state for this window: completions on or off, and "Local only: on/off in this workspace".
+- "Backends", then a note only when something is unusual for this window: "Completions are off", or the Local only lock.
 - A "General settings..." link opens the Settings page filtered to the extension (`@ext:raboo.ai-autocomplete`).
 - The "+ Add backend" button.
 
@@ -71,7 +71,7 @@ There is one page at a time. Opening it again reveals the existing tab.
   - yellow: a warning, such as no template;
   - red: last test failed;
   - lock: blocked here by local-only.
-- Id, and an "in use" badge on the backend this window completes with.
+- Id, and a "Completions" / "Next Edit" badge on the backend this window uses for each.
 - Server type, URL, model, and "API key set" when one is stored.
 - One line for an offline warning that needs no network, such as "No completion template for this model" or "not used here (local only)".
 - Buttons: Test, Edit, "Use for completions" (hidden on the in-use card), Remove (asks to confirm).
@@ -240,7 +240,7 @@ The test runs in the extension, never in the webview. It uses the form's **unsav
   - updates a user-level `fim.backend` that names the old id;
   - warns if a workspace-level `fim.backend` still does.
 - Remove deletes the entry and its stored key after confirmation.
-- "Use for completions" writes `fim.backend` with the same target rule as **Select Backend**: the workspace when a folder is open, otherwise user settings.
+- "Use for completions" writes `fim.backend` with the same target rule as **Select Completion Backend**: the workspace only when the workspace already sets it, otherwise user settings (so picking never edits a repo's `.vscode/settings.json`).
 - A settings change made outside the page re-renders the cards that are not being edited. A card in edit mode keeps its form, and Save merges onto the fresh read.
 
 ## Webview implementation

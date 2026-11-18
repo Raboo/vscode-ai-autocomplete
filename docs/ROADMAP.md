@@ -10,8 +10,8 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 3a. Next Edit core, chatXtab, native display (v0.3) | Edit history, region, trigger; chatXtab format; ghost text for insertions; native inline edits with the argv.json opt-in | [Phase 3a plan](superpowers/plans/2026-11-15-phase3a-next-edit.md) | released in [v0.3.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.3.0) |
 | 3b. Sweep and Zeta formats, decoration fallback | `sweep` and `zeta21` formats, decoration fallback, the deferred `nextEdit.*` settings | [Phase 3b plan](superpowers/plans/2026-11-16-phase3b-formats-decorations.md) | released in [v0.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.4.0) |
 | 3c. Backend roles | Use for checkboxes per backend (Completions / Next Edit), per-use model fields and pickers, a Next Edit check in Test, Next Edit-only models kept out of ghost text | [Phase 3c plan](superpowers/plans/2026-11-16-backend-roles.md), [design](superpowers/specs/2026-11-16-backend-roles-design.md) | released in [v0.5.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.5.0) |
-| 3d. LM Studio MLX fixes | The leading space MLX drops from completions, the StopIteration error at the token limit | [plan](superpowers/plans/2026-11-16-lmstudio-mlx-fixes.md), [design](superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md) | ships as 0.5.1 |
-| 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | not written yet | not started |
+| 3d. LM Studio MLX fixes | The leading space MLX drops from completions, the StopIteration error at the token limit | [plan](superpowers/plans/2026-11-16-lmstudio-mlx-fixes.md), [design](superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md) | released in [v0.5.1](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.5.1) |
+| 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | [plan](superpowers/plans/2026-11-16-local-model-helper.md), [design](superpowers/specs/2026-11-16-local-model-helper-design.md) | implemented on `feat/local-models` (not merged or released) |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -85,6 +85,18 @@ Phase 3c (check before merging the Phase 3c PR, on its CI `.vsix`; [plan](superp
 - An existing backend without `use` looks and works as before (both boxes ticked).
 - Unticking Completions on the selected completion backend turns completions off, with a problem in the log.
 - The status bar menu reads **Turn off AI Autocomplete**, **Snooze...**, **Completions: <backend>**, **Next Edit: <backend>**; no **Toggle completions on/off**.
-- **Completions → Off** stops ghost text and the entry reads **Completions: off**; with Next Edit on, the status bar stays normal and its tooltip says "Completions off". Picking the backend again brings ghost text back.
+- **Completions → Off** stops ghost text and the entry reads **Completions: off**; with Next Edit on, the status bar stays normal and its tooltip says "Completions: off". Picking the backend again brings ghost text back.
 - **Turn off AI Autocomplete** stops ghost text and Next Edit and shows the off icon; **Turn on AI Autocomplete** brings both back with the same backends.
 - A Sweep v2 backend on LM Studio with both uses ticked: no warning, Test passes the completion steps and the Next Edit step, and ghost text appears (expect the MLX leading-space loss after a word).
+
+Phase 4 (check before merging the `feat/local-models` branch; [plan](superpowers/plans/2026-11-16-local-model-helper.md)):
+
+- Setup with llama-server: Sweep 1.5B, ghost text and Next Edit work.
+- Setup with LM Studio: the model is loaded under the identifier `sweep-next-edit-1.5b`.
+- Restart VS Code with the backend selected: the server comes back.
+- Two windows open on the same local backend: one llama-server process. Close the window that started it: the other takes it over within about 15 s.
+- Select the local backend on the Backends page (or with the picker): its server starts without a reload; select another backend: it stops.
+- After an LM Studio restart, the `-lmstudio` backend still answers, or note here that it needs Set Up again.
+- Stop Local Models (with two windows open: both lose the server, and neither starts it again).
+- Remove Downloaded Models.
+- A cancelled download resumes.

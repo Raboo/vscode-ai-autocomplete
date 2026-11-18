@@ -17,11 +17,10 @@ export function noCompletionBackend(backendCount: number): { state: 'idle' | 'er
   return backendCount === 0 ? { state: 'error', detail: 'No backend configured' } : { state: 'idle', detail: 'No backend is used for completions' };
 }
 
-/** What runs: the status bar shows off only when neither completions nor Next Edit does, and says so when completions alone are off. */
-export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextEdit: { enabled: boolean; backendId?: string } }): { on: boolean; note?: string } {
+/** What runs: the status bar shows off only when neither completions nor Next Edit does. */
+export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextEdit: { enabled: boolean; backendId?: string } }): { on: boolean } {
   const nextEdit = s.nextEdit.enabled && s.nextEdit.backendId !== undefined;
-  if (!s.enabled || (!s.fim.enabled && !nextEdit)) return { on: false };
-  return s.fim.enabled ? { on: true } : { on: true, note: 'Completions off' };
+  return { on: s.enabled && (s.fim.enabled || nextEdit) };
 }
 
 /** An entry of the status bar menu; `id` names the command (`aiAutocomplete.<id>`), except `resume`, which ends a snooze. */
@@ -49,17 +48,20 @@ export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs
 const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
+const SET_UP_LOCAL: MenuEntry = { label: 'Set up local model...', id: 'setUpLocalModel' };
 const SWITCH: MenuEntry = { label: 'Turn off AI Autocomplete', id: 'toggleEnabled' };
 const COMPLETIONS: MenuEntry = { label: 'Completions: off', id: 'selectBackend' };
 const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
 const ENABLE_NATIVE: MenuEntry = { label: 'Enable native Next Edit UI...', id: 'enableNativeNextEdit' };
+/** In group order: Backends, Pause, Help (see menuGroups). */
 const MENU: MenuEntry[] = [
-  SWITCH,
-  { label: 'Snooze...', id: 'snooze' },
   COMPLETIONS,
   NEXT_EDIT,
-  ENABLE_NATIVE,
   MANAGE,
+  SET_UP_LOCAL,
+  ENABLE_NATIVE,
+  SWITCH,
+  { label: 'Snooze...', id: 'snooze' },
   { label: 'Settings...', id: 'openSettings' },
   { label: 'Set API key...', id: 'setApiKey' },
   RETRY,
@@ -67,10 +69,52 @@ const MENU: MenuEntry[] = [
   { label: 'About', id: 'about' },
 ];
 
+const GROUP_OF: Record<string, string> = {
+  selectBackend: 'Backends',
+  selectNextEditBackend: 'Backends',
+  manageBackends: 'Backends',
+  setUpLocalModel: 'Backends',
+  enableNativeNextEdit: 'Backends',
+  toggleEnabled: 'Pause',
+  snooze: 'Pause',
+  openSettings: 'Help',
+  setApiKey: 'Help',
+  retry: 'Help',
+  showLog: 'Help',
+  about: 'Help',
+};
+
+/** A run of menu entries, under a separator named `title`; the entries that lead the menu have none. */
+export interface MenuGroup { title?: string; entries: MenuEntry[] }
+
+/**
+ * menuEntries split for the quick pick's separators: the leading entries (Manage backends and Set up local model with no
+ * backend; Retry now or Resume now) stay first without a heading, then the Backends, Pause and Help groups.
+ */
+export function menuGroups(entries: MenuEntry[]): MenuGroup[] {
+  const groups: MenuGroup[] = [];
+  let i = 0;
+  const lead = (ids: string[]): void => {
+    const run: MenuEntry[] = [];
+    while (i < entries.length && ids.includes(entries[i].id)) run.push(entries[i++]);
+    if (run.length > 0) groups.push({ entries: run });
+  };
+  lead(['manageBackends', 'setUpLocalModel']);
+  lead(['retry', 'resume']);
+  for (; i < entries.length; i++) {
+    const title = GROUP_OF[entries[i].id];
+    const last = groups[groups.length - 1];
+    if (last?.title === title && title !== undefined) last.entries.push(entries[i]);
+    else groups.push({ ...(title !== undefined ? { title } : {}), entries: [entries[i]] });
+  }
+  return groups;
+}
+
 /**
  * The status bar menu for the shown state: "Retry now" comes first while it is an error, "Resume now" while snoozed.
- * "Turn off/on AI Autocomplete" switches completions and Next Edit together; "Completions: <backend>" and "Next Edit: <backend>" (or off) pick each one's backend,
- * then "Enable native Next Edit UI..." unless the native UI is already on. With no backend configured, "Manage backends..." comes first of all.
+ * "Completions: <backend>" and "Next Edit: <backend>" (or off) pick each one's backend; "Set up local model..." follows
+ * "Manage backends...", then "Enable native Next Edit UI..." unless the native UI is already on. "Turn off/on AI Autocomplete"
+ * switches completions and Next Edit together. With no backend configured, Manage backends and Set up local model come first of all.
  */
 export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
   const label = (e: MenuEntry): MenuEntry => {
@@ -81,6 +125,30 @@ export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
   };
   const menu = MENU.filter((e) => !(m.nativeNextEdit && e === ENABLE_NATIVE)).map(label);
   let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
-  if (m.backendCount === 0) list = [MANAGE, ...list.filter((e) => e !== MANAGE)];
+  if (m.backendCount === 0) list = [MANAGE, SET_UP_LOCAL, ...list.filter((e) => e !== MANAGE && e !== SET_UP_LOCAL)];
   return list;
+}
+
+const STATE_NAMES: Record<StatusState, string> = { idle: 'Ready', loading: 'Requesting…', error: 'Error', disabled: 'Turned off', snoozed: 'Snoozed' };
+
+/** A time of day as HH:MM, in local time. */
+export function hhmm(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** The shown state in words; a snooze with an end time (not "until restart") names it. */
+export function stateName(state: StatusState, snoozedUntil: number): string {
+  if (state === 'snoozed' && snoozedUntil < Number.MAX_SAFE_INTEGER) return `Snoozed until ${hhmm(snoozedUntil)}`;
+  return STATE_NAMES[state];
+}
+
+/** The status bar tooltip: the state, its detail, each feature's backend (or off), local-only and the accepted count. */
+export function tooltipLines(o: { shown: LastStatus; snoozedUntil: number; locked: boolean; accepted: number; menu: MenuInputs }): string[] {
+  const lines = [`AI Autocomplete: ${stateName(o.shown.state, o.snoozedUntil)}`];
+  if (o.shown.detail) lines.push(o.shown.detail);
+  lines.push(`Completions: ${o.menu.completionBackend ?? 'off'}`, `Next Edit: ${o.menu.nextEditBackend ?? 'off'}`);
+  if (o.locked) lines.push('Local only: requests go to loopback or private-network hosts only');
+  lines.push(`Accepted this session: ${o.accepted}`);
+  return lines;
 }

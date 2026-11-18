@@ -733,6 +733,11 @@
         "category": "AI Autocomplete"
       },
       {
+        "command": "aiAutocomplete.manageLocalModels",
+        "title": "Manage Local Models",
+        "category": "AI Autocomplete"
+      },
+      {
         "command": "aiAutocomplete.stopLocalModels",
         "title": "Stop Local Models",
         "category": "AI Autocomplete"
@@ -791,6 +796,7 @@
             },
             "completionEvents": [
               "onCommand:aiAutocomplete.setUpLocalModel",
+              "onCommand:aiAutocomplete.manageLocalModels",
               "onCommand:aiAutocomplete.manageBackends"
             ]
           },

@@ -76,6 +76,14 @@ describe('menuEntries', () => {
       }
     }
   });
+  test('with the local backend, the local entry opens the Local Models page in the same place', () => {
+    const list = menuEntries('idle', M({ local: true }));
+    expect(list.find((e) => e.id === 'setUpLocalModel')).toBeUndefined();
+    const at = list.findIndex((e) => e.id === 'manageLocalModels');
+    expect(list[at]).toEqual({ label: 'Local models...', id: 'manageLocalModels' });
+    expect(list[at - 1].id).toBe('manageBackends');
+    expect(menuGroups(list).find((g) => g.title === 'Backends')?.entries.map((e) => e.id)).toContain('manageLocalModels');
+  });
   test('Manage backends and Set up local model come first when no backend exists', () => {
     expect(menuEntries('idle', M({ backendCount: 0 }))[0]).toEqual({ label: 'Manage backends...', id: 'manageBackends' });
     expect(ids('idle', 0)).toEqual(['manageBackends', 'setUpLocalModel', ...BACKENDS, 'enableNativeNextEdit', ...PAUSE, 'openSettings', 'setApiKey', 'retry', 'showLog', 'whyNoSuggestion', 'about']);
@@ -94,6 +102,10 @@ describe('menuInputs', () => {
   });
   test('names both backends', () => {
     expect(menuInputs(S(), false)).toEqual({ backendCount: 2, enabled: true, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: false });
+  });
+  test('says whether the local backend exists', () => {
+    expect(menuInputs({ ...S(), backends: [{ id: 'remote' }, { id: 'local' }] }, false).local).toBe(true);
+    expect(menuInputs(S(), false).local).toBeUndefined();
   });
   test('the entries keep naming their backends while the switch is off', () => {
     expect(menuInputs(S({ enabled: false }), true)).toMatchObject({ enabled: false, completionBackend: 'coder', nextEditBackend: 'strata', nativeNextEdit: true });

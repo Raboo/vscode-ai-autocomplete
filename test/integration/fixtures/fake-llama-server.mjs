@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A stand-in llama-server for the local model integration test. `--help` lists `--models-preset` (router mode). Started
+// A stand-in llama-server for the local model integration test. `--version` prints a version line; `--help` lists `--models-preset` (router mode). Started
 // with `--models-preset <file>` it is a router on 127.0.0.1 at the --port it is given: /health, /props (the router's,
 // or a model's with ?model=), /models (with ?reload=1), /models/load, /models/unload and /infill (with `a + b;`); the
 // models are the section names of the presets file. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1; with
@@ -9,6 +9,11 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import process from 'node:process';
 import { URL } from 'node:url';
+
+if (process.argv.includes('--version')) {
+  process.stdout.write('version: 1 (fake)\nbuilt with a test fixture\n');
+  process.exit(0);
+}
 
 if (process.argv.includes('--help')) {
   process.stdout.write('usage: llama-server [options]\n  --models-preset PATH   models preset file\n  --models-max N\n');

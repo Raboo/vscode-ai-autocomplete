@@ -21,6 +21,12 @@ export function formatBytes(n: number): string {
   return `${Math.max(0, Math.round(n / 2 ** 10))} KB`;
 }
 
+const HF_PAGE = 'https://huggingface.co/';
+/** A link to the repo page on Hugging Face; any other address is never rendered. */
+function hfLink(link: string | undefined): string {
+  return link !== undefined && link.startsWith(HF_PAGE) ? ` <a href="${e(link)}">Open the repo page</a>` : '';
+}
+
 const USE_LABEL: Record<BackendUse, string> = { completions: 'Completions', nextEdit: 'Next Edit' };
 const useList = (uses: BackendUse[]): string => uses.map((u) => USE_LABEL[u]).join(', ');
 const STATE_LABEL = { stopped: 'Stopped', starting: 'Starting', running: 'Running', failed: 'Failed' } as const;
@@ -50,6 +56,7 @@ function updateText(u: UpdateView | undefined): string {
   if (u === 'checking') return 'Checking for an update...';
   if (u === 'upToDate') return 'Up to date';
   if (u === 'gone') return 'The file is no longer in the repo';
+  if ('error' in u) return u.error;
   return `Update available (${formatBytes(u.available.bytes)}${u.available.date ? `, ${u.available.date}` : ''})`;
 }
 
@@ -78,13 +85,14 @@ function modelRow(m: ModelRow): string {
     button('edit', 'Edit', m.name),
     ...(m.builtIn ? [m.hidden ? button('unhide', 'Unhide', m.name) : button('hide', 'Hide', m.name)]
       : [button('checkUpdate', 'Check for update', m.name), button('removeModel', 'Remove from list', m.name, { cls: 'btn link danger' })]),
-    ...(typeof m.update === 'object' ? [button('update', 'Update', m.name, { cls: 'btn primary' })] : []),
+    ...(typeof m.update === 'object' && 'available' in m.update ? [button('update', 'Update', m.name, { cls: 'btn primary' })] : []),
   ];
   const tags = [...(m.usedFor.length > 0 ? [`In use for ${useList(m.usedFor)}`] : []), ...(m.hidden ? ['Hidden'] : [])];
   return `<li class="card${m.hidden ? ' hidden' : ''}" data-model="${e(m.name)}">`
     + `<div class="card-head"><span class="card-title">${e(m.label)}</span><span class="meta">${e(m.name)} · ${e(formatBytes(m.bytes))} · ${e(useList(m.uses))}</span>`
     + (tags.length > 0 ? `<span class="badge">${tags.map(e).join(' · ')}</span>` : '') + `</div>`
-    + `<p class="meta">${e(progress)}${loadText ? ` · ${e(loadText)}` : ''}${m.update !== undefined ? ` · ${e(updateText(m.update))}` : ''}</p>`
+    + `<p class="meta">${e(progress)}${d.kind === 'failed' ? hfLink(d.link) : ''}${loadText ? ` · ${e(loadText)}` : ''}`
+    + `${m.update !== undefined ? ` · ${e(updateText(m.update))}${typeof m.update === 'object' && 'error' in m.update ? hfLink(m.update.link) : ''}` : ''}</p>`
     + (m.mayNotFit ? `<p class="card-warning warn">This model is large for this computer's memory and may not fit.</p>` : '')
     + (d.kind === 'running' ? `<progress max="${e(String(m.bytes))}" value="${e(String(d.received ?? 0))}" aria-label="Download progress"></progress>` : '')
     + `<div class="actions">${buttons.join('')}</div></li>`;
@@ -123,7 +131,7 @@ function addSection(a: AddState | undefined): string {
       + `<div class="actions">${button('addFile', 'Add model', undefined, { cls: 'btn primary', disabled: a?.busy })}</div>` : '';
   return `<section class="section" aria-labelledby="h-add"><h2 id="h-add">Add model</h2>`
     + `<div class="line">${field('add-repo', 'Hugging Face repo (owner/name)', repo)}${button('addRepo', 'List files', undefined, { disabled: a?.busy })}${a ? button('cancel', 'Cancel') : ''}</div>`
-    + (a?.busy ? `<p class="muted" role="status">Working...</p>` : '') + (a?.error ? `<p class="card-warning warn" role="alert">${e(a.error)}</p>` : '') + list + `</section>`;
+    + (a?.busy ? `<p class="muted" role="status">Working...</p>` : '') + (a?.error ? `<p class="card-warning warn" role="alert">${e(a.error)}${hfLink(a.link)}</p>` : '') + list + `</section>`;
 }
 
 function settingsSection(s: LocalPageState): string {
@@ -132,9 +140,16 @@ function settingsSection(s: LocalPageState): string {
     + `<p class="line">Hugging Face token: ${s.settings.tokenSet ? 'set' : 'not set'}${button('setToken', s.settings.tokenSet ? 'Change' : 'Set')}${s.settings.tokenSet ? button('removeToken', 'Remove') : ''}</p></section>`;
 }
 
+function offerSection(o: NonNullable<LocalPageState['offer']>): string {
+  return `<section class="section offer" aria-labelledby="h-offer"><h2 id="h-offer">Get started</h2>`
+    + `<p>${e(o.label)} (${e(formatBytes(o.bytes))}) serves completions and Next Edit on this computer.</p>`
+    + `<div class="actions">${button('setUpDefault', o.busy ? 'Setting up...' : 'Download, start and use it', undefined, { cls: 'btn primary', disabled: o.busy })}</div>`
+    + `<p class="hint">Downloads the model, starts the server, uses it for completions and Next Edit, then tests it.</p></section>`;
+}
+
 export function renderPage(s: LocalPageState): string {
   const problems = s.problems.length > 0 ? `<ul class="card-warning warn problems">${s.problems.map((p) => `<li>${e(p)}</li>`).join('')}</ul>` : '';
-  return `<main><header class="page-head"><h1>Local Models</h1></header>${problems}${server(s)}`
+  return `<main><header class="page-head"><h1>Local Models</h1></header>${problems}${s.offer ? offerSection(s.offer) : ''}${server(s)}`
     + `<section class="section" aria-labelledby="h-models"><h2 id="h-models">Models</h2><ul class="models">${s.models.map(modelRow).join('')}</ul></section>`
     + (s.form ? modelForm(s.form) : '') + addSection(s.add) + settingsSection(s) + `</main>`;
 }

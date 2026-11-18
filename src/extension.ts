@@ -16,11 +16,12 @@ import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
 import { LocalServers } from './local/vscode/servers';
-import { removeLocalModels, setUpLocalModel, type SetupDeps } from './local/vscode/setup';
+import { Downloads, removeLocalModels, setUpLocalModel } from './local/vscode/setup';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
+import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
 import { StatusBar } from './ui/statusBar';
@@ -40,6 +41,7 @@ export function activate(context: vscode.ExtensionContext): {
   status: StatusBar;
   secrets: Secrets;
   backendsPanel: () => BackendsPanel | undefined;
+  localModelsPanel: () => LocalModelsPanel | undefined;
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
   /** Test runs only: swaps the recipes setup offers and the router's presets list. */
@@ -224,13 +226,28 @@ export function activate(context: vscode.ExtensionContext): {
   });
   localServers = servers;
   sub(servers);
-  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, router: servers.pool, openBackend: (id) => manageBackends({ focus: id }) };
+  const downloads = new Downloads();
+  sub({ dispose: () => downloads.cancelAll() });
+  const localDeps: LocalModelsPanelDeps = {
+    context, log, secrets, settings: () => settings, recipes, router: servers.pool, downloads,
+    openBackend: (id) => manageBackends({ focus: id }),
+    openPage: () => manageLocalModels(),
+    showLog: () => channel.show(true),
+  };
+  const manageLocalModels = (): void => {
+    if (vscode.env.remoteName !== undefined) {
+      void vscode.window.showInformationMessage('The local model helper works in local windows only.');
+      return;
+    }
+    LocalModelsPanel.show(localDeps);
+  };
+  sub({ dispose: () => LocalModelsPanel.current()?.dispose() });
 
   for (const d of registerCommands({
     context,
     outcomes,
     localServers: servers,
-    localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
+    localModels: { setUp: (arg) => setUpLocalModel(localDeps, arg), remove: () => removeLocalModels(localDeps), manage: manageLocalModels },
     status,
     secrets,
     channel,
@@ -304,6 +321,7 @@ export function activate(context: vscode.ExtensionContext): {
     status,
     secrets,
     backendsPanel: () => BackendsPanel.current(),
+    localModelsPanel: () => LocalModelsPanel.current(),
     nativeNextEdit: native,
     nextEditPending: () => nextEdit.pendingEdit(),
     ...(context.extensionMode === vscode.ExtensionMode.Test

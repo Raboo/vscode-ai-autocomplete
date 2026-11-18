@@ -65,7 +65,7 @@ function onClick(ev: MouseEvent): void {
   if (!target || (target as HTMLButtonElement).disabled) return;
   const name = target.dataset.name ?? '';
   switch (target.dataset.action) {
-    case 'start': case 'stop': case 'restart': case 'changeModelsDir': case 'setToken': case 'removeToken': case 'openLog':
+    case 'start': case 'stop': case 'restart': case 'changeModelsDir': case 'setToken': case 'removeToken': case 'openLog': case 'setUpDefault':
       return post({ type: target.dataset.action });
     case 'cancel': typed.clear(); checked.clear(); return post({ type: 'cancel' });
     case 'setModelsInMemory': {

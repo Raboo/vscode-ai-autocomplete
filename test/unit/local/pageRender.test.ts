@@ -110,6 +110,27 @@ describe('local models page render', () => {
     expect(html).not.toMatch(/class="add-use" value="completions" checked/);
   });
 
+  test('the default offer is one button that sets it up, disabled while it runs', () => {
+    const html = renderPage(state({ offer: { name: 'sweep', label: 'Sweep <1.5B>', bytes: 2 ** 30, busy: false } }));
+    expect(html).toContain('data-action="setUpDefault"');
+    expect(html).toContain('Sweep &lt;1.5B&gt;');
+    expect(renderPage(state({ offer: { name: 'sweep', label: 'S', bytes: 1, busy: true } }))).toMatch(/data-action="setUpDefault"[^>]* disabled/);
+    expect(renderPage(state())).not.toContain('setUpDefault');
+  });
+
+  test('Hugging Face access errors link to the repo page; other links are never rendered', () => {
+    const link = 'https://huggingface.co/o/r';
+    const add = renderPage(state({ add: { repo: 'o/r', error: 'needs a token', link } }));
+    expect(add).toContain(`<a href="${link}">`);
+    const dl = only(renderPage(state({}, [row({ download: { kind: 'failed', error: 'x', link } })])), 'm1');
+    expect(dl).toContain(`<a href="${link}">`);
+    const up = only(renderPage(state({}, [row({ builtIn: false, update: { error: 'needs a token', link } })])), 'm1');
+    expect(up).toContain('needs a token');
+    expect(up).toContain(`<a href="${link}">`);
+    const bad = renderPage(state({ add: { repo: 'o/r', error: 'x', link: 'javascript:alert(1)' } }));
+    expect(bad).not.toContain('javascript:');
+  });
+
   test('no block element inside a paragraph, no token in the page', () => {
     const html = renderPage(state({ settings: { modelsDir: '/m', tokenSet: true } }, []));
     expect(html).not.toMatch(/<p class="line"><div/);

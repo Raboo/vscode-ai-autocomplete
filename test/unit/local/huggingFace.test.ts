@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { downloadModel } from '../../../src/local/download';
 import {
   HfError,
+  authFor,
   checkUpdate,
   ggufFiles,
   repoCommit,
@@ -44,6 +45,11 @@ describe('tokenHeader', () => {
     expect(tokenHeader(new URL('https://cdn-lfs.huggingface.co/x'), 't')).toEqual({});
     expect(tokenHeader(new URL('http://huggingface.co/x'), 't')).toEqual({});
     expect(tokenHeader(new URL('https://huggingface.co/x'), undefined)).toEqual({});
+  });
+  it('authFor gives the Authorization value per URL, for downloads and API calls alike', () => {
+    expect(authFor('t')(new URL('https://huggingface.co/o/r/resolve/c/f.gguf'))).toBe('Bearer t');
+    expect(authFor('t')(new URL('https://cas-bridge.xethub.hf.co/x'))).toBeUndefined();
+    expect(authFor(undefined)(new URL('https://huggingface.co/x'))).toBeUndefined();
   });
 });
 

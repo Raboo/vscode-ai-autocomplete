@@ -75,4 +75,12 @@ describe('local page state', () => {
     expect(s.models[1]!.download).toEqual({ kind: 'none' });
     expect(s.models[1]!.update).toBe('checking');
   });
+
+  test('the default offer shows while no model is downloaded, and while its setup runs', () => {
+    expect(pageState(input({ offer: { name: 'b', busy: false } })).offer).toEqual({ name: 'b', label: 'b', bytes: GB, busy: false });
+    expect(pageState(input({ offer: { name: 'b', busy: false }, downloads: { a: { kind: 'done' } } })).offer).toBeUndefined();
+    expect(pageState(input({ offer: { name: 'b', busy: true }, downloads: { b: { kind: 'done' } } })).offer).toEqual({ name: 'b', label: 'b', bytes: GB, busy: true });
+    expect(pageState(input({ offer: { name: 'missing', busy: false } })).offer).toBeUndefined();
+    expect(pageState(input()).offer).toBeUndefined();
+  });
 });

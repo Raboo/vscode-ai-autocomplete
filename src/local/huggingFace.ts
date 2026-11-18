@@ -48,15 +48,25 @@ export function tokenHeader(url: URL, token: string | undefined): Record<string,
   return {};
 }
 
+/** The `Authorization` value for a request to this URL (downloads ask per hop, so a redirect to a CDN drops it). */
+export function authFor(token?: string): (u: URL) => string | undefined {
+  return (u) => tokenHeader(u, token).Authorization;
+}
+
 export function pinnedFileUrl(repo: string, revision: string, file: string): string {
   return `${DEFAULT_BASE}/${repo}/resolve/${revision}/${file}`;
+}
+
+function authHeaders(url: URL, token: string | undefined): Record<string, string> {
+  const auth = authFor(token)(url);
+  return auth !== undefined ? { Authorization: auth } : {};
 }
 
 async function get(url: URL, o: HfOptions): Promise<Response> {
   let res: Response;
   try {
     res = await (o.fetchFn ?? fetch)(url, {
-      headers: { accept: 'application/json', ...tokenHeader(url, o.token) },
+      headers: { accept: 'application/json', ...authHeaders(url, o.token) },
       signal: o.signal,
     });
   } catch {

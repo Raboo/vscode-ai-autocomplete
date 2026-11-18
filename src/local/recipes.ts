@@ -101,10 +101,12 @@ export function fitsMemory(r: Recipe, totalMemBytes: number): boolean {
 const SAFE_SEGMENT = (s: string): boolean => s !== '' && s !== '.' && s !== '..' && !/[\\/:]/.test(s);
 
 /**
- * Where the recipe's file goes under the models folder: `<owner>/<name>/<file>`. Undefined when a segment is empty,
+ * Where the recipe's file goes under the models folder: `<owner>/<name>/<file>` (the file may sit in subfolders). Undefined when a segment is empty,
  * `.` or `..`, or holds a slash, backslash or colon, so the path can never leave that folder.
  */
 export function modelPathSegments(r: Pick<Recipe, 'repo' | 'file'>): string[] | undefined {
-  const segments = [...r.repo.split('/'), r.file];
-  return segments.length === 3 && segments.every(SAFE_SEGMENT) ? segments : undefined;
+  const repo = r.repo.split('/');
+  // A file in a repo subfolder (an added model) keeps that relative path.
+  const segments = [...repo, ...r.file.split('/')];
+  return repo.length === 2 && segments.length >= 3 && segments.every(SAFE_SEGMENT) ? segments : undefined;
 }

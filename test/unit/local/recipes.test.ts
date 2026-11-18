@@ -77,11 +77,12 @@ describe('modelPathSegments', () => {
   test('owner, name and file for every shipped recipe', () => {
     for (const x of RECIPES) expect(modelPathSegments(x)).toEqual([...x.repo.split('/'), x.file]);
     expect(modelPathSegments(r('test/test-model', 'test-model.gguf'))).toEqual(['test', 'test-model', 'test-model.gguf']);
+    expect(modelPathSegments(r('o/r', 'sub/a.gguf'))).toEqual(['o', 'r', 'sub', 'a.gguf']);
   });
   test('rejects a path that could leave the models folder', () => {
     for (const [repo, file] of [
       ['../x', 'a.gguf'], ['x/..', 'a.gguf'], ['./x', 'a.gguf'], ['x', 'a.gguf'], ['x/y/z', 'a.gguf'], ['/x', 'a.gguf'], ['x/', 'a.gguf'],
-      ['x\\..', 'a.gguf'], ['x/y', '..'], ['x/y', '.'], ['x/y', ''], ['x/y', 'sub/a.gguf'], ['x/y', '..\\a.gguf'], ['C:/y', 'a.gguf'],
+      ['x\\..', 'a.gguf'], ['x/y', '..'], ['x/y', '.'], ['x/y', ''], ['x/y', 'sub/../a.gguf'], ['x/y', '/a.gguf'], ['x/y', 'sub/'], ['x/y', '..\\a.gguf'], ['C:/y', 'a.gguf'],
     ]) expect(modelPathSegments(r(repo, file)), `${repo} ${file}`).toBeUndefined();
   });
 });

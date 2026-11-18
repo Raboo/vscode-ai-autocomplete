@@ -21,6 +21,8 @@ export interface PageStateInput {
   updates: Record<string, ModelRow['update']>;
   form?: ModelForm;
   add?: AddState;
+  /** The default model to offer on a first run, and whether its one-button setup runs now. */
+  offer?: { name: string; busy: boolean };
 }
 
 /** The page's state from plain data: the token is never part of it, only whether one is set. */
@@ -56,6 +58,10 @@ export function pageState(o: PageStateInput): LocalPageState {
     ? `The ${downloadedSizes.length === 1 ? 'largest model' : `${downloadedSizes.length} largest downloaded models`} together take more than 75% of this computer's memory; loading ${downloadedSizes.length === 1 ? 'it' : 'them'} may slow everything down.`
     : undefined;
 
+  const offered = o.offer ? models.find((m) => m.name === o.offer!.name && !m.hidden) : undefined;
+  const firstRun = !models.some((m) => m.download.kind === 'done');
+  const offer = offered && (firstRun || o.offer!.busy) ? { name: offered.name, label: offered.label, bytes: offered.bytes, busy: o.offer!.busy } : undefined;
+
   return {
     server: {
       ...(o.server.binary !== undefined ? { binary: o.server.binary } : {}),
@@ -71,5 +77,6 @@ export function pageState(o: PageStateInput): LocalPageState {
     models,
     ...(o.form ? { form: o.form } : {}),
     ...(o.add ? { add: o.add } : {}),
+    ...(offer ? { offer } : {}),
   };
 }

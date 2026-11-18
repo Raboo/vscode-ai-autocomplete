@@ -1,8 +1,9 @@
 // Message and view types shared by the extension host and the Local Models page script. A leaf module: type imports only.
 import type { BackendUse } from '../../config/settings';
 
-export type DownloadView = { kind: 'none' | 'running' | 'done' | 'failed'; received?: number; error?: string };
-export type UpdateView = 'checking' | 'upToDate' | 'gone' | { available: { bytes: number; date?: string } };
+/** `link`: the repo page on Hugging Face, shown with an access error (401/403). */
+export type DownloadView = { kind: 'none' | 'running' | 'done' | 'failed'; received?: number; error?: string; link?: string };
+export type UpdateView = 'checking' | 'upToDate' | 'gone' | { available: { bytes: number; date?: string } } | { error: string; link?: string };
 
 export interface ModelRow {
   name: string;
@@ -42,6 +43,7 @@ export interface AddState {
   contextTokens?: number;
   busy?: boolean;
   error?: string;
+  link?: string;
 }
 
 export interface LocalPageState {
@@ -63,6 +65,8 @@ export interface LocalPageState {
   models: ModelRow[];
   form?: ModelForm;
   add?: AddState;
+  /** First run (no model downloaded): the default model, set up with one button. */
+  offer?: { name: string; label: string; bytes: number; busy: boolean };
 }
 
 export type HostMessage = { type: 'state'; state: LocalPageState };
@@ -78,4 +82,5 @@ export type PageMessage =
   | { type: 'addFile'; repo: string; path: string; name: string; uses: BackendUse[]; contextTokens: number }
   | { type: 'checkUpdate'; name: string } | { type: 'update'; name: string }
   | { type: 'changeModelsDir' } | { type: 'setToken' } | { type: 'removeToken' } | { type: 'openLog' }
+  | { type: 'setUpDefault' }
   | { type: 'cancel' };

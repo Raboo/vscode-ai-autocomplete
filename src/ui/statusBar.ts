@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { RequestState, StatusAction, StatusSink, StatusState } from '../completion/requestStatus';
-import { displayState, type LastStatus } from './statusModel';
+import { displayState, tooltipLines, type LastStatus, type MenuInputs } from './statusModel';
 
 const TEXT: Record<StatusState, string> = {
   idle: '$(sparkle) AI',
@@ -14,8 +14,8 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 export interface StatusBarInputs {
   /** Whether completions or Next Edit runs; off shows the disabled state. */
   enabled(): boolean;
-  /** A line for the tooltip about what is off while the rest runs. */
-  note(): string | undefined;
+  /** Each feature's backend, for the tooltip (a feature that is off has none). */
+  menu(): MenuInputs;
   snoozedUntil(): number;
   localOnly(): boolean;
 }
@@ -72,13 +72,7 @@ export class StatusBar implements StatusSink, vscode.Disposable {
     const action = this.shown.state === 'error' && this.last.state === 'error' ? this.last.action : undefined;
     this.item.command = action ? { command: action.command, arguments: action.args, title: 'Open' } : 'aiAutocomplete.menu';
     this.item.text = (this.locked ? '$(lock) ' : '') + TEXT[this.shown.state];
-    const lines = [`AI Autocomplete: ${this.shown.state}`];
-    if (this.shown.detail) lines.push(this.shown.detail);
-    const note = this.shown.state === 'disabled' ? undefined : this.inputs.note();
-    if (note) lines.push(note);
-    if (this.locked) lines.push('Local only: requests go to loopback or private-network hosts only');
-    lines.push(`Accepted this session: ${this.accepted}`);
-    this.item.tooltip = lines.join('\n');
+    this.item.tooltip = tooltipLines({ shown: this.shown, snoozedUntil: until, locked: this.locked, accepted: this.accepted, menu: this.inputs.menu() }).join('\n');
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     const wait = until - now;

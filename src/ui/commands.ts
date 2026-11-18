@@ -8,7 +8,7 @@ import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings'
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
 import type { StatusBar } from './statusBar';
-import { menuEntries, menuInputs } from './statusModel';
+import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -129,9 +129,13 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
   };
   return [
     reg('menu', async () => {
-      const entries = menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit()));
-      const pick = await vscode.window.showQuickPick(entries, { placeHolder: 'AI Autocomplete' });
-      if (!pick) return;
+      const groups = menuGroups(menuEntries(d.status.state(), menuInputs(readSettings().settings, d.nativeNextEdit())));
+      const items = groups.flatMap((g): (vscode.QuickPickItem & { id?: string })[] => [
+        ...(g.title ? [{ label: g.title, kind: vscode.QuickPickItemKind.Separator }] : []),
+        ...g.entries,
+      ]);
+      const pick = await vscode.window.showQuickPick(items, { placeHolder: 'AI Autocomplete' });
+      if (!pick?.id) return;
       if (pick.id === 'resume') await resume();
       else await vscode.commands.executeCommand(`aiAutocomplete.${pick.id}`);
     }),

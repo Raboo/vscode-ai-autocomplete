@@ -43,6 +43,12 @@ np = 1
       expect(() => renderPresets([model({ extraArgs: ['--x', `a${bad}b`] })], pathOf)).toThrow();
     }
   });
+  it('refuses unsafe keys, values, context and paths', () => {
+    for (const extraArgs of [['--a=b'], ['--[x]'], ['--;x'], ['--x', '[sec]'], ['--x', ';c']])
+      expect(() => renderPresets([model({ extraArgs })], pathOf)).toThrow();
+    for (const contextTokens of [0, -1, 1.5, NaN]) expect(() => renderPresets([model({ contextTokens })], pathOf)).toThrow();
+    expect(() => renderPresets([mellum], () => 'rel/m.gguf')).toThrow();
+  });
   it('refuses unsafe section names', () => {
     for (const name of ['a]b', '[a', 'a\nb']) expect(() => renderPresets([model({ name })], pathOf)).toThrow();
   });

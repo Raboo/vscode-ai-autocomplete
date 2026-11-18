@@ -1,4 +1,5 @@
 // llama-server router mode: the presets file the extension writes, the arguments to start it and a small client for its HTTP API.
+import { isAbsolute } from 'node:path';
 import { extraArgsToPreset } from './extraArgs';
 import type { LocalModel } from './modelList';
 
@@ -18,9 +19,16 @@ function sectionName(name: string): string {
 export function renderPresets(models: LocalModel[], filePath: (m: LocalModel) => string): string {
   const lines = ['version = 1', '', '[*]', 'ngl = 99', 'fa = on', 'cache-reuse = 256'];
   for (const m of models) {
+    if (!Number.isInteger(m.contextTokens) || m.contextTokens < 1) throw new Error('presets: context must be a positive integer');
+    const file = safe(filePath(m), 'path');
+    if (!isAbsolute(file)) throw new Error('presets: model path must be absolute');
     const slots = m.uses.includes('nextEdit') ? 2 : 1;
-    lines.push('', `[${sectionName(m.name)}]`, `model = ${safe(filePath(m), 'path')}`, `c = ${m.contextTokens * slots}`, `np = ${slots}`);
-    for (const [key, value] of extraArgsToPreset(m.extraArgs)) lines.push(`${safe(key, 'key')} = ${safe(value, 'value')}`);
+    lines.push('', `[${sectionName(m.name)}]`, `model = ${file}`, `c = ${m.contextTokens * slots}`, `np = ${slots}`);
+    for (const [key, value] of extraArgsToPreset(m.extraArgs)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(key)) throw new Error('presets: unsafe key');
+      if (/^[[;]/.test(value)) throw new Error('presets: unsafe value');
+      lines.push(`${key} = ${safe(value, 'value')}`);
+    }
   }
   return `${lines.join('\n')}\n`;
 }

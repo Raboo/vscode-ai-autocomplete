@@ -21,6 +21,7 @@ import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
+import { LEGACY_MANAGED_KEY, MIGRATED_KEY } from './local/migrate';
 import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
@@ -45,7 +46,7 @@ export function activate(context: vscode.ExtensionContext): {
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
   /** Test runs only: swaps the recipes setup offers and the router's presets list. */
-  local?: { setRecipes(r: Recipe[] | undefined): void };
+  local?: { setRecipes(r: Recipe[] | undefined): void; rerunMigration(legacy: unknown): Promise<void> };
 } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
@@ -329,6 +330,12 @@ export function activate(context: vscode.ExtensionContext): {
           local: {
             setRecipes: (r: Recipe[] | undefined) => {
               testRecipes = r;
+            },
+            // Seeds the old per-model server records and clears the done flag, then runs the migration again.
+            rerunMigration: async (legacy: unknown) => {
+              await context.globalState.update(LEGACY_MANAGED_KEY, legacy);
+              await context.globalState.update(MIGRATED_KEY, undefined);
+              await servers.migrate();
             },
           },
         }

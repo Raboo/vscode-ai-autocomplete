@@ -4,7 +4,9 @@
 // or a model's with ?model=), /models (with ?reload=1), /models/load, /models/unload and /infill (with `a + b;`); the
 // models are the section names of the presets file. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1; with
 // FAKE_LLAMA_SERVER_EXIT_ONCE=<path> it does so only while that file exists, deleting it (the next start works). With
-// FAKE_LLAMA_SERVER_STARTS=<path> it appends its pid to that file once it listens.
+// FAKE_LLAMA_SERVER_STARTS=<path> it appends its pid to that file once it listens. With FAKE_LLAMA_SERVER_ARGS=<path> it appends
+// its arguments (one JSON line) at start; with FAKE_LLAMA_SERVER_LOG=<path> it appends one JSON line `{path, body}` per
+// request to /infill, /models/load and /models/unload.
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import process from 'node:process';
@@ -26,6 +28,7 @@ const arg = (name) => {
 };
 
 const exitOnce = process.env.FAKE_LLAMA_SERVER_EXIT_ONCE;
+if (process.env.FAKE_LLAMA_SERVER_ARGS) appendFileSync(process.env.FAKE_LLAMA_SERVER_ARGS, `${JSON.stringify(process.argv.slice(2))}\n`);
 const failNow = process.env.FAKE_LLAMA_SERVER_EXIT === '1' || (exitOnce !== undefined && existsSync(exitOnce));
 if (exitOnce !== undefined && existsSync(exitOnce)) unlinkSync(exitOnce);
 if (failNow) {
@@ -68,6 +71,9 @@ const server = createServer((req, res) => {
         return undefined;
       }
     };
+    if (process.env.FAKE_LLAMA_SERVER_LOG && ['/infill', '/models/load', '/models/unload'].includes(path)) {
+      appendFileSync(process.env.FAKE_LLAMA_SERVER_LOG, `${JSON.stringify({ path, body })}\n`);
+    }
     if (path === '/health') {
       json(res, 200, { status: 'ok' });
     } else if (path === '/props') {

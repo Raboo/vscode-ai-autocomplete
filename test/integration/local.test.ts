@@ -8,13 +8,15 @@ import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { Recipe } from '../../src/local/recipes';
 import type { SetupOutcome } from '../../src/local/vscode/setup';
-import { clearAsked, commitWhen, configure, registerProbe, showAtEnd, sleep, SETTLE_MS, trigger, unconfigure } from './helpers';
+import { clearAsked, commitWhen, configure, registerProbe, showAtEnd, sleep, SETTLE_MS, trigger, unconfigure, waitFor } from './helpers';
 import { startMockServer, type MockServer } from './mockServer';
 
 /** The part of the extension's `activate()` result these tests use. */
 interface Api {
-  local?: { setRecipes(r: Recipe[] | undefined): void };
+  local?: { setRecipes(r: Recipe[] | undefined): void; rerunMigration(legacy: unknown): Promise<void> };
+  localModelsPanel(): { handle(m: unknown): Promise<void>; lastState(): PageState | undefined } | undefined;
 }
+type PageState = import('../../src/local/page/protocol').LocalPageState;
 
 const ROOT = join(__dirname, '..', '..', '..');
 const FIXTURE = join(ROOT, 'test', 'integration', 'fixtures', 'fake-llama-server.mjs');
@@ -28,6 +30,8 @@ const BACKEND_ID = 'local';
 const EXIT_ENV = 'FAKE_LLAMA_SERVER_EXIT';
 const EXIT_ONCE_ENV = 'FAKE_LLAMA_SERVER_EXIT_ONCE';
 const STARTS_ENV = 'FAKE_LLAMA_SERVER_STARTS';
+const ARGS_ENV = 'FAKE_LLAMA_SERVER_ARGS';
+const LOG_ENV = 'FAKE_LLAMA_SERVER_LOG';
 /** Every setting a test may write; teardown resets them. */
 const TOUCHED = ['backends', 'completions.backend', 'completions.enabled', 'completions.debounceMs', 'nextEdit.backend', 'nextEdit.enabled', 'local.llamaServerPath'];
 
@@ -239,5 +243,69 @@ suite('Local model helper', () => {
     } finally {
       delete process.env[EXIT_ENV];
     }
+  });
+
+  test('the Local Models page: download, Start with the router arguments, Use for completions, a completion names the model', async () => {
+    await unconfigure(['backends', 'completions.backend']);
+    rmSync(join(MODELS, 'test'), { recursive: true, force: true });
+    const args = join(binDir, 'args-page');
+    const log = join(binDir, 'log-page');
+    writeFileSync(args, '');
+    writeFileSync(log, '');
+    process.env[ARGS_ENV] = args;
+    process.env[LOG_ENV] = log;
+    try {
+      await vscode.commands.executeCommand('aiAutocomplete.manageLocalModels');
+      const state = (): PageState | undefined => api.localModelsPanel?.()?.lastState();
+      const row = () => state()?.models.find((m) => m.name === 'test-coder');
+      assert.ok(await waitFor(() => row() !== undefined, 10_000), 'the page shows no test-coder row');
+      const panel = api.localModelsPanel!()!;
+
+      await panel.handle({ type: 'download', name: 'test-coder' });
+      assert.ok(await waitFor(() => row()?.download.kind === 'done', 15_000), `download state: ${JSON.stringify(row()?.download)}`);
+      assert.equal(downloads().length, 1);
+      assert.ok(existsSync(join(MODELS, 'test', 'test-model', 'test-model.gguf')));
+
+      await panel.handle({ type: 'start' });
+      assert.ok(await waitFor(() => state()?.server.state === 'running', 15_000), `server state: ${state()?.server.state}`);
+      const [argv] = readFileSync(args, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as string[]);
+      const at = (flag: string): string | undefined => argv?.[argv.indexOf(flag) + 1];
+      assert.equal(at('--models-preset'), PRESETS);
+      assert.equal(at('--models-max'), '1');
+      assert.equal(at('--host'), '127.0.0.1');
+      assert.equal(at('--port'), String(state()?.server.port));
+
+      await panel.handle({ type: 'use', name: 'test-coder', uses: ['completions'] });
+      assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').get('completions.backend'), BACKEND_ID);
+      assert.equal(entry()?.model, 'test-coder');
+      assert.ok(await waitFor(() => (row()?.usedFor ?? []).includes('completions'), 10_000), 'the row does not show the use');
+
+      await sleep(SETTLE_MS);
+      const editor = await showAtEnd(await vscode.workspace.openTextDocument({ language: 'typescript', content: 'function add(a: number, b: number) {\n  return ' }));
+      await trigger(editor);
+      await commitWhen(editor, (t) => t.endsWith('return a + b;'));
+      assert.ok(editor.document.getText().endsWith('return a + b;'), `document text: ${JSON.stringify(editor.document.getText())}`);
+      const infill = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { path: string; body: string }).filter((r) => r.path === '/infill');
+      assert.ok(infill.length > 0, 'the router got no /infill request');
+      assert.equal((JSON.parse(infill[0]!.body) as { model?: string }).model, 'test-coder');
+    } finally {
+      delete process.env[ARGS_ENV];
+      delete process.env[LOG_ENV];
+    }
+  });
+
+  test('an old local-test backend that was selected moves to local on activation', async () => {
+    await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
+    await unconfigure(['backends', 'completions.backend']);
+    await configure({
+      backends: [{ id: 'local-test', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:59999', model: 'test-coder' }],
+      'completions.backend': 'local-test',
+    });
+    await sleep(500);
+    await local().rerunMigration([{ backendId: 'local-test', recipeId: 'test', port: 59999 }]);
+    assert.equal(userBackends().find((b) => b.id === 'local-test'), undefined, 'the old entry is still there');
+    assert.equal(entry()?.model, 'test-coder');
+    assert.equal(vscode.workspace.getConfiguration('aiAutocomplete').inspect('completions.backend')?.globalValue, BACKEND_ID);
+    await vscode.commands.executeCommand('aiAutocomplete.stopLocalModels');
   });
 });

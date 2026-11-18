@@ -172,7 +172,7 @@ export class LocalServers implements vscode.Disposable {
   }
 
   /** Old `local-<recipe>` llama-server backends move to `local`, once (a flag in global state). Never throws. */
-  private async migrate(): Promise<void> {
+  async migrate(): Promise<void> {
     const state = this.d.context.globalState;
     if (state.get(MIGRATED_KEY) === true) return;
     try {

@@ -163,6 +163,8 @@ interface Slot {
   modelsMax: number;
   /** Settles when the start that owns this slot has finished, either way. */
   settled: Promise<void>;
+  /** The record this window's start replaced: another window's router, when two windows started at once. */
+  replaced?: ManagedServer;
 }
 
 /**
@@ -246,6 +248,8 @@ export class ServerPool {
       slot.proc = proc;
       void proc.exited.then(() => this.exitedUnasked(slot, proc));
       this.d.log.debug(`llama-server: router ready on port ${port}`);
+      const replaced = this.managed();
+      if (replaced) slot.replaced = replaced;
       try {
         await this.d.writeManaged({ port, ...(proc.pid !== undefined ? { pid: proc.pid } : {}), presetsPath: this.d.presetsPath, modelsMax: slot.modelsMax });
       } catch (err) {
@@ -429,7 +433,7 @@ export class ServerPool {
     }
     // Two windows started at once: ours passed its health check against the other window's router on the same port,
     // then exited when it could not bind it. That router serves this window too.
-    if (await this.adoptAfterExit(proc.port)) return;
+    if (await this.adoptAfterExit(slot, proc)) return;
     const info = proc.exitInfo?.();
     this.d.log.error(`llama-server exited unexpectedly${info ? ` (${info})` : ''}.${formatTail(proc.lastOutput?.() ?? [])}`);
     this.failed = `llama-server exited unexpectedly${info ? ` (${info})` : ''}.`;
@@ -438,7 +442,8 @@ export class ServerPool {
   }
 
   /** After this window's router exited: adopts our router when one serves `port` (and no start is under way here). */
-  private async adoptAfterExit(port: number): Promise<boolean> {
+  private async adoptAfterExit(ended: Slot, proc: RunningServer): Promise<boolean> {
+    const port = proc.port;
     if (this.slot || this.disposed) return false;
     let names: string[];
     try {
@@ -459,8 +464,25 @@ export class ServerPool {
       return false;
     }
     this.d.log.info(`llama-server: another window's router took port ${port}; using it`);
+    await this.forgetDeadPid(ended, proc);
     this.adopt(slot, port);
     return true;
+  }
+
+  /**
+   * After a lost start race the record names this window's dead process: the winner's record (the one this start
+   * replaced) is put back when its pid is alive on the same port, else the dead pid is cleared.
+   */
+  private async forgetDeadPid(ended: Slot, proc: RunningServer): Promise<void> {
+    const rec = this.managed();
+    if (!rec || proc.pid === undefined || rec.pid !== proc.pid) return;
+    const prev = ended.replaced;
+    const winner = prev && prev.port === rec.port && prev.pid !== undefined && prev.pid !== proc.pid && this.d.alive(prev.pid) ? prev : undefined;
+    try {
+      await this.d.writeManaged(winner ?? withoutPid(rec));
+    } catch (err) {
+      this.d.log.error('local models: saving the router failed', err);
+    }
   }
 
   /** Removes `slot` (when it is still the current one) without stopping anything. */

@@ -384,6 +384,37 @@ describe('ServerPool', () => {
     expect(logs.map((l) => l.m)).toContain('llama-server: using the router already running on port 8012');
   });
 
+  test("after a lost start race the record names the winner's pid again, and Stop Local Models from the losing window stops the winner", async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const states: Record<number, PortState> = {};
+    const WINNER = 900;
+    const { pool, errors, managed, setManaged, terminated } = setup({ launch, probe: portStates(states), alive: (pid) => pid === WINNER });
+    // The winner recorded its router a moment before this window's process passed its health check (against the winner).
+    setManaged(record(8012, WINNER));
+    await pool.start();
+    expect(managed()).toEqual(record(8012, launched[0].child.pid));
+    states[8012] = 'ours';
+    launched[0].child.exit();
+    await tick(5);
+    expect(errors()).toEqual([]);
+    expect(managed()).toEqual(record(8012, WINNER));
+    expect(pool.state()).toBe('running');
+    await pool.stopEverywhere();
+    expect(terminated).toEqual([WINNER]);
+  });
+
+  test('after a lost start race with no winner record to restore, the dead pid is cleared from the record', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const states: Record<number, PortState> = {};
+    const { pool, managed } = setup({ launch, probe: portStates(states) });
+    await pool.start();
+    states[8012] = 'ours';
+    launched[0].child.exit();
+    await tick(5);
+    expect(pool.state()).toBe('running');
+    expect(managed()).toEqual(record(8012));
+  });
+
   test('a restart of a loading router waits for the old child to exit (SIGKILL after the grace period) before choosing the port', async () => {
     const { launch, launched } = fakeLaunch({ ignoreTerm: true });
     const oldExitedWhenAsked: boolean[] = [];

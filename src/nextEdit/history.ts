@@ -243,7 +243,8 @@ export class RecentSnippets {
     const size = Math.min(this.lines, lines.length);
     const start = Math.max(0, Math.min(centerLine - Math.floor(size / 2), lines.length - size));
     this.snippets = this.snippets.filter((s) => s.path !== path);
-    this.snippets.push({ path, text: lines.slice(start, start + size).join('\n') });
+    const text = lines.slice(start, start + size).join('\n');
+    this.snippets.push({ path, text: start + size < lines.length ? `${text}\n...` : text });
     if (this.snippets.length > this.max) this.snippets.splice(0, this.snippets.length - this.max);
   }
 

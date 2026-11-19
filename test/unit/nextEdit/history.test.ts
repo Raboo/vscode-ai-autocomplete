@@ -83,9 +83,20 @@ test('RecentSnippets trims to 20 lines around the center line', () => {
   const lines = Array.from({ length: 100 }, (_, i) => `l${i}`);
   s.add('a', lines, 50);
   const t = s.pick('', 10000)[0].text.split('\n');
-  expect(t).toHaveLength(20);
+  expect(t).toHaveLength(21);
   expect(t).toContain('l50');
   expect(t[0]).toBe('l40');
+  expect(t[19]).toBe('l59');
+  expect(t[20]).toBe('...');
+});
+
+test('RecentSnippets adds no ... when the window ends at the last line', () => {
+  const s = new RecentSnippets();
+  const lines = Array.from({ length: 100 }, (_, i) => `l${i}`);
+  s.add('a', lines, 99);
+  const t = s.pick('', 10000)[0].text.split('\n');
+  expect(t).toHaveLength(20);
+  expect(t[19]).toBe('l99');
 });
 
 test('RecentSnippets.pick skips the excluded path and keeps the newest that fit the budget, returned oldest first', () => {

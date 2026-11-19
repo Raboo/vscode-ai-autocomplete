@@ -186,8 +186,8 @@ describe('chatXtabFormat', () => {
   it('is a chat format whose region takes the configured sizes', () => {
     expect(chatXtabFormat.id).toBe('chatXtab');
     expect(chatXtabFormat.transport).toBe('chat');
-    expect(chatXtabFormat.region(10, 100, { above: 2, below: 3 })).toEqual({ start: 8, end: 13 });
-    expect(chatXtabFormat.region(10, 100, { above: 5, below: 10 })).toEqual({ start: 5, end: 20 });
+    expect(chatXtabFormat.region(10, Array(100).fill(''), { above: 2, below: 3 })).toEqual({ start: 8, end: 13 });
+    expect(chatXtabFormat.region(10, Array(100).fill(''), { above: 5, below: 10 })).toEqual({ start: 5, end: 20 });
   });
 
   it('wraps the prompt, the done check and the parser', () => {

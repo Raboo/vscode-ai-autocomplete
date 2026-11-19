@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { clipAroundRegion, editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
+import { clipAroundRegion, editableRegion, nextEditBudgets, regionByChars } from '../../../src/nextEdit/region';
 
 const lines = (n: number): string[] => Array.from({ length: n }, () => '123456789');
 
@@ -44,4 +44,23 @@ test('clip ends at a last page shorter than 10 lines', () => {
   // 95 lines: region 80-89 snaps to page 80-89; below only page 90-94 (5 lines) exists
   expect(clipAroundRegion(lines(95), { start: 82, end: 87 }, 1000)).toEqual({ start: 40, end: 94 });
   expect(clipAroundRegion(lines(95), { start: 88, end: 92 }, 400)).toEqual({ start: 70, end: 94 });
+});
+
+test('regionByChars grows below first, then alternates', () => {
+  expect(regionByChars(lines(100), 10, 55, 40)).toEqual({ start: 8, end: 12 });
+});
+test('regionByChars at the first line grows only below, at the last only above', () => {
+  expect(regionByChars(lines(100), 0, 55, 40)).toEqual({ start: 0, end: 4 });
+  expect(regionByChars(lines(100), 99, 55, 40)).toEqual({ start: 95, end: 99 });
+});
+test('regionByChars returns a file under the budget whole', () => {
+  expect(regionByChars(lines(5), 2, 1000, 40)).toEqual({ start: 0, end: 4 });
+});
+test('regionByChars never exceeds maxLines', () => {
+  expect(regionByChars(lines(100), 50, 100000, 7)).toEqual({ start: 47, end: 53 });
+});
+test('regionByChars keeps a cursor line over the budget alone', () => {
+  const ls = lines(10);
+  ls[5] = 'x'.repeat(100);
+  expect(regionByChars(ls, 5, 50, 40)).toEqual({ start: 5, end: 5 });
 });

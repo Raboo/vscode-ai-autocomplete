@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { pickFormat } from '../../../src/nextEdit/formats';
 import type { NextEditInput } from '../../../src/nextEdit/formats/format';
-import { markerBlocks, zeta21Format } from '../../../src/nextEdit/formats/zeta21';
+import { regionByChars } from '../../../src/nextEdit/region';
+import { markerBlocks, zeta21Format, ZETA_REGION_CHARS, ZETA_REGION_LINES } from '../../../src/nextEdit/formats/zeta21';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
 
 // Our own fixture (from a live probe): circle.py with `area(r)` renamed to `area(radius)`, the cursor at the end of `def circumference(r):`.
@@ -49,19 +50,16 @@ describe('markerBlocks', () => {
     expect(markerBlocks([])).toEqual([0]);
   });
 
-  it('a block ends after 16 lines', () => {
-    expect(markerBlocks(Array.from({ length: 20 }, (_, n) => `l${n}`))).toEqual([0, 16]);
-    expect(markerBlocks(Array.from({ length: 16 }, (_, n) => `l${n}`))).toEqual([0]);
-    expect(markerBlocks(Array.from({ length: 33 }, (_, n) => `l${n}`))).toEqual([0, 16, 32]);
+  it('splits into ceil(n / 16) near-equal blocks, larger first', () => {
+    const n = (k: number) => Array.from({ length: k }, (_, x) => `l${x}`);
+    expect(markerBlocks(n(16))).toEqual([0]);
+    expect(markerBlocks(n(31))).toEqual([0, 16]);
+    expect(markerBlocks(n(17))).toEqual([0, 9]);
+    expect(markerBlocks(n(40))).toEqual([0, 14, 27]);
   });
 
-  it('a block ends at a non-blank line after a blank one once it has 6 lines', () => {
-    expect(markerBlocks(['a', 'b', 'c', 'd', 'e', 'f', '', 'g'])).toEqual([0, 7]);
-  });
-
-  it('a blank line before line 3 does not split', () => {
-    expect(markerBlocks(['a', '', 'b', 'c'])).toEqual([0]);
-    expect(markerBlocks(['a', 'b', '', 'c', 'd', 'e', 'f'])).toEqual([0]);
+  it('blank lines do not split', () => {
+    expect(markerBlocks(['a', 'b', 'c', 'd', 'e', 'f', '', 'g'])).toEqual([0]);
   });
 });
 
@@ -104,9 +102,9 @@ describe('zeta21 prompt', () => {
       '<[fim-suffix]>\n' +
         '<[fim-prefix]><filename>circle.py\n' +
         '<|marker_1|><|user_cursor|>l0\n' +
-        lines.slice(1, 16).join('\n') +
+        lines.slice(1, 10).join('\n') +
         '\n<|marker_2|>' +
-        lines.slice(16).join('\n') +
+        lines.slice(10).join('\n') +
         '<|marker_3|>\n<[fim-middle]>',
     );
   });
@@ -161,9 +159,18 @@ describe('zeta21 prompt', () => {
     expect(promptOf(big).maxTokens).toBe(1024);
   });
 
-  it('region uses the settings sizes', () => {
-    expect(zeta21Format.region(10, 100, { above: 3, below: 7 })).toEqual({ start: 7, end: 17 });
-    expect(zeta21Format.region(0, 3, { above: 5, below: 10 })).toEqual({ start: 0, end: 2 });
+  it('region ignores size and is sized by characters', () => {
+    const lines = Array.from({ length: 100 }, () => '123456789');
+    expect(zeta21Format.region(10, lines, { above: 3, below: 7 })).toEqual(regionByChars(lines, 10, ZETA_REGION_CHARS, ZETA_REGION_LINES));
+    expect(zeta21Format.region(0, ['a', 'b', 'c'], { above: 5, below: 10 })).toEqual({ start: 0, end: 2 });
+  });
+
+  it('a 31-line region has markers 1, 2 (at line 16) and the closing 3', () => {
+    const ls = Array.from({ length: 31 }, (_, n) => `l${n}`);
+    const p = promptOf(input({ lines: ls, region: { start: 0, end: 30 }, cursor: { line: 40, character: 0 }, history: [] })).prompt;
+    expect(p).toContain('<|marker_1|>l0\n');
+    expect(p).toContain('\n<|marker_2|>l16\n');
+    expect(p).toContain('l30<|marker_3|>');
   });
 
   it('is registered', () => {
@@ -208,20 +215,20 @@ describe('zeta21 parse', () => {
   it('a span over the second block keeps the first', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|>X<|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 16), 'X'] });
+    expect(parse('<|marker_2|>X<|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
   });
 
   it('a span over the first block keeps the second', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_1|>X\n<|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: ['X', ...lines.slice(16)] });
+    expect(parse('<|marker_1|>X\n<|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: ['X', ...lines.slice(10)] });
   });
 
   it('an empty answer between two markers deletes the lines, also at the end of the region', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|><|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(0, 16) });
-    expect(parse('<|marker_1|><|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(16) });
+    expect(parse('<|marker_2|><|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(0, 10) });
+    expect(parse('<|marker_1|><|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(10) });
   });
 
   it('the same marker twice is no change even with text between', () => {
@@ -260,7 +267,7 @@ describe('zeta21 parse', () => {
   it('markers between the first and the last are dropped from the text', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    const a = parse(`<|marker_1|>${lines.slice(0, 16).join('\n')}\n<|marker_2|>${lines.slice(16).join('\n')}X<|marker_3|>`, i);
+    const a = parse(`<|marker_1|>${lines.slice(0, 10).join('\n')}\n<|marker_2|>${lines.slice(10).join('\n')}X<|marker_3|>`, i);
     expect(a).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 19), 'l19X'] });
   });
 });
@@ -289,7 +296,7 @@ describe('zeta21 parse, region at the end of a file that ends with a newline', (
   it('deleting the last block keeps the final newline', () => {
     const long = [...Array.from({ length: 19 }, (_, n) => `l${n}`), ''];
     const at = input({ lines: long, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|><|marker_3|>', at)).toEqual({ kind: 'rewrite', lines: [...long.slice(0, 16), ''] });
+    expect(parse('<|marker_2|><|marker_3|>', at)).toEqual({ kind: 'rewrite', lines: [...long.slice(0, 10), ''] });
   });
 });
 

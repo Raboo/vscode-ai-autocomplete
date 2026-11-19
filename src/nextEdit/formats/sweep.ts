@@ -141,7 +141,7 @@ export function sweepFormat(variant: Variant): CompletionFormat {
   return {
     id: 'sweep',
     transport: 'completion',
-    region: (cursorLine, lineCount) => editableRegion(cursorLine, lineCount, WINDOW_ABOVE, WINDOW_BELOW),
+    region: (cursorLine, lines) => editableRegion(cursorLine, lines.length, WINDOW_ABOVE, WINDOW_BELOW),
     problem: (i) => problem(variant, i),
     prompt: variant === 'v2' ? promptV2 : promptV1,
     parse: (answer, i) => parse(variant, answer, i),

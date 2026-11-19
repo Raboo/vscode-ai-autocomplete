@@ -538,7 +538,7 @@
             "minimum": 0,
             "maximum": 20,
             "default": 5,
-            "description": "Lines above the cursor the model may rewrite.",
+            "description": "Lines above the cursor the model may rewrite. Not used by Zeta 2.1, which sizes its region by length.",
             "order": 6
           },
           "aiAutocomplete.nextEdit.regionLinesBelow": {
@@ -547,7 +547,7 @@
             "minimum": 0,
             "maximum": 40,
             "default": 10,
-            "description": "Lines below the cursor the model may rewrite.",
+            "description": "Lines below the cursor the model may rewrite. Not used by Zeta 2.1, which sizes its region by length.",
             "order": 7
           },
           "aiAutocomplete.nextEdit.historySize": {

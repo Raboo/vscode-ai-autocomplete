@@ -37,7 +37,7 @@ function renameCase(path: string, typed: string): NextEditInput | undefined {
       path,
       lines,
       cursor,
-      region: format.region(i, lines.length, { above: 5, below: 10 }),
+      region: format.region(i, lines, { above: 5, below: 10 }),
       history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] }],
       snippets: [],
       budgets: nextEditBudgets(3500),
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
           const input = renameCase(path, typed);
           if (!input) return undefined;
           const format = pickFormat('auto', model) as CompletionFormat;
-          const p = format.prompt({ ...input, region: format.region(input.cursor.line, input.lines.length, { above: 5, below: 10 }) });
+          const p = format.prompt({ ...input, region: format.region(input.cursor.line, input.lines, { above: 5, below: 10 }) });
           return backend.streamFim(request(model, { payload: { route: 'template', prompt: p.prompt }, slot: 'nextEdit', stop: p.stop, sampling: { temperature: 0, maxTokens: p.maxTokens } }));
         }
         const { prefix, suffix } = completionCase(path, typed);

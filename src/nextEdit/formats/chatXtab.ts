@@ -131,7 +131,7 @@ export function chatXtabDone(text: string): boolean {
 export const chatXtabFormat: ChatFormat = {
   id: 'chatXtab',
   transport: 'chat',
-  region: (cursorLine, lineCount, size) => editableRegion(cursorLine, lineCount, size.above, size.below),
+  region: (cursorLine, lines, size) => editableRegion(cursorLine, lines.length, size.above, size.below),
   problem: regionProblem,
   messages: chatXtabMessages,
   done: chatXtabDone,

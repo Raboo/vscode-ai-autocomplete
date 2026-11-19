@@ -508,7 +508,7 @@ export class NextEditController implements vscode.Disposable {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region: format.region(at.line, lines.length, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
+        region: format.region(at.line, lines, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
         // Read only: the history is not flushed, so a warm-up never commits an entry.
         history: this.history.entries(extra ? undefined : (p) => p === path),
         snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
@@ -633,7 +633,7 @@ export class NextEditController implements vscode.Disposable {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region: format.region(at.line, lines.length, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
+        region: format.region(at.line, lines, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
         history: [],
         snippets: [],
         budgets,

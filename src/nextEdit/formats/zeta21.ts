@@ -1,5 +1,5 @@
 // The prompt layout follows the format described on the zed-industries/zeta-2.1 model card (Apache-2.0); no code is copied from any implementation.
-import { clipAroundRegion, editableRegion, type LineSpan } from '../region';
+import { clipAroundRegion, regionByChars, type LineSpan } from '../region';
 import { hasReserved, newestThatFit, pickSnippets, tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
 
 const EOS = '<[end▁of▁sentence]>';
@@ -7,23 +7,23 @@ const CURSOR = '<|user_cursor|>';
 const RESERVED = ['<[fim-', '<filename>', '<|marker_', CURSOR, EOS];
 
 const MAX_BLOCK_LINES = 16;
-const MIN_BLOCK_LINES = 6;
+export const ZETA_REGION_CHARS = 1225;
+export const ZETA_REGION_LINES = 40;
 const MAX_HISTORY_ENTRIES = 6;
 
-const isBlank = (line: string): boolean => line.trim() === '';
 const reserved = (...texts: string[]): boolean => hasReserved(texts, RESERVED);
 const take = (lines: string[], span: LineSpan): string[] => (span.end < span.start ? [] : lines.slice(span.start, span.end + 1));
 
-/** The 0-based line indexes where marker blocks start: after 16 lines, or at a non-blank line after a blank one once the block has 6 lines. */
+/** The 0-based line indexes where marker blocks start: ceil(n / 16) blocks of near-equal size, the larger first. */
 export function markerBlocks(lines: string[]): number[] {
-  const starts = [0];
-  let blockStart = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const size = i - blockStart;
-    if (size >= MAX_BLOCK_LINES || (size >= MIN_BLOCK_LINES && !isBlank(lines[i]) && isBlank(lines[i - 1]))) {
-      starts.push(i);
-      blockStart = i;
-    }
+  const count = Math.max(1, Math.ceil(lines.length / MAX_BLOCK_LINES));
+  const base = Math.floor(lines.length / count);
+  const extra = lines.length % count;
+  const starts: number[] = [];
+  let at = 0;
+  for (let k = 0; k < count; k++) {
+    starts.push(at);
+    at += base + (k < extra ? 1 : 0);
   }
   return starts;
 }
@@ -120,7 +120,7 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
 export const zeta21Format: CompletionFormat = {
   id: 'zeta21',
   transport: 'completion',
-  region: (cursorLine, lineCount, size) => editableRegion(cursorLine, lineCount, size.above, size.below),
+  region: (cursorLine, lines) => regionByChars(lines, cursorLine, ZETA_REGION_CHARS, ZETA_REGION_LINES),
   problem,
   prompt,
   parse,

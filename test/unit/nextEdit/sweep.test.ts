@@ -119,9 +119,9 @@ describe('sweep format basics', () => {
   });
 
   it('v1 window is 10 above and 10 below, clipped', () => {
-    expect(v1.region(12, 30, { above: 5, below: 10 })).toEqual({ start: 2, end: 22 });
-    expect(v1.region(1, 5, { above: 5, below: 10 })).toEqual({ start: 0, end: 4 });
-    expect(v2.region(29, 30, { above: 1, below: 1 })).toEqual({ start: 19, end: 29 });
+    expect(v1.region(12, Array(30).fill(''), { above: 5, below: 10 })).toEqual({ start: 2, end: 22 });
+    expect(v1.region(1, Array(5).fill(''), { above: 5, below: 10 })).toEqual({ start: 0, end: 4 });
+    expect(v2.region(29, Array(30).fill(''), { above: 1, below: 1 })).toEqual({ start: 19, end: 29 });
   });
 });
 

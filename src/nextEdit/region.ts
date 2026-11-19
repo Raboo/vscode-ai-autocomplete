@@ -19,6 +19,45 @@ export function editableRegion(cursorLine: number, lineCount: number, above = RE
   return { start, end };
 }
 
+/**
+ * A region sized by length: the cursor line, then lines alternately below and
+ * above (below first) while the total stays within `maxChars` (each line costs
+ * length + 1) and `maxLines`. A side that does not fit stops; at a file edge the
+ * other side keeps growing. A cursor line over the budget is the region alone.
+ */
+export function regionByChars(lines: string[], cursorLine: number, maxChars: number, maxLines: number): LineSpan {
+  if (lines.length === 0) return { start: 0, end: 0 };
+  const lastLine = lines.length - 1;
+  const cursor = Math.min(Math.max(0, cursorLine), lastLine);
+  let start = cursor;
+  let end = cursor;
+  let used = lines[cursor].length + 1;
+  let belowOpen = true;
+  let aboveOpen = true;
+  let turnBelow = true;
+  while ((belowOpen || aboveOpen) && end - start + 1 < maxLines) {
+    const below = turnBelow;
+    turnBelow = !turnBelow;
+    if (below ? !belowOpen : !aboveOpen) continue;
+    const next = below ? end + 1 : start - 1;
+    if (next < 0 || next > lastLine) {
+      if (below) belowOpen = false;
+      else aboveOpen = false;
+      continue;
+    }
+    const cost = lines[next].length + 1;
+    if (used + cost > maxChars) {
+      if (below) belowOpen = false;
+      else aboveOpen = false;
+      continue;
+    }
+    used += cost;
+    if (below) end = next;
+    else start = next;
+  }
+  return { start, end };
+}
+
 /** Prompt budgets in chars for the file, the edit history and the viewed snippets. */
 export interface NextEditBudgets { fileChars: number; historyChars: number; snippetsChars: number }
 

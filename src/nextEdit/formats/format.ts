@@ -23,7 +23,7 @@ export type FormatAnswer = { kind: 'rewrite'; lines: string[] } | { kind: 'noCha
 interface FormatBase {
   id: FormatId;
   /** The lines the model may rewrite. `size` is the settings' lines above and below the cursor. */
-  region(cursorLine: number, lineCount: number, size: { above: number; below: number }): LineSpan;
+  region(cursorLine: number, lines: string[], size: { above: number; below: number }): LineSpan;
   /** Why this input cannot be sent in this format, or undefined. */
   problem(input: NextEditInput): string | undefined;
 }

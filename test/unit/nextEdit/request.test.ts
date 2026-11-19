@@ -79,7 +79,7 @@ function stubFormat(answer: (text: string) => FormatAnswer = () => ({ kind: 'noC
     id: 'sweep',
     transport: 'completion',
     parsed,
-    region: (c, n) => editableRegion(c, n),
+    region: (c, n) => editableRegion(c, n.length),
     problem: () => undefined,
     prompt: () => ({ prompt: 'P', prefill: 'pre\n', stop: ['<|x|>'], maxTokens: 99 }),
     parse: (text) => {
@@ -280,7 +280,7 @@ describe('runNextEdit with a completion format', () => {
     const lines = Array.from({ length: 30 }, (_, n) => `line ${n}`);
     const format = sweepFormat('v2');
     const input: NextEditInput = {
-      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines.length, { above: 5, below: 10 }),
+      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines, { above: 5, below: 10 }),
       history: [], snippets: [], budgets: nextEditBudgets(3500),
     };
     const snap = { uri: 'file:///a.py', version: 1, input };

@@ -9,7 +9,7 @@ import type { DownloadView, HostMessage, LocalPageState, PageMessage } from '../
 import { RouterClient, type RouterModel } from '../local/router';
 import { LocalModelsActions } from '../local/vscode/localModelsActions';
 import { downloadedPath, modelsDir, realEnv } from '../local/vscode/servers';
-import { defaultModelName, localModels, settingUp, type LocalDeps } from '../local/vscode/setup';
+import { defaultModelName, localModels, overridesNow, settingUp, type LocalDeps } from '../local/vscode/setup';
 
 export type LocalModelsPanelDeps = LocalDeps & { showLog(): void };
 
@@ -205,7 +205,7 @@ export class LocalModelsPanel implements vscode.Disposable {
           ...(binary !== undefined ? { binary } : {}), ...(version !== undefined ? { version } : {}),
           ...(view.modelsInMemoryError !== undefined ? { modelsInMemoryError: view.modelsInMemoryError } : {}),
         },
-        modelsDir: dir, tokenSet, totalMem: totalmem(), updates: view.updates,
+        modelsDir: dir, tokenSet, totalMem: totalmem(), updates: view.updates, overrides: overridesNow(),
         ...(view.form ? { form: view.form } : {}), ...(view.add ? { add: view.add } : {}),
         ...(offerName !== undefined ? { offer: { name: offerName, busy: settingUp() } } : {}),
       });

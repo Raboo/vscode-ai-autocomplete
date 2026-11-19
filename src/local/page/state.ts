@@ -3,7 +3,7 @@ import { LOCAL_BACKEND_ID } from '../backendEntry';
 import type { LocalModel } from '../modelList';
 import type { RouterModel } from '../router';
 import type { PoolState } from '../serverPool';
-import type { AddState, LocalPageState, ModelForm, ModelRow } from './protocol';
+import type { AddState, LocalPageState, ModelForm, ModelRow, PageOverride } from './protocol';
 
 const NO_DOWNLOAD: ModelRow['download'] = { kind: 'none' };
 
@@ -15,6 +15,8 @@ export interface PageStateInput {
   routerModels: RouterModel[] | undefined;
   settings: Settings;
   server: { state: PoolState; failure?: string; port?: number; log: string[]; binary?: string; version?: string; modelsInMemoryError?: string };
+  /** Uses that workspace or folder settings select another backend for. */
+  overrides?: PageOverride[];
   modelsDir: string;
   tokenSet: boolean;
   totalMem: number;
@@ -35,10 +37,12 @@ export function pageState(o: PageStateInput): LocalPageState {
     return o.routerModels!.find((m) => m.id === name)?.state ?? 'unloaded';
   };
 
+  // What applies in this window: `settings` is the effective value (folder over workspace over user settings).
+  const selected = (use: 'fim' | 'nextEdit'): boolean => o.settings[use].enabled && o.settings[use].backendId === LOCAL_BACKEND_ID;
   const models: ModelRow[] = o.models.map((m) => {
     const usedFor: ModelRow['usedFor'] = [];
-    if (local?.fimModel === m.name) usedFor.push('completions');
-    if (local?.nextEditModel === m.name) usedFor.push('nextEdit');
+    if (local?.fimModel === m.name && selected('fim')) usedFor.push('completions');
+    if (local?.nextEditModel === m.name && selected('nextEdit')) usedFor.push('nextEdit');
     const update = o.updates[m.name];
     return {
       name: m.name, label: m.label, bytes: m.bytes, uses: m.uses, builtIn: m.builtIn, hidden: m.hidden,
@@ -48,7 +52,6 @@ export function pageState(o: PageStateInput): LocalPageState {
     };
   });
 
-  const selected = (use: 'fim' | 'nextEdit'): boolean => o.settings[use].enabled && o.settings[use].backendId === LOCAL_BACKEND_ID;
   const swapWarning = local !== undefined && selected('fim') && selected('nextEdit')
     && local.fimModel !== undefined && local.nextEditModel !== undefined && local.fimModel !== local.nextEditModel && inMemory < 2;
 
@@ -72,6 +75,7 @@ export function pageState(o: PageStateInput): LocalPageState {
       modelsInMemory: inMemory, log: o.server.log, swapWarning,
       ...(o.server.modelsInMemoryError !== undefined ? { modelsInMemoryError: o.server.modelsInMemoryError } : {}),
       ...(memoryWarning !== undefined ? { memoryWarning } : {}),
+      ...(o.overrides && o.overrides.length > 0 ? { overrides: o.overrides.map((x) => ({ use: x.use, value: x.value, level: x.level })) } : {}),
     },
     settings: { modelsDir: o.modelsDir, tokenSet: o.tokenSet },
     problems: o.problems,

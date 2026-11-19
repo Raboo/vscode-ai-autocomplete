@@ -49,6 +49,7 @@ function server(s: LocalPageState): string {
     + `<p class="hint">Changing this restarts the server from this window.</p>`
     + (v.swapWarning ? `<p class="card-warning warn">Completions and Next Edit use different models; with 1 model in memory the server swaps between them (seconds each). Use one model for both, or set Models in memory to 2.</p>` : '')
     + (v.memoryWarning ? `<p class="card-warning warn">${e(v.memoryWarning)}</p>` : '')
+    + (v.overrides ?? []).map((o) => `<p class="card-warning warn">In this workspace, ${o.use === 'completions' ? 'completions use' : 'Next Edit uses'} ${e(o.value)} (set in ${o.level === 'workspace' ? 'workspace' : 'folder'} settings).</p>`).join('')
     + log + `</section>`;
 }
 

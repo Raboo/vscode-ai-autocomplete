@@ -34,6 +34,8 @@ export interface ModelForm {
   error?: string;
 }
 
+export interface PageOverride { use: BackendUse; value: string; level: 'workspace' | 'workspaceFolder' }
+
 export interface AddFile { path: string; bytes: number; supported: boolean; reason?: string }
 export interface AddState {
   repo?: string;
@@ -61,6 +63,8 @@ export interface LocalPageState {
     modelsInMemoryError?: string;
     swapWarning: boolean;
     memoryWarning?: string;
+    /** Uses that workspace or folder settings select another backend for (Use for… does not apply in this window). */
+    overrides?: PageOverride[];
   };
   settings: { modelsDir: string; tokenSet: boolean };
   /** The model-list problems from merging the settings. */

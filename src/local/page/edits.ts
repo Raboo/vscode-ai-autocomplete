@@ -235,3 +235,44 @@ export function addModelEdits(o: {
   };
   return { models: [...listOf(o.entries), entry] };
 }
+
+/** A setting's values per level, as `inspect()` gives them. */
+export interface SettingLevels { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown }
+/** A use whose backend workspace or folder settings select, so a user-settings selection does not apply in this window. */
+export interface WorkspaceOverride {
+  use: BackendUse;
+  /** The backend id the workspace selects (any value, as text). */
+  value: string;
+  level: 'workspace' | 'workspaceFolder';
+  /** The key to write `local` to at that level. */
+  key: string;
+  /** The old name of the key, set at that level: removed when `local` is written. */
+  oldKey?: string;
+}
+
+const SELECT_KEYS: readonly { use: BackendUse; key: string; oldKey?: string }[] = [
+  { use: 'completions', key: 'completions.backend', oldKey: 'fim.backend' },
+  { use: 'nextEdit', key: 'nextEdit.backend' },
+];
+
+/**
+ * The uses whose selection workspace or folder settings decide (folder over workspace; the new key name over the old one
+ * at a level) with a backend other than `local`. Use for… writes user settings, which do not apply to these.
+ */
+export function workspaceOverrides(inspect: (key: string) => SettingLevels | undefined): WorkspaceOverride[] {
+  const out: WorkspaceOverride[] = [];
+  for (const k of SELECT_KEYS) {
+    for (const level of ['workspaceFolder', 'workspace'] as const) {
+      const field = `${level}Value` as const;
+      const n = inspect(k.key)?.[field];
+      const o = k.oldKey !== undefined ? inspect(k.oldKey)?.[field] : undefined;
+      const v = n ?? o;
+      if (v === undefined) continue;
+      if (v !== LOCAL_BACKEND_ID) {
+        out.push({ use: k.use, value: typeof v === 'string' ? v : JSON.stringify(v), level, key: k.key, ...(o !== undefined && k.oldKey ? { oldKey: k.oldKey } : {}) });
+      }
+      break;
+    }
+  }
+  return out;
+}

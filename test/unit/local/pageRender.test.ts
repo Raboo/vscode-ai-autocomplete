@@ -59,6 +59,14 @@ describe('local models page render', () => {
     expect(only(renderPage(state({}, [row({ hidden: true })])), 'm1')).toContain('data-action="unhide"');
   });
 
+  test('a workspace override gets one line per use, escaped', () => {
+    const html = renderPage(state({ server: { state: 'stopped', modelsInMemory: 1, log: [], swapWarning: false, overrides: [
+      { use: 'completions', value: '<b>codestral</b>', level: 'workspace' }, { use: 'nextEdit', value: 'x', level: 'workspaceFolder' },
+    ] } }));
+    expect(html).toContain('In this workspace, completions use &lt;b&gt;codestral&lt;/b&gt; (set in workspace settings).');
+    expect(html).toContain('In this workspace, Next Edit uses x (set in folder settings).');
+  });
+
   test('server section: warnings, note, token never shown', () => {
     const html = renderPage(state({ server: { state: 'running', port: 8012, modelsInMemory: 1, log: ['l1'], swapWarning: true, memoryWarning: 'mem' } }));
     expect(html).toContain('different models');

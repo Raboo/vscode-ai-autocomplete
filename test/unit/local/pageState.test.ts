@@ -57,6 +57,17 @@ describe('local page state', () => {
     expect(pageState(input()).models.map((m) => m.load)).toEqual(['n/a', 'n/a']);
   });
 
+  test('usedFor is the selection that applies in this window: a use selecting another backend (workspace settings) or turned off is not shown', () => {
+    expect(pageState(input({ settings: settings({ fim: { backendId: 'codestral' } }) })).models.map((m) => m.usedFor)).toEqual([[], ['nextEdit']]);
+    expect(pageState(input({ settings: settings({ nextEdit: { enabled: false } }) })).models.map((m) => m.usedFor)).toEqual([['completions'], []]);
+  });
+
+  test('workspace overrides are passed to the page', () => {
+    const overrides = [{ use: 'completions' as const, value: 'codestral', level: 'workspace' as const }];
+    expect(pageState(input({ overrides })).server.overrides).toEqual(overrides);
+    expect(pageState(input()).server.overrides).toBeUndefined();
+  });
+
   test('server fields, hint, problems and the token', () => {
     const s = pageState(input({ problems: ['p'], tokenSet: true, server: { state: 'failed', failure: 'too old', port: 8012, log: ['x'], binary: '/bin/ls', version: '1' } }));
     expect(s.server).toMatchObject({ state: 'failed', hint: 'too old', port: 8012, log: ['x'], binary: '/bin/ls', version: '1', modelsInMemory: 1 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { LocalModel } from '../../../src/local/modelList';
 import {
-  addModelEdits, modelForm, otherOverridesMatch, overrideKey, removeModelEdits, saveModelEdits, unhideEdits, useEdits,
+  addModelEdits, modelForm, otherOverridesMatch, overrideKey, removeModelEdits, saveModelEdits, unhideEdits, useEdits, workspaceOverrides,
 } from '../../../src/local/page/edits';
 import type { ModelForm } from '../../../src/local/page/protocol';
 
@@ -144,5 +144,38 @@ describe('unhideEdits and addModelEdits', () => {
     expect(addModelEdits({ ...base, uses: [] })).toHaveProperty('error');
     expect(addModelEdits({ ...base, contextTokens: 0 })).toHaveProperty('error');
     expect(addModelEdits({ ...base, file: { path: 'a.gguf', bytes: 1, supported: false } })).toHaveProperty('error');
+  });
+});
+
+describe('workspaceOverrides', () => {
+  type L = { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown };
+  const from = (m: Record<string, L>) => (key: string): L | undefined => m[key];
+
+  test('none when only user settings select a backend, or the workspace selects local', () => {
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local' }, 'nextEdit.backend': { globalValue: 'x' } }))).toEqual([]);
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'x', workspaceValue: 'local' } }))).toEqual([]);
+  });
+
+  test('the new name in workspace settings', () => {
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local', workspaceValue: 'codestral' } })))
+      .toEqual([{ use: 'completions', value: 'codestral', level: 'workspace', key: 'completions.backend' }]);
+  });
+
+  test('the old fim.backend name counts, and is named for removal; the new name wins at the same level', () => {
+    expect(workspaceOverrides(from({ 'fim.backend': { workspaceValue: 'local-mellum-4b' } })))
+      .toEqual([{ use: 'completions', value: 'local-mellum-4b', level: 'workspace', key: 'completions.backend', oldKey: 'fim.backend' }]);
+    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'codestral' }, 'fim.backend': { workspaceValue: 'local-mellum-4b' } })))
+      .toEqual([{ use: 'completions', value: 'codestral', level: 'workspace', key: 'completions.backend', oldKey: 'fim.backend' }]);
+  });
+
+  test('folder settings win over workspace settings', () => {
+    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceValue: 'a', workspaceFolderValue: 'b' } })))
+      .toEqual([{ use: 'nextEdit', value: 'b', level: 'workspaceFolder', key: 'nextEdit.backend' }]);
+    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceValue: 'a', workspaceFolderValue: 'local' } }))).toEqual([]);
+  });
+
+  test('both uses', () => {
+    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'a' }, 'nextEdit.backend': { workspaceValue: 'b' } })).map((o) => o.use))
+      .toEqual(['completions', 'nextEdit']);
   });
 });

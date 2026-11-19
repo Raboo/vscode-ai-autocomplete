@@ -40,9 +40,14 @@ function hunksOf(path: string, before: string, after: string): StructuredPatchHu
 }
 
 /** The 3-context hunk text for the base-to-after change; the zero-context text (minus its file headers) when the diff exceeds the budget. */
-function contextTextOf(path: string, before: string, after: string, zeroText: string): string {
+export function contextTextOf(path: string, before: string, after: string, zeroText: string): string {
   const hunks = structuredPatch(path, path, norm(before), norm(after), '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
-  return hunks === undefined || hunks.length === 0 ? zeroText.split('\n').slice(2).join('\n') : render(path, hunks).split('\n').slice(2).join('\n');
+  return withoutFileHeader(hunks === undefined || hunks.length === 0 ? zeroText : render(path, hunks));
+}
+
+/** A rendered diff without its two `---`/`+++` lines. */
+export function withoutFileHeader(diff: string): string {
+  return diff.split('\n').slice(2).join('\n');
 }
 
 function toDiffHunks(hunks: StructuredPatchHunk[]): DiffHunk[] {
@@ -128,8 +133,8 @@ interface Entry {
   hunks: DiffHunk[];
   /** The file text the entry started from, so a follow-up edit on the same line can be re-rendered against it. */
   base: string;
-  /** The newest text of the file this entry covers. */
-  after: string;
+  /** The 3-context hunk text, computed once when the entry is recorded. */
+  contextText: string;
   firstOldStart: number;
 }
 
@@ -178,12 +183,14 @@ export class EditHistory {
           this.stale.add(path); // the edits cancelled out
           return;
         }
-        this.list.push({ ...last, text: render(path, merged), after: text, hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
+        const mergedText = render(path, merged);
+        this.list.push({ ...last, text: mergedText, contextText: contextTextOf(path, last.base, text, mergedText), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
         this.stale.delete(path);
         return;
       }
     }
-    this.list.push({ path, text: render(path, hunks), hunks: toDiffHunks(hunks), base: before, after: text, firstOldStart: hunks[0].oldStart });
+    const rendered = render(path, hunks);
+    this.list.push({ path, text: rendered, contextText: contextTextOf(path, before, text, rendered), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
     this.stale.delete(path);
   }
 
@@ -206,7 +213,7 @@ export class EditHistory {
 
   /** Oldest first. */
   entries(filter?: (path: string) => boolean): DiffEntry[] {
-    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks, contextText: contextTextOf(e.path, e.base, e.after, e.text) }));
+    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks, contextText: e.contextText }));
   }
 
   /** The file before the change its newest entry records, as lines, with that entry's hunks. `undefined` when the path has no entry or a later commit of it recorded none. */

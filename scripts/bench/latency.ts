@@ -12,7 +12,7 @@ import { LlamaCppBackend } from '../../src/backends/llamacpp';
 import type { FimRequest } from '../../src/backends/types';
 import { pickFormat } from '../../src/nextEdit/formats';
 import { formatBudgets, type CompletionFormat, type NextEditInput } from '../../src/nextEdit/formats/format';
-import { renderDiff } from '../../src/nextEdit/history';
+import { renderDiff, withoutFileHeader } from '../../src/nextEdit/history';
 
 const FILES = ['src/local/router.ts', 'src/local/extraArgs.ts', 'src/completion/outcomes.ts', 'src/nextEdit/trigger.ts', 'src/local/modelList.ts', 'src/backends/llamacpp.ts'];
 
@@ -37,7 +37,7 @@ function renameCase(path: string, typed: string): NextEditInput | undefined {
       lines,
       cursor,
       region: format.region(i, lines, { above: 5, below: 10 }),
-      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }], contextText: text.split('\n').slice(2).join('\n') }],
+      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }], contextText: withoutFileHeader(text) }],
       snippets: [],
       budgets: formatBudgets(format, 3500),
       previous: { lines: before, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] },

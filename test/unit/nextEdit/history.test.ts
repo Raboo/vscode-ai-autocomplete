@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { EditHistory, recentEditsFile, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
+import { contextTextOf, EditHistory, recentEditsFile, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
 
 test('renderDiff renders zero-context hunks with 1-based numbers', () => {
   expect(renderDiff('f.py', 'a\nb\nc\n', 'a\nB\nc\n')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
@@ -407,4 +407,14 @@ test('a merged entry contextText covers the base-to-newest change', () => {
   h.commit('f', lines.join('\n') + '\n');
   expect(h.entries()).toHaveLength(1);
   expect(h.entries()[0].contextText).toBe('@@ -7,7 +7,7 @@\n l7\n l8\n l9\n-l10\n+XY10\n l11\n l12\n l13');
+});
+
+test('contextTextOf falls back to the zero-context text when the context diff exceeds the budget', () => {
+  const before = Array.from({ length: 3000 }, (_, i) => `a${i}`).join('\n') + '\n';
+  const after = Array.from({ length: 3000 }, (_, i) => `b${i}`).join('\n') + '\n';
+  expect(contextTextOf('f', before, after, '--- f\n+++ f\n@@ -1,1 +1,1 @@\n-x\n+y')).toBe('@@ -1,1 +1,1 @@\n-x\n+y');
+});
+
+test('contextTextOf falls back when the texts are equal', () => {
+  expect(contextTextOf('f', 'a\n', 'a\n', '--- f\n+++ f\n@@ -1,1 +1,1 @@\n-x\n+y')).toBe('@@ -1,1 +1,1 @@\n-x\n+y');
 });

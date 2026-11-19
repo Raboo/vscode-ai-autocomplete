@@ -14,6 +14,8 @@ export interface DiffEntry {
   path: string;
   text: string;
   hunks: DiffHunk[];
+  /** The change with 3 context lines and real hunk headers, without the `---`/`+++` lines (Zeta 2.1's history format). */
+  contextText: string;
 }
 
 export interface Snippet {
@@ -35,6 +37,12 @@ function norm(s: string): string {
 /** Zero-context hunks, or `undefined` when the change exceeds the diff budget. */
 function hunksOf(path: string, before: string, after: string): StructuredPatchHunk[] | undefined {
   return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+}
+
+/** The 3-context hunk text for the base-to-after change; the zero-context text (minus its file headers) when the diff exceeds the budget. */
+function contextTextOf(path: string, before: string, after: string, zeroText: string): string {
+  const hunks = structuredPatch(path, path, norm(before), norm(after), '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+  return hunks === undefined || hunks.length === 0 ? zeroText.split('\n').slice(2).join('\n') : render(path, hunks).split('\n').slice(2).join('\n');
 }
 
 function toDiffHunks(hunks: StructuredPatchHunk[]): DiffHunk[] {
@@ -120,6 +128,8 @@ interface Entry {
   hunks: DiffHunk[];
   /** The file text the entry started from, so a follow-up edit on the same line can be re-rendered against it. */
   base: string;
+  /** The newest text of the file this entry covers. */
+  after: string;
   firstOldStart: number;
 }
 
@@ -168,12 +178,12 @@ export class EditHistory {
           this.stale.add(path); // the edits cancelled out
           return;
         }
-        this.list.push({ ...last, text: render(path, merged), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
+        this.list.push({ ...last, text: render(path, merged), after: text, hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
         this.stale.delete(path);
         return;
       }
     }
-    this.list.push({ path, text: render(path, hunks), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
+    this.list.push({ path, text: render(path, hunks), hunks: toDiffHunks(hunks), base: before, after: text, firstOldStart: hunks[0].oldStart });
     this.stale.delete(path);
   }
 
@@ -196,7 +206,7 @@ export class EditHistory {
 
   /** Oldest first. */
   entries(filter?: (path: string) => boolean): DiffEntry[] {
-    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks }));
+    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks, contextText: contextTextOf(e.path, e.base, e.after, e.text) }));
   }
 
   /** The file before the change its newest entry records, as lines, with that entry's hunks. `undefined` when the path has no entry or a later commit of it recorded none. */

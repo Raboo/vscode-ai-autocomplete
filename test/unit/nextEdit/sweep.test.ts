@@ -50,7 +50,7 @@ const input = (over: Partial<NextEditInput> = {}): NextEditInput => ({
   lines: FILE,
   cursor: { line: 12, character: 19 },
   region: { start: 2, end: 22 },
-  history: [{ path: 'circle.py', text: '(ignored by sweep)', hunks: [hunk] }],
+  history: [{ path: 'circle.py', text: '(ignored by sweep)', hunks: [hunk], contextText: '' }],
   snippets: [{ path: 'util/clamp.py', text: 'def clamp(x):\n    return x' }],
   budgets: nextEditBudgets(3500),
   previous: { lines: previousLines(), hunks: [hunk] },
@@ -299,7 +299,7 @@ describe('sweep budgets', () => {
 
   it('keeps the newest hunks that fit the history budget, oldest first', () => {
     const budgets = { fileChars: 1500, historyChars: 120, snippetsChars: 1000 };
-    const p = completion(v1, input({ history: [{ path: 'circle.py', text: '', hunks: manyHunks(6) }], snippets: [], budgets, previous: undefined })).prompt;
+    const p = completion(v1, input({ history: [{ path: 'circle.py', text: '', hunks: manyHunks(6), contextText: '' }], snippets: [], budgets, previous: undefined })).prompt;
     // One v1 block is "<|file_sep|>circle.py.diff\noriginal:\nold5\nupdated:\nnew5" = 55 chars, plus 1 for its separator: two fit in 120, three do not.
     expect(p).not.toContain('old3');
     expect(p).toContain('old4');
@@ -375,7 +375,7 @@ describe('sweep reserved strings', () => {
       { oldStart: 5, newStart: 5, oldLines: ['two'], newLines: ['<|file_sep|>'] },
       { oldStart: 9, newStart: 9, oldLines: ['three'], newLines: ['tres'] },
     ];
-    const p = completion(v1, input({ history: [{ path: 'circle.py', text: '', hunks }], snippets: [], previous: undefined })).prompt;
+    const p = completion(v1, input({ history: [{ path: 'circle.py', text: '', hunks, contextText: '' }], snippets: [], previous: undefined })).prompt;
     expect(p).toContain('uno');
     expect(p).toContain('tres');
     expect(p).not.toContain('two');

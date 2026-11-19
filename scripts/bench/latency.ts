@@ -37,7 +37,7 @@ function renameCase(path: string, typed: string): NextEditInput | undefined {
       lines,
       cursor,
       region: format.region(i, lines, { above: 5, below: 10 }),
-      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] }],
+      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }], contextText: text.split('\n').slice(2).join('\n') }],
       snippets: [],
       budgets: formatBudgets(format, 3500),
       previous: { lines: before, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] },

@@ -11,7 +11,7 @@ function input(over: Partial<NextEditInput> = {}): NextEditInput {
     lines: fileLines,
     cursor: { line: 12, character: 4 },
     region: { start: 8, end: 14 },
-    history: [{ path: 'src/a.ts', text: '--- src/a.ts\n+++ src/a.ts\n-x\n+y', hunks: [] }],
+    history: [{ path: 'src/a.ts', text: '--- src/a.ts\n+++ src/a.ts\n-x\n+y', hunks: [], contextText: '' }],
     snippets: [{ path: 'src/b.ts', text: 'export const b = 1;' }],
     budgets: nextEditBudgets(3500),
     ...over
@@ -52,7 +52,7 @@ describe('chatXtabMessages', () => {
   });
 
   it('history keeps the newest entries within budget, oldest first', () => {
-    const entry = (n: number, size: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(size - 2), hunks: [] });
+    const entry = (n: number, size: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(size - 2), hunks: [], contextText: '' });
     const big = userOf(input({ history: [entry(1, 2000), entry(2, 2000), entry(3, 2000)] }));
     expect(big).toContain('E3');
     expect(big).not.toContain('E2');
@@ -104,7 +104,7 @@ describe('chatXtabMessages', () => {
   });
 
   it('a smaller history budget keeps fewer entries', () => {
-    const entry = (n: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(998), hunks: [] });
+    const entry = (n: number) => ({ path: 'a.ts', text: `E${n}` + 'x'.repeat(998), hunks: [], contextText: '' });
     const user = userOf(input({ history: [entry(1), entry(2), entry(3)], budgets: nextEditBudgets(1000) }));
     expect(user).toContain('E3');
     expect(user).not.toContain('E2');

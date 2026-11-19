@@ -374,3 +374,37 @@ test('recentEditsFile drops the oldest hunks to fit, and is undefined when nothi
   expect(recentEditsFile(h.entries(), 3, 5)).toBeUndefined();
   expect(recentEditsFile([], 3, 1e6)).toBeUndefined();
 });
+
+const numbered = (n: number) => Array.from({ length: n }, (_, i) => `l${i + 1}`);
+
+test('contextText has 3 context lines around a change', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[9] = 'X10';
+  h.commit('f', lines.join('\n') + '\n');
+  const [e] = h.entries();
+  expect(e.contextText).toBe('@@ -7,7 +7,7 @@\n l7\n l8\n l9\n-l10\n+X10\n l11\n l12\n l13');
+  expect(e.text).toBe('--- f\n+++ f\n@@ -10,1 +10,1 @@\n-l10\n+X10');
+});
+
+test('contextText of a change at line 1 has no lines before', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[0] = 'X1';
+  h.commit('f', lines.join('\n') + '\n');
+  expect(h.entries()[0].contextText).toBe('@@ -1,4 +1,4 @@\n-l1\n+X1\n l2\n l3\n l4');
+});
+
+test('a merged entry contextText covers the base-to-newest change', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[9] = 'X10';
+  h.commit('f', lines.join('\n') + '\n');
+  lines[9] = 'XY10';
+  h.commit('f', lines.join('\n') + '\n');
+  expect(h.entries()).toHaveLength(1);
+  expect(h.entries()[0].contextText).toBe('@@ -7,7 +7,7 @@\n l7\n l8\n l9\n-l10\n+XY10\n l11\n l12\n l13');
+});

@@ -46,7 +46,7 @@ function markedRegion(i: NextEditInput, region: string[]): string {
 function historyDiffs(i: NextEditInput): string[] {
   return newestThatFit(
     i.history,
-    (e) => (reserved(e.path, e.text) ? undefined : [`--- a/${e.path}`, `+++ b/${e.path}`, ...e.text.split('\n').slice(2)].join('\n')),
+    (e) => (reserved(e.path, e.contextText) ? undefined : `--- a/${e.path}\n+++ b/${e.path}\n${e.contextText}`),
     i.budgets.historyChars,
     MAX_HISTORY_ENTRIES,
   );

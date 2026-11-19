@@ -21,7 +21,7 @@ export function nextEditSample(format: NextEditFormat, settings: Settings): Next
     lines,
     cursor: { line: cursorLine, character: RENAMED.length },
     region: format.region(cursorLine, lines, { above: settings.nextEdit.regionLinesAbove, below: settings.nextEdit.regionLinesBelow }),
-    history: [{ path: PATH, text, hunks: HUNKS }],
+    history: [{ path: PATH, text, hunks: HUNKS, contextText: text.split('\n').slice(2).join('\n') }],
     snippets: [],
     budgets: formatBudgets(format, settings.nextEdit.contextBudget),
     previous: { lines: BEFORE, hunks: HUNKS },

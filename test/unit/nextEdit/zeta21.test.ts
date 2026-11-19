@@ -38,7 +38,7 @@ const input = (over: Partial<NextEditInput> = {}): NextEditInput => ({
   lines: FILE,
   cursor: { line: 4, character: 'def circumference(r):'.length },
   region: { start: 4, end: 9 },
-  history: [{ path: 'circle.py', text: DIFF, hunks: [] }],
+  history: [{ path: 'circle.py', text: DIFF, hunks: [], contextText: DIFF.split('\n').slice(2).join('\n') }],
   snippets: [],
   budgets: nextEditBudgets(3500),
   ...over,
@@ -128,13 +128,18 @@ describe('zeta21 prompt', () => {
     expect(p).not.toContain('big.py');
   });
 
+  it('the history section is the file header plus the entry contextText', () => {
+    const history = [{ path: 'f.py', text: '--- f.py\n+++ f.py\n@@ -5,1 +5,1 @@\n-a\n+b', hunks: [], contextText: '@@ -2,3 +2,3 @@\n x\n-a\n+b\n y' }];
+    expect(promptOf(input({ history })).prompt).toContain('<filename>edit_history\n--- a/f.py\n+++ b/f.py\n@@ -2,3 +2,3 @@\n x\n-a\n+b\n y\n');
+  });
+
   it('related files come before the history', () => {
     const p = promptOf(input({ snippets: [{ path: 'a.py', text: 'AAA' }] })).prompt;
     expect(p).toContain('<[fim-prefix]><filename>a.py\nAAA\n\n<filename>edit_history\n--- a/circle.py\n');
   });
 
   it('history keeps the newest entries that fit, oldest first, at most 6', () => {
-    const entry = (n: number) => ({ path: 'f.py', text: `--- f.py\n+++ f.py\n@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}`, hunks: [] });
+    const entry = (n: number) => ({ path: 'f.py', text: `--- f.py\n+++ f.py\n@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}`, hunks: [], contextText: `@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}` });
     const history = Array.from({ length: 8 }, (_, n) => entry(n + 1));
     const p = promptOf(input({ history })).prompt;
     expect(p).not.toContain('@@ -2,1');
@@ -328,8 +333,8 @@ describe('zeta21 reserved strings', () => {
     ];
     const bad = DIFF.replace('+def area(radius):', '+<filename>');
     const history = [
-      { path: 'circle.py', text: bad, hunks: [] },
-      { path: 'other.py', text: '--- other.py\n+++ other.py\n@@ -1,1 +1,1 @@\n-one\n+two', hunks: [] },
+      { path: 'circle.py', text: bad, hunks: [], contextText: bad.split('\n').slice(2).join('\n') },
+      { path: 'other.py', text: '--- other.py\n+++ other.py\n@@ -1,1 +1,1 @@\n-one\n+two', hunks: [], contextText: '@@ -1,1 +1,1 @@\n-one\n+two' },
     ];
     const p = promptOf(input({ snippets, history })).prompt;
     expect(p).not.toContain('bad.py');

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.1.0...v1.2.0) (2026-11-19)
+
+
+### Features
+
+* full Zeta 2.1 coverage and definitions as Next Edit context ([0a2d78f](https://github.com/Raboo/vscode-ai-autocomplete/commit/0a2d78f6635c1d0cb0b0146f86b43ac32328d00c))
+
 ## [1.1.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.0.0...v1.1.0) (2026-11-19)
 
 

@@ -351,6 +351,23 @@ describe('ServerPool', () => {
     expect(pool.state()).toBe('stopped');
   });
 
+  test('a router that exits after ready because another window won the port (its router answers there) is adopted, not an error', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const states: Record<number, PortState> = {};
+    const { pool, errors, unexpected, clock, logs } = setup({ launch, probe: portStates(states) });
+    await pool.start();
+    // Our process passed /health against the winner's router, then exits with "HTTP server error".
+    states[8012] = 'ours';
+    launched[0].child.exit();
+    await tick(5);
+    expect(errors()).toEqual([]);
+    expect(unexpected).toEqual([]);
+    expect(pool.state()).toBe('running');
+    expect(pool.port()).toBe(8012);
+    expect(clock.pending()).toBe(1);
+    expect(logs.map((l) => l.m)).toContain('llama-server: using the router already running on port 8012');
+  });
+
   test('a restart of a loading router waits for the old child to exit (SIGKILL after the grace period) before choosing the port', async () => {
     const { launch, launched } = fakeLaunch({ ignoreTerm: true });
     const oldExitedWhenAsked: boolean[] = [];

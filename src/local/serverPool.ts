@@ -424,11 +424,40 @@ export class ServerPool {
       this.d.log.info('llama-server was stopped by Stop Local Models in another window.');
       return;
     }
+    // Two windows started at once: ours passed its health check against the other window's router on the same port,
+    // then exited when it could not bind it. That router serves this window too.
+    if (await this.adoptAfterExit(proc.port)) return;
     const info = proc.exitInfo?.();
     this.d.log.error(`llama-server exited unexpectedly${info ? ` (${info})` : ''}.${formatTail(proc.lastOutput?.() ?? [])}`);
     this.failed = `llama-server exited unexpectedly${info ? ` (${info})` : ''}.`;
     this.changed();
     this.d.stoppedUnexpectedly();
+  }
+
+  /** After this window's router exited: adopts our router when one serves `port` (and no start is under way here). */
+  private async adoptAfterExit(port: number): Promise<boolean> {
+    if (this.slot || this.disposed) return false;
+    let names: string[];
+    try {
+      names = this.presets().names;
+    } catch {
+      return false;
+    }
+    const rec = this.managed();
+    const slot: Slot = { cancelled: false, abort: new AbortController(), modelsMax: rec?.modelsMax ?? this.d.settings().local.modelsInMemory, settled: Promise.resolve() };
+    this.slot = slot;
+    let found = false;
+    const check = this.ours(port, names, slot).catch(() => false).then((ok) => (found = ok));
+    slot.settled = check.then(() => undefined);
+    await check;
+    if (this.slot !== slot || slot.cancelled) return found || slot.cancelled;
+    if (!found) {
+      this.slot = undefined;
+      return false;
+    }
+    this.d.log.info(`llama-server: another window's router took port ${port}; using it`);
+    this.adopt(slot, port);
+    return true;
   }
 
   /** Removes `slot` (when it is still the current one) without stopping anything. */

@@ -148,6 +148,25 @@ describe('applyMigration', () => {
     expect(t.lists[0][0]).toMatchObject({ id: 'local', baseUrl: 'http://127.0.0.1:8100', debounceMs: 90, model: 'sweep-next-edit-1.5b' });
   });
 
+  test('a migration another window already ran (the old entries are gone when re-read) writes nothing, logs no move, and finishes', async () => {
+    const backends = [other, sweep];
+    const t = io();
+    const plan = await applyMigration(
+      { backends, managed: undefined, settings: settings(backends, { 'completions.backend': sweep.id }) },
+      { ...t.x, backendsNow: () => [other, { id: 'local', kind: 'llamacpp', baseUrl: 'http://127.0.0.1:8012', model: 'sweep-next-edit-1.5b' }] },
+    );
+    expect(plan.removeIds).toEqual([sweep.id]);
+    expect(t.calls).toEqual(['finish']);
+    expect(t.logs).toEqual([]);
+  });
+
+  test('old entries still there when re-read: the migration runs', async () => {
+    const backends = [other, sweep];
+    const t = io();
+    await applyMigration({ backends, managed: undefined, settings: settings(backends, { 'completions.backend': sweep.id }) }, { ...t.x, backendsNow: () => backends });
+    expect(t.calls).toEqual(['backends', 'select completions', 'backends', 'finish']);
+  });
+
   test('nothing to migrate writes nothing but still finishes (once)', async () => {
     const t = io();
     await applyMigration({ backends: [other], managed: undefined, settings: settings([other]) }, t.x);

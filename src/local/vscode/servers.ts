@@ -176,6 +176,9 @@ export class LocalServers implements vscode.Disposable {
     const state = this.d.context.globalState;
     if (state.get(MIGRATED_KEY) === true) return;
     try {
+      // Marked first: a second window starting at the same moment skips it once the flag reaches it, and applyMigration
+      // re-reads the backends right before writing for the case where it has not.
+      await state.update(MIGRATED_KEY, true);
       const raw = config().inspect('backends')?.globalValue;
       const recipes = this.d.recipes?.() ?? RECIPES;
       const routerPort = parseManaged(state.get(MANAGED_KEY))?.port;
@@ -189,7 +192,10 @@ export class LocalServers implements vscode.Disposable {
           terminate,
           finish: async () => {
             await state.update(LEGACY_MANAGED_KEY, undefined);
-            await state.update(MIGRATED_KEY, true);
+          },
+          backendsNow: () => {
+            const now = config().inspect('backends')?.globalValue;
+            return Array.isArray(now) ? (now as unknown[]) : [];
           },
           log: this.d.log,
         },

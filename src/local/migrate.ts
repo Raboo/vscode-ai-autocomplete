@@ -117,6 +117,8 @@ export interface MigrationIo {
   terminate(pid: number): void;
   /** Clears the old records and marks the migration as done. */
   finish(): Promise<void>;
+  /** `aiAutocomplete.backends` in user settings as it is now, read right before the writes: another window may have migrated already. */
+  backendsNow?(): unknown[];
   log: Log;
 }
 
@@ -133,6 +135,13 @@ export async function applyMigration(
   for (const rec of legacyServers(o.managed)) {
     if (rec.pid === undefined || !plan.stopPids.includes(rec.pid) || !io.alive(rec.pid)) continue;
     if (await io.serving(rec)) io.terminate(rec.pid);
+  }
+  const now = io.backendsNow?.();
+  if (now !== undefined && plan.removeIds.length > 0 && !now.some((e) => isEntry(e) && typeof e.id === 'string' && plan.removeIds.includes(e.id))) {
+    // Another window ran the same migration a moment ago (both started together): nothing is left to move.
+    io.log.debug('local models: the old local backends were already moved (another window)');
+    await io.finish();
+    return plan;
   }
   let list = o.backends;
   if (plan.local) {

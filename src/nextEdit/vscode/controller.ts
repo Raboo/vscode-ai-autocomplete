@@ -19,12 +19,13 @@ import { decorationPlan, displayFor } from '../decorations';
 import { classify, editShow, toItemText, type LineEdit, type Pos } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
 import { formatBudgets, type FormatAnswer, type NextEditFormat, type NextEditInput } from '../formats/format';
-import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
+import { EditHistory, recentEditsFile, type RecentSnippets, type Snippet } from '../history';
 import { rebaseEdit } from '../rebase';
 import { type LineSpan } from '../region';
 import { runNextEdit, warmNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, nextEditPauseMs, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
+import { DefinitionLookup } from './definitions';
 
 export interface NextEditDeps {
   getSettings(): Settings;
@@ -98,8 +99,11 @@ export class NextEditController implements vscode.Disposable {
   private warmUri: string | undefined;
   private readonly logged = new Set<string>();
   private readonly notified = new Set<string>();
+  /** Definitions of the symbols near the cursor, as related context (with extra context and nextEdit.definitions on). */
+  private readonly definitions: DefinitionLookup;
 
   constructor(private readonly d: NextEditDeps) {
+    this.definitions = new DefinitionLookup({ excluded: (doc) => d.isExcluded(doc), log: d.log });
     for (const doc of vscode.workspace.textDocuments) this.opened(doc);
     this.disposables.push(
       vscode.workspace.onDidOpenTextDocument((doc) => this.opened(doc)),
@@ -260,6 +264,7 @@ export class NextEditController implements vscode.Disposable {
     this.skipped.clear();
     this.history.clear();
     this.d.snippets.clear();
+    this.definitions.clear();
   }
 
   /**
@@ -319,6 +324,8 @@ export class NextEditController implements vscode.Disposable {
     // First, and silently: the log is a document too, so logging about its changes would loop.
     if (e.contentChanges.length === 0) return;
     const uri = doc.uri.toString();
+    // Definitions quoting this file are looked up again.
+    this.definitions.forget(this.path(doc));
     const active = this.tracking() && this.eligible(doc);
     // The user typing a pending edit or a held result keeps the rest of it; any other change to its document, an undo
     // included, leaves it pointing at shifted lines.
@@ -498,20 +505,25 @@ export class NextEditController implements vscode.Disposable {
       if (!this.routeFor(backend, format)) return;
       const at = this.editorFor(doc)?.selection.active;
       if (!at) return;
+      const version = doc.version;
       const lines = doc.getText().split(/\r?\n/);
       const path = this.path(doc);
       const budgets = formatBudgets(format, s.nextEdit.contextBudget);
       const values = resolveNextEdit(backend.config, model, s);
       const extra = values.extraContext;
+      const region = format.region(at.line, lines, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow });
+      // The same related items as the request, so the warmed prompt matches it.
+      const snippets = await this.related(doc, path, region, at, budgets.snippetsChars, extra, s);
+      if (ctl.signal.aborted || this.d.getSettings() !== s || doc.version !== version) return;
       const previous = this.history.previous(path);
       const input: NextEditInput = {
         path,
         lines,
         cursor: { line: at.line, character: at.character },
-        region: format.region(at.line, lines, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
+        region,
         // Read only: the history is not flushed, so a warm-up never commits an entry.
         history: this.history.entries(extra ? undefined : (p) => p === path),
-        snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
+        snippets,
         budgets,
         ...(previous ? { previous } : {}),
       };
@@ -640,16 +652,19 @@ export class NextEditController implements vscode.Disposable {
       };
       // Checked before the history is flushed, so a region that cannot be sent leaves the pending edits uncommitted.
       if (this.notSendable(format, base, uri, version)) return;
+      // Other files' diffs, snippets and definitions go out only with extra context, as for FIM. `previous` is always the current file's.
+      const extra = values.extraContext;
+      const snippets = await this.related(doc, path, base.region, at, budgets.snippetsChars, extra, s);
+      // A change aborts the request, so the document is still the version `lines` was read from.
+      if (ctl.signal.aborted || this.d.getSettings() !== s) return;
 
       for (const { doc: pending } of [...this.idleTimers.values()]) this.flush(pending);
       this.flush(doc);
-      // Other files' diffs and snippets go out only with extra context, as for FIM. `previous` is always the current file's.
-      const extra = values.extraContext;
       const previous = this.history.previous(path);
       const input: NextEditInput = {
         ...base,
         history: this.history.entries(extra ? undefined : (p) => p === path),
-        snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
+        snippets,
         ...(previous ? { previous } : {}),
       };
       // Again on what is sent: `previous` (Sweep's original window) is known only after the flush.
@@ -755,6 +770,18 @@ export class NextEditController implements vscode.Disposable {
     } finally {
       if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
     }
+  }
+
+  /**
+   * Related items for a request or warm-up, within `budgetChars`: definitions of the symbols near the cursor first
+   * (with nextEdit.definitions on), then recently viewed snippets of other files. Nothing without extra context.
+   */
+  private async related(doc: vscode.TextDocument, path: string, region: LineSpan, at: vscode.Position, budgetChars: number, extra: boolean, s: Settings): Promise<Snippet[]> {
+    if (!extra) return [];
+    const defs = s.nextEdit.definitions ? await this.definitions.related(doc, region, at, budgetChars) : [];
+    const used = defs.reduce((n, d) => n + d.text.length, 0);
+    const paths = new Set(defs.map((d) => d.path));
+    return [...defs, ...this.d.snippets.pick(path, budgetChars - used).filter((r) => !paths.has(r.path))];
   }
 
   /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */

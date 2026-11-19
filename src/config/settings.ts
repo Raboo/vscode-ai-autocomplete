@@ -28,6 +28,8 @@ export interface Settings {
   nextEdit: {
     enabled: boolean; backendId?: string; timeoutMs: number; format: NextEditFormatSetting; display: NextEditDisplay;
     regionLinesAbove: number; regionLinesBelow: number; historySize: number; contextBudget: number;
+    /** Send definitions of symbols near the cursor (from the language server), with extra context only. */
+    definitions: boolean;
   };
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
@@ -412,6 +414,7 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
       regionLinesBelow: nextEditInt('regionLinesBelow'),
       historySize: nextEditInt('historySize'),
       contextBudget: nextEditInt('contextBudget'),
+      definitions: resource<unknown>('nextEdit.definitions', true) !== false,
     },
     privacy: { localOnly: restrictOnly('privacy.localOnly') },
     modelOverrides,

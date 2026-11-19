@@ -290,6 +290,10 @@ describe('nextEdit settings', () => {
     const { settings } = parseSettings(src({}));
     expect(settings.nextEdit).toMatchObject({ format: 'auto', display: 'auto', regionLinesAbove: 5, regionLinesBelow: 10, historySize: 5, contextBudget: 3500 });
   });
+  test('nextEdit.definitions defaults to true and reads false', () => {
+    expect(parseSettings(src({})).settings.nextEdit.definitions).toBe(true);
+    expect(parseSettings(src({ 'nextEdit.definitions': { workspaceValue: false } })).settings.nextEdit.definitions).toBe(false);
+  });
   test('nextEdit 3b values are read', () => {
     const { settings, problems } = parseSettings(src({
       'nextEdit.format': { globalValue: 'zeta21' }, 'nextEdit.display': { globalValue: 'decorations' },

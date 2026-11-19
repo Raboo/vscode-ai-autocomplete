@@ -4,6 +4,7 @@ import { resolveFim, templateMismatch, type ValueSource } from '../completion/ef
 import { chatStops, planRoute } from '../completion/route';
 import { FIM_LIMITS, FIM_MODES as FIM_MODE_LIST, MULTILINE as MULTILINE_LIST, THINKING_STRATEGIES, parseBackendEntry, type Settings } from '../config/settings';
 import { renameBackendEntry } from '../config/rename';
+import { LOCAL_BACKEND_ID } from '../local/backendEntry';
 import { TEMPLATES } from '../models/templates';
 import { nextEditOnlyNote } from '../nextEdit/formats';
 import { THINKING_LABELS } from '../models/thinking';
@@ -124,10 +125,14 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
+/** The local model helper owns the backend `local`; the page may edit it but not create another one with that id. */
+export const RESERVED_ID = 'The id local is used by the local model helper.';
+
 export function validateForm(f: BackendForm, taken: readonly string[]): FieldError[] {
   const errors: FieldError[] = [];
   const err = (field: FieldError['field'], message: string): void => void errors.push({ field, message });
   if (!ID_RE.test(f.id)) err('id', 'use lowercase letters, digits and dashes');
+  else if (f.id === LOCAL_BACKEND_ID && f.originalId !== LOCAL_BACKEND_ID) err('id', RESERVED_ID);
   else if (f.id !== f.originalId && taken.includes(f.id)) err('id', 'another backend already uses this name');
   if (!f.use.completions && !f.use.nextEdit) err('use', 'choose at least one use');
   const url = f.baseUrl.trim();

@@ -1,4 +1,5 @@
 import { DEFAULT_NEXT_EDIT_TIMEOUT_MS } from '../completion/effective';
+import { parseLocalModels, type LocalModelEntry } from '../local/modelList';
 import { TEMPLATES } from '../models/templates';
 import { BACKEND_FIELD_RENAMES, COMPLETIONS_KEYS, inspectRenamed, OLD_NAME_NOTE, oldKeyProblem, renameBackendEntry, type CompletionsKey } from './rename';
 import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
@@ -31,8 +32,8 @@ export interface Settings {
   privacy: { localOnly: boolean };
   modelOverrides: Record<string, ModelOverrideBody>;
   debug: { logPrompts: boolean };
-  /** Machine-scoped paths of the local runtimes; unset means look on PATH and in the usual places. */
-  local: { llamaServerPath?: string; lmsPath?: string };
+  /** Machine-scoped `local` settings (global values only): the llama-server path (unset: PATH and usual places), the models folder (absolute; unset: the default), how many models stay loaded, and the model list. */
+  local: { llamaServerPath?: string; modelsDir?: string; modelsInMemory: number; models: LocalModelEntry[] };
 }
 
 /** Files whose content is never sent by default: environment files, keys and credential stores. */
@@ -176,7 +177,7 @@ export function parseBackendEntry(given: unknown, i: number, seen: Set<string>, 
   const fail = (problem: string): undefined => void problems.push(problem);
   const at = `aiAutocomplete.backends[${i}]`;
   if (!isObj(given)) return fail(`${at}: not an object, ignored`);
-  // Old field names (fimModel, fimMode, fim) are read until 1.0, each with a note.
+  // Old field names (fimModel, fimMode, fim) are read until 2.0, each with a note.
   const { entry: raw, renamed } = renameBackendEntry(given);
   const id = raw.id;
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return fail(`${at}: invalid id ${JSON.stringify(id)} (use lowercase letters, digits and dashes), ignored`);
@@ -272,6 +273,21 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     const v = machine<unknown>(key, '');
     return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
   };
+  const modelsDir = ((): string | undefined => {
+    const v = localPath('local.modelsDir');
+    if (v === undefined) return undefined;
+    if (/^([/\\]|[A-Za-z]:[/\\])/.test(v)) return v;
+    problems.push('aiAutocomplete.local.modelsDir must be an absolute folder path');
+    return undefined;
+  })();
+  const modelsInMemory = ((): number => {
+    const v = machine<unknown>('local.modelsInMemory', 1);
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 1) return v;
+    problems.push('aiAutocomplete.local.modelsInMemory: expected a whole number of 1 or more, using 1');
+    return 1;
+  })();
+  const localModels = parseLocalModels(machine<unknown>('local.models', []));
+  problems.push(...localModels.problems);
   const resource = <T>(key: string, fallback: T): T => {
     const i = src.inspect<T>(key);
     return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue ?? i?.defaultValue ?? fallback;
@@ -402,7 +418,9 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     debug: { logPrompts: machine('debug.logPrompts', false) },
     local: {
       ...(localPath('local.llamaServerPath') !== undefined ? { llamaServerPath: localPath('local.llamaServerPath') } : {}),
-      ...(localPath('local.lmsPath') !== undefined ? { lmsPath: localPath('local.lmsPath') } : {}),
+      ...(modelsDir !== undefined ? { modelsDir } : {}),
+      modelsInMemory,
+      models: localModels.entries,
     },
   };
   return { settings, problems };

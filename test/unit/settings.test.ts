@@ -24,12 +24,39 @@ describe('parseSettings', () => {
     expect(settings.enabled).toBe(true);
   });
   test('local runtime paths are machine-scoped: workspace values are ignored, "" is unset', () => {
-    const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' }, 'local.lmsPath': { workspaceValue: '/evil/lms' } }));
-    expect(a.settings.local).toEqual({});
-    const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' }, 'local.lmsPath': { globalValue: '/opt/lms' } }));
-    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server', lmsPath: '/opt/lms' });
-    const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' }, 'local.lmsPath': { defaultValue: '' } }));
-    expect(c.settings.local).toEqual({});
+    const a = parseSettings(src({ 'local.llamaServerPath': { workspaceValue: '/evil/llama-server' } }));
+    expect(a.settings.local).toEqual({ modelsInMemory: 1, models: [] });
+    const b = parseSettings(src({ 'local.llamaServerPath': { globalValue: '/opt/llama-server', workspaceValue: '/evil' } }));
+    expect(b.settings.local).toEqual({ llamaServerPath: '/opt/llama-server', modelsInMemory: 1, models: [] });
+    const c = parseSettings(src({ 'local.llamaServerPath': { globalValue: '', defaultValue: '' } }));
+    expect(c.settings.local).toEqual({ modelsInMemory: 1, models: [] });
+  });
+  test('local.modelsInMemory: whole number of 1 or more, else 1 with a problem', () => {
+    expect(parseSettings(src({})).problems.some((p) => p.includes('modelsInMemory'))).toBe(false);
+    expect(parseSettings(src({ 'local.modelsInMemory': { globalValue: 3 } })).settings.local.modelsInMemory).toBe(3);
+    for (const v of [0, 1.5]) {
+      const r = parseSettings(src({ 'local.modelsInMemory': { globalValue: v } }));
+      expect(r.settings.local.modelsInMemory).toBe(1);
+      expect(r.problems.some((p) => p.includes('modelsInMemory'))).toBe(true);
+    }
+  });
+  test('local.modelsDir, modelsInMemory and models ignore workspace values', () => {
+    const r = parseSettings(src({
+      'local.modelsDir': { workspaceValue: '/evil' },
+      'local.modelsInMemory': { workspaceValue: 5 },
+      'local.models': { workspaceValue: [{ name: 'x' }] },
+    }));
+    expect(r.settings.local).toEqual({ modelsInMemory: 1, models: [] });
+    const g = parseSettings(src({ 'local.modelsDir': { globalValue: '/m', workspaceValue: '/evil' }, 'local.models': { globalValue: [{ name: 'a', hidden: true }] } }));
+    expect(g.settings.local.modelsDir).toBe('/m');
+    expect(g.settings.local.models).toEqual([{ name: 'a', hidden: true }]);
+  });
+  test('local.modelsDir must be absolute: a relative or ~/ path is a problem and falls back', () => {
+    for (const bad of ['models', './m', '~/models']) {
+      const r = parseSettings(src({ 'local.modelsDir': { globalValue: bad } }));
+      expect(r.settings.local.modelsDir).toBeUndefined();
+      expect(r.problems).toContain('aiAutocomplete.local.modelsDir must be an absolute folder path');
+    }
   });
   test('enabled: the switch for completions and Next Edit, readable from a workspace', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a')] }, enabled: { workspaceValue: false } }));
@@ -337,14 +364,14 @@ describe('writesToWorkspace', () => {
   });
 });
 
-describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
+describe('old names (fim.*, fimModel, fimMode, fim) until 2.0', () => {
   test('an old key set alone is read, with one note', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'b' }, 'fim.maxTokens': { workspaceValue: 64 } }));
     expect(r.settings.fim.backendId).toBe('b');
     expect(r.settings.fim.maxTokens).toBe(64);
     expect(r.problems).toEqual([
-      'aiAutocomplete.fim.backend is now aiAutocomplete.completions.backend; the old name still works until 1.0',
-      'aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0',
+      'aiAutocomplete.fim.backend is now aiAutocomplete.completions.backend; the old name still works until 2.0',
+      'aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 2.0',
     ]);
     expect(r.problems.every(isOldNameProblem)).toBe(true);
   });
@@ -354,7 +381,7 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
     expect(same.problems).toEqual([]);
     const closer = parseSettings(src({ 'completions.maxTokens': { defaultValue: 128, globalValue: 32 }, 'fim.maxTokens': { workspaceFolderValue: 16 } }));
     expect(closer.settings.fim.maxTokens).toBe(16);
-    expect(closer.problems).toEqual(['aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0']);
+    expect(closer.problems).toEqual(['aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 2.0']);
   });
   test('old folder lists of disableInFiles are added like new ones', () => {
     const r = parseSettings(src({ 'completions.disableInFiles': { defaultValue: ['**/.env'] }, 'fim.disableInFiles': { folderValues: [['**/old/**']] } }));
@@ -367,21 +394,21 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
       'fim.disableInFiles': { globalValue: ['**/u-old'], workspaceValue: ['**/w-old'], workspaceFolderValue: ['**/f-old'] },
     }));
     expect(r.settings.fim.disableInFiles).toEqual(['**/u-new', '**/u-old', '**/w-new', '**/w-old', '**/f-old']);
-    expect(r.problems).toEqual(['aiAutocomplete.fim.disableInFiles is now aiAutocomplete.completions.disableInFiles; the old name still works until 1.0']);
+    expect(r.problems).toEqual(['aiAutocomplete.fim.disableInFiles is now aiAutocomplete.completions.disableInFiles; the old name still works until 2.0']);
   });
   test('old backend fields are read, each with a note naming the backend', () => {
     const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } }] } }));
     expect(r.settings.backends[0]).toMatchObject({ fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } });
     expect(r.problems).toEqual([
-      'aiAutocomplete.backends[0] ("lm"): fimModel is now model; the old name still works until 1.0',
-      'aiAutocomplete.backends[0] ("lm"): fimMode is now mode; the old name still works until 1.0',
-      'aiAutocomplete.backends[0] ("lm"): fim is now completions; the old name still works until 1.0',
+      'aiAutocomplete.backends[0] ("lm"): fimModel is now model; the old name still works until 2.0',
+      'aiAutocomplete.backends[0] ("lm"): fimMode is now mode; the old name still works until 2.0',
+      'aiAutocomplete.backends[0] ("lm"): fim is now completions; the old name still works until 2.0',
     ]);
   });
   test('an old backend field next to its new one is ignored, with a note', () => {
     const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), model: 'new', fimModel: 'old' }] } }));
     expect(r.settings.backends[0].fimModel).toBe('new');
-    expect(r.problems).toEqual(['aiAutocomplete.backends[0] ("lm"): fimModel is now model (fimModel is ignored, model is set); the old name still works until 1.0']);
+    expect(r.problems).toEqual(['aiAutocomplete.backends[0] ("lm"): fimModel is now model (fimModel is ignored, model is set); the old name still works until 2.0']);
   });
   test('problems inside an old fim object name the old field', () => {
     const problems: string[] = [];

@@ -24,7 +24,7 @@ test('webview bundle is built and packaged', () => {
 test('commands are categorised and the internal commands are hidden from the palette', () => {
   const cmds = pkg.contributes.commands as { command: string; category: string }[];
   expect(cmds.map((c) => c.command).sort()).toEqual(
-    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'removeLocalModels', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'setUpLocalModel', 'showLog', 'snooze', 'stopLocalModels', 'toggleEnabled', 'whyNoSuggestion']
+    ['about', 'accepted', 'enableNativeNextEdit', 'manageBackends', 'manageLocalModels', 'menu', 'nextEditAccepted', 'nextEditDismiss', 'nextEditTab', 'openSettings', 'removeLocalModels', 'retry', 'selectBackend', 'selectNextEditBackend', 'setApiKey', 'setUpLocalModel', 'showLog', 'snooze', 'stopLocalModels', 'toggleEnabled', 'whyNoSuggestion']
       .map((c) => `aiAutocomplete.${c}`)
       .sort(),
   );
@@ -37,6 +37,16 @@ test('commands are categorised and the internal commands are hidden from the pal
   expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.stopLocalModels')?.title).toBe('Stop Local Models');
   expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.setUpLocalModel')?.title).toBe('Set Up Local Model');
   expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.removeLocalModels')?.title).toBe('Remove Downloaded Models');
+  expect((pkg.contributes.commands as { command: string; title: string }[]).find((c) => c.command === 'aiAutocomplete.manageLocalModels')?.title).toBe('Manage Local Models');
+});
+test('the walkthrough opens the Local Models page and counts either command as done', () => {
+  const step = pkg.contributes.walkthroughs[0].steps.find((s: { id: string }) => s.id === 'chooseModel');
+  expect(step.description).toContain('[Set Up Local Model](command:aiAutocomplete.setUpLocalModel)');
+  expect(step.completionEvents).toEqual(expect.arrayContaining(['onCommand:aiAutocomplete.setUpLocalModel', 'onCommand:aiAutocomplete.manageLocalModels']));
+});
+test('the Local Models page bundle is built', () => {
+  expect(existsSync('dist/webview/localModels.js')).toBe(true);
+  expect(existsSync('dist/webview/localModels.css')).toBe(true);
 });
 test('Tab and Esc act on a pending Next Edit decoration only, never over a suggestion, inline edit, snippet, selection or multiple cursors', () => {
   expect(pkg.contributes.keybindings).toEqual([
@@ -130,7 +140,9 @@ test('machine-scoped settings stay machine-scoped (a workspace must never redire
     'aiAutocomplete.backends',
     'aiAutocomplete.debug.logPrompts',
     'aiAutocomplete.local.llamaServerPath',
-    'aiAutocomplete.local.lmsPath',
+    'aiAutocomplete.local.models',
+    'aiAutocomplete.local.modelsDir',
+    'aiAutocomplete.local.modelsInMemory',
     'aiAutocomplete.modelOverrides',
   ]);
 });

@@ -39,9 +39,16 @@ const webview = {
   logLevel: 'info',
 };
 
+/** The Local Models page: dist/webview/localModels.js and localModels.css. @type {import('esbuild').BuildOptions} */
+const localWebview = {
+  ...webview,
+  entryPoints: ['src/webview/localModels/main.ts', 'src/webview/localModels/style.css'],
+  entryNames: 'localModels',
+};
+
 if (watch) {
-  const contexts = await Promise.all([context(extension), context(webview)]);
+  const contexts = await Promise.all([context(extension), context(webview), context(localWebview)]);
   await Promise.all(contexts.map((ctx) => ctx.watch()));
 } else {
-  await Promise.all([build(extension), build(webview)]);
+  await Promise.all([build(extension), build(webview), build(localWebview)]);
 }

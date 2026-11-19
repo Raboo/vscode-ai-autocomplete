@@ -13,6 +13,8 @@ export class DownloadError extends Error {
   constructor(
     message: string,
     readonly kind: DownloadErrorKind,
+    /** The HTTP status of a refused request (`http` errors only), e.g. 401/403 for a gated Hugging Face repo. */
+    readonly status?: number,
   ) {
     super(message);
     this.name = 'DownloadError';
@@ -27,6 +29,8 @@ export interface DownloadOptions {
   signal: AbortSignal;
   onProgress(received: number, total: number): void;
   fetchFn?: typeof fetch;
+  /** The `Authorization` value for a request to this URL, asked per hop so a redirect to another host can drop it. */
+  authFor?(url: URL): string | undefined;
   /** Free bytes on the volume holding `dir`. Defaults to `fs.statfs`. */
   freeBytes?(dir: string): Promise<number>;
 }
@@ -104,6 +108,10 @@ async function open(o: DownloadOptions, partBytes: number): Promise<Response> {
     if (partBytes > 0) {
       headers.range = `bytes=${partBytes}-`;
     }
+    const auth = o.authFor?.(current);
+    if (auth) {
+      headers.authorization = auth;
+    }
     const res = await doFetch(current, { headers, redirect: 'manual', signal: o.signal });
     const location = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && location) {
@@ -136,7 +144,7 @@ async function stream(
       await rm(part, { force: true }); // the partial file does not fit the server's file: start over next time
     }
     await res.body?.cancel();
-    throw new DownloadError(`The server answered with status ${res.status}.`, 'http');
+    throw new DownloadError(`The server answered with status ${res.status}.`, 'http', res.status);
   }
   if (!res.body) {
     throw new DownloadError('The server sent no data.', 'http');

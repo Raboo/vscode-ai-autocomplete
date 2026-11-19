@@ -1,5 +1,7 @@
 # Local model helper (Phase 4) — design
 
+> Note: the runtime and server parts (one llama-server per model, per-model backends) are superseded by the router and the Local Models page: see [2026-11-18-local-models-page-design.md](2026-11-18-local-models-page-design.md).
+
 Date: 2026-11-16. Phase 4 of AI Autocomplete; the main spec's "Local model helper" section still applies except where this design narrows it. The user asked for both runtimes in this phase (llama-server and LM Studio) and to proceed without waiting for confirmation.
 
 ## Why

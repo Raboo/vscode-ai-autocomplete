@@ -7,9 +7,7 @@ import {
   defaultSpawn,
   freePort,
   LlamaServerProcess,
-  llamaServerArgs,
   LocalRuntimeError,
-  probePort,
   type ChildLike,
 } from '../../../src/local/llamaServer';
 
@@ -60,21 +58,6 @@ function startOpts(child: FakeChild, port: number, over: Partial<Parameters<type
     ...over,
   };
 }
-
-describe('llamaServerArgs', () => {
-  it('returns the exact argument array: with Next Edit, 2 slots sharing twice the context', () => {
-    expect(llamaServerArgs({ file: '/m/a.gguf', modelName: 'qwen', port: 8123, contextTokens: 8192, nextEdit: true })).toEqual([
-      '-m', '/m/a.gguf', '--alias', 'qwen', '--host', '127.0.0.1', '--port', '8123',
-      '-c', '16384', '-ngl', '99', '-fa', 'on', '-np', '2', '--cache-reuse', '256', '--no-webui',
-    ]);
-  });
-  it('completions only: 1 slot with the recipe context', () => {
-    expect(llamaServerArgs({ file: '/m/a.gguf', modelName: 'qwen', port: 8123, contextTokens: 8192, nextEdit: false })).toEqual([
-      '-m', '/m/a.gguf', '--alias', 'qwen', '--host', '127.0.0.1', '--port', '8123',
-      '-c', '8192', '-ngl', '99', '-fa', 'on', '-np', '1', '--cache-reuse', '256', '--no-webui',
-    ]);
-  });
-});
 
 describe('freePort', () => {
   it('returns the preferred port when it is free', async () => {
@@ -258,38 +241,5 @@ describe('LlamaServerProcess exit details', () => {
     await proc.exited;
     expect(proc.exitInfo()).toBe('signal SIGABRT');
     expect(proc.lastOutput()).toEqual(['loaded', 'ggml_abort: out of memory']);
-  });
-});
-
-describe('probePort', () => {
-  async function serve(routes: Record<string, [number, unknown?]>): Promise<number> {
-    const server = await listen((req, res) => {
-      const [status, body] = routes[req.url ?? ''] ?? [404];
-      res.writeHead(status, { 'content-type': 'application/json' }).end(body === undefined ? '' : JSON.stringify(body));
-    });
-    return (server.address() as AddressInfo).port;
-  }
-
-  it('is ours when /health is 200 and /v1/models lists the alias', async () => {
-    const port = await serve({ '/health': [200, { status: 'ok' }], '/v1/models': [200, { data: [{ id: 'sweep' }] }] });
-    expect(await probePort(port, 'sweep')).toBe('ours');
-  });
-  it('falls back to the /props model_alias', async () => {
-    const port = await serve({ '/health': [200], '/v1/models': [404], '/props': [200, { model_alias: 'sweep' }] });
-    expect(await probePort(port, 'sweep')).toBe('ours');
-  });
-  it('is loading while /health answers 503', async () => {
-    const port = await serve({ '/health': [503, { error: { message: 'Loading model' } }] });
-    expect(await probePort(port, 'sweep')).toBe('loading');
-  });
-  it('is none for another model, another server or nothing listening', async () => {
-    const other = await serve({ '/health': [200], '/v1/models': [200, { data: [{ id: 'qwen' }] }], '/props': [200, { model_alias: 'qwen' }] });
-    expect(await probePort(other, 'sweep')).toBe('none');
-    const notLlama = await serve({ '/health': [404] });
-    expect(await probePort(notLlama, 'sweep')).toBe('none');
-    const closed = await listen(() => {});
-    const port = (closed.address() as AddressInfo).port;
-    await new Promise<void>((r) => closed.close(() => r()));
-    expect(await probePort(port, 'sweep')).toBe('none');
   });
 });

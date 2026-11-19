@@ -4,14 +4,14 @@ import type { Inspected, RawSettingsSource } from './settings';
  * The `aiAutocomplete.fim.*` settings were renamed to `aiAutocomplete.completions.*`, and the backend fields `fimModel`,
  * `fimMode` and `fim` to `model`, `mode` and `completions`. The extension moves old keys in user settings on start; it
  * never writes workspace or folder settings, and never rewrites `backends` (a backend entry gets the new field names when
- * it is saved from the Backends page or by the local model helper). Old names are read until 1.0; each old name read adds
+ * it is saved from the Backends page or by the local model helper). Old names are read until 2.0; each old name read adds
  * a problem ending in OLD_NAME_NOTE.
  */
 export const COMPLETIONS_KEYS = ['enabled', 'backend', 'multiline', 'disableInLanguages', 'disableInFiles', 'skipMidWord', 'extraContext', 'debounceMs',
   'maxTokens', 'prefixLines', 'suffixLines'] as const;
 export type CompletionsKey = (typeof COMPLETIONS_KEYS)[number];
 
-export const OLD_NAME_NOTE = 'the old name still works until 1.0';
+export const OLD_NAME_NOTE = 'the old name still works until 2.0';
 
 /** Old backend field → new backend field. */
 export const BACKEND_FIELD_RENAMES: readonly (readonly [string, string])[] = [['fimModel', 'model'], ['fimMode', 'mode'], ['fim', 'completions']];
@@ -93,7 +93,7 @@ export interface MigrationWrite {
 /**
  * What to write to move old names in user settings: each old key set there is copied to its new key when that is unset,
  * then removed; for UNION_KEYS the old list is added to the new one. Workspace and folder settings are never written:
- * `workspaceOld` lists the old keys still set there (the reader keeps reading them until 1.0). Backend entries are left
+ * `workspaceOld` lists the old keys still set there (the reader keeps reading them until 2.0). Backend entries are left
  * alone. Empty when nothing old is set.
  */
 export function planRenameMigration(src: RawSettingsSource): { writes: MigrationWrite[]; moved: string[]; workspaceOld: string[] } {

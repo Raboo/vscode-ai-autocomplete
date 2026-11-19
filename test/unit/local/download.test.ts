@@ -172,6 +172,17 @@ describe('downloadModel', () => {
     };
     const e = await failure(downloadModel(opts()));
     expect(e.kind).toBe('http');
+    expect(e.status).toBe(404);
+  });
+
+  it('keeps the status of a refused request (401/403) on the error', async () => {
+    handler = (_req, res) => {
+      res.writeHead(403);
+      res.end('gated');
+    };
+    const e = await failure(downloadModel(opts()));
+    expect(e.status).toBe(403);
+    expect(e.message).not.toContain('gated');
   });
 
   it('throws space before any request when the disk is too small', async () => {

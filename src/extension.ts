@@ -16,11 +16,13 @@ import { Secrets } from './config/secrets';
 import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
 import { LocalServers } from './local/vscode/servers';
-import { removeLocalModels, setUpLocalModel, type SetupDeps } from './local/vscode/setup';
+import { Downloads, removeLocalModels, setUpLocalModel } from './local/vscode/setup';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
+import { LEGACY_MANAGED_KEY, MIGRATED_KEY } from './local/migrate';
+import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
 import { StatusBar } from './ui/statusBar';
@@ -40,10 +42,11 @@ export function activate(context: vscode.ExtensionContext): {
   status: StatusBar;
   secrets: Secrets;
   backendsPanel: () => BackendsPanel | undefined;
+  localModelsPanel: () => LocalModelsPanel | undefined;
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
-  /** Test runs only: swaps the recipes setup offers and the servers may start. */
-  local?: { setRecipes(r: Recipe[] | undefined): void };
+  /** Test runs only: swaps the recipes setup offers and the router's presets list. */
+  local?: { setRecipes(r: Recipe[] | undefined): void; rerunMigration(legacy: unknown): Promise<void> };
 } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
   const channel = vscode.window.createOutputChannel('AI Autocomplete', { log: true });
@@ -206,7 +209,7 @@ export function activate(context: vscode.ExtensionContext): {
     }),
   );
 
-  // Tests swap in their own recipes, for setup and for the servers it records alike.
+  // Tests swap in their own recipes, for setup and for the presets the router serves alike.
   let testRecipes: readonly Recipe[] | undefined;
   const recipes = (): readonly Recipe[] => testRecipes ?? RECIPES;
   const servers = new LocalServers({
@@ -224,13 +227,28 @@ export function activate(context: vscode.ExtensionContext): {
   });
   localServers = servers;
   sub(servers);
-  const setupDeps: SetupDeps = { context, log, settings: () => settings, recipes, servers, openBackend: (id) => manageBackends({ focus: id }) };
+  const downloads = new Downloads();
+  sub({ dispose: () => downloads.cancelAll() });
+  const localDeps: LocalModelsPanelDeps = {
+    context, log, secrets, settings: () => settings, recipes, router: servers.pool, downloads,
+    openBackend: (id) => manageBackends({ focus: id }),
+    openPage: () => manageLocalModels(),
+    showLog: () => channel.show(true),
+  };
+  const manageLocalModels = (): void => {
+    if (vscode.env.remoteName !== undefined) {
+      void vscode.window.showInformationMessage('The local model helper works in local windows only.');
+      return;
+    }
+    LocalModelsPanel.show(localDeps);
+  };
+  sub({ dispose: () => LocalModelsPanel.current()?.dispose() });
 
   for (const d of registerCommands({
     context,
     outcomes,
     localServers: servers,
-    localModels: { setUp: (arg) => setUpLocalModel(setupDeps, arg), remove: () => removeLocalModels(setupDeps) },
+    localModels: { setUp: (arg) => setUpLocalModel(localDeps, arg), remove: () => removeLocalModels(localDeps), manage: manageLocalModels },
     status,
     secrets,
     channel,
@@ -267,8 +285,8 @@ export function activate(context: vscode.ExtensionContext): {
     inflight.abortEverything();
     const before = settings;
     const problems = rebuild();
-    // A local backend that became selected starts its server; one no longer selected (or removed) stops it.
-    void servers.selectionChanged(before, settings);
+    // `local` selected starts the router, deselected stops it; a model list change reloads its presets.
+    void servers.settingsChanged(before, settings);
     cache.clear();
     // Chunks captured under the old settings may come from files that are now excluded.
     ring.clear();
@@ -282,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): {
     warnOnce(problems);
   };
   // Old fim.* keys in user settings move to the new names on start and after each settings change; a run that finds
-  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 1.0).
+  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 2.0).
   const migrate = migrationRunner(log);
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -297,13 +315,14 @@ export function activate(context: vscode.ExtensionContext): {
   warnOnce(rebuild());
   migrate();
   status.setLocalLock(settings.privacy.localOnly);
-  // Not awaited: a model can take a minute to load, and activation must not wait for it.
-  void servers.startSelected();
+  // Not awaited: old local backends move to `local`, then the router starts (a model can take a minute to load).
+  void servers.activate();
   warmSoon(vscode.window.activeTextEditor);
   return {
     status,
     secrets,
     backendsPanel: () => BackendsPanel.current(),
+    localModelsPanel: () => LocalModelsPanel.current(),
     nativeNextEdit: native,
     nextEditPending: () => nextEdit.pendingEdit(),
     ...(context.extensionMode === vscode.ExtensionMode.Test
@@ -312,15 +331,21 @@ export function activate(context: vscode.ExtensionContext): {
             setRecipes: (r: Recipe[] | undefined) => {
               testRecipes = r;
             },
+            // Seeds the old per-model server records and clears the done flag, then runs the migration again.
+            rerunMigration: async (legacy: unknown) => {
+              await context.globalState.update(LEGACY_MANAGED_KEY, legacy);
+              await context.globalState.update(MIGRATED_KEY, undefined);
+              await servers.migrate();
+            },
           },
         }
       : {}),
   };
 }
 
-/** Stops the llama-servers this window started (windows that adopted one start their own); VS Code waits briefly for the promise. */
+/** Stops the router this window started (windows that adopted it start their own); VS Code waits briefly for the promise. */
 export function deactivate(): Promise<void> | undefined {
   const servers = localServers;
   localServers = undefined;
-  return servers?.stopAll();
+  return servers?.stopHere();
 }

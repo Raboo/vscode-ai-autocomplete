@@ -1,12 +1,26 @@
 #!/usr/bin/env node
-// A stand-in llama-server for the local model integration test: it answers /health, /props, /v1/models and /infill
-// (with `a + b;`) on 127.0.0.1 at the --port it is given. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1;
-// with FAKE_LLAMA_SERVER_EXIT_ONCE=<path> it does so only while that file exists, deleting it (the next start works).
-// With FAKE_LLAMA_SERVER_STARTS=<path> it appends its pid to that file once it listens.
-import { appendFileSync, existsSync, unlinkSync } from 'node:fs';
+// A stand-in llama-server for the local model integration test. `--version` prints a version line; `--help` lists `--models-preset` (router mode). Started
+// with `--models-preset <file>` it is a router on 127.0.0.1 at the --port it is given: /health, /props (the router's,
+// or a model's with ?model=), /models (with ?reload=1), /models/load, /models/unload and /infill (with `a + b;`); the
+// models are the section names of the presets file. With FAKE_LLAMA_SERVER_EXIT=1 it exits at once with code 1; with
+// FAKE_LLAMA_SERVER_EXIT_ONCE=<path> it does so only while that file exists, deleting it (the next start works). With
+// FAKE_LLAMA_SERVER_STARTS=<path> it appends its pid to that file once it listens. With FAKE_LLAMA_SERVER_ARGS=<path> it appends
+// its arguments (one JSON line) at start; with FAKE_LLAMA_SERVER_LOG=<path> it appends one JSON line `{path, body}` per
+// request to /infill, /models/load and /models/unload.
+import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import process from 'node:process';
 import { URL } from 'node:url';
+
+if (process.argv.includes('--version')) {
+  process.stdout.write('version: 1 (fake)\nbuilt with a test fixture\n');
+  process.exit(0);
+}
+
+if (process.argv.includes('--help')) {
+  process.stdout.write('usage: llama-server [options]\n  --models-preset PATH   models preset file\n  --models-max N\n');
+  process.exit(0);
+}
 
 const arg = (name) => {
   const at = process.argv.indexOf(name);
@@ -14,6 +28,7 @@ const arg = (name) => {
 };
 
 const exitOnce = process.env.FAKE_LLAMA_SERVER_EXIT_ONCE;
+if (process.env.FAKE_LLAMA_SERVER_ARGS) appendFileSync(process.env.FAKE_LLAMA_SERVER_ARGS, `${JSON.stringify(process.argv.slice(2))}\n`);
 const failNow = process.env.FAKE_LLAMA_SERVER_EXIT === '1' || (exitOnce !== undefined && existsSync(exitOnce));
 if (exitOnce !== undefined && existsSync(exitOnce)) unlinkSync(exitOnce);
 if (failNow) {
@@ -22,19 +37,63 @@ if (failNow) {
 }
 
 const port = Number(arg('--port'));
-const alias = arg('--alias') ?? 'fake';
+const presetsPath = arg('--models-preset');
+
+/** Section name to slots (`np`), from the presets file. */
+const readPresets = () => {
+  const models = new Map();
+  if (!presetsPath) return models;
+  let current;
+  for (const line of readFileSync(presetsPath, 'utf8').split('\n')) {
+    const section = /^\[(.+)\]$/.exec(line.trim());
+    if (section) {
+      current = section[1] === '*' ? undefined : section[1];
+      if (current) models.set(current, 1);
+    } else if (current && /^np\s*=/.test(line)) models.set(current, Number(line.split('=')[1]));
+  }
+  return models;
+};
+let models = readPresets();
+const loaded = new Set();
+
+const json = (res, status, body) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 
 const server = createServer((req, res) => {
-  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-  req.resume();
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const path = url.pathname;
+  let body = '';
+  req.on('data', (c) => (body += c));
   req.on('end', () => {
+    const named = () => {
+      try {
+        return JSON.parse(body).model;
+      } catch {
+        return undefined;
+      }
+    };
+    if (process.env.FAKE_LLAMA_SERVER_LOG && ['/infill', '/models/load', '/models/unload'].includes(path)) {
+      appendFileSync(process.env.FAKE_LLAMA_SERVER_LOG, `${JSON.stringify({ path, body })}\n`);
+    }
     if (path === '/health') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end('{"status":"ok"}');
+      json(res, 200, { status: 'ok' });
     } else if (path === '/props') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model_alias: alias }));
-    } else if (path === '/v1/models') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: [{ id: alias, object: 'model' }] }));
+      const model = url.searchParams.get('model');
+      if (!model) return json(res, 200, { role: 'router', model_path: 'none', n_ctx: 0 });
+      if (!models.has(model)) return json(res, 404, { error: { message: 'model not found' } });
+      if (!loaded.has(model)) return json(res, 400, { error: { message: 'model is not loaded' } });
+      json(res, 200, { model_alias: model, total_slots: models.get(model) });
+    } else if (path === '/models' || path === '/v1/models') {
+      if (url.searchParams.get('reload') === '1') models = readPresets();
+      json(res, 200, { object: 'list', data: [...models.keys()].map((id) => ({ id, object: 'model', status: { value: loaded.has(id) ? 'loaded' : 'unloaded' } })) });
+    } else if (path === '/models/load' || path === '/models/unload') {
+      const model = named();
+      if (!models.has(model)) return json(res, 404, { error: { message: 'model not found' } });
+      if (path === '/models/load') loaded.add(model);
+      else loaded.delete(model);
+      json(res, 200, { success: true });
     } else if (path === '/infill') {
+      const model = named();
+      if (model !== undefined && models.has(model)) loaded.add(model);
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(`data: ${JSON.stringify({ content: 'a + b;' })}\n\n`);
       res.end(`data: ${JSON.stringify({ content: '', stop: true })}\n\n`);

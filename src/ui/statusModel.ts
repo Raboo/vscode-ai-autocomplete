@@ -1,5 +1,6 @@
 import { sessionLine, type SessionStats } from '../completion/outcomes';
 import type { StatusState } from '../completion/requestStatus';
+import { LOCAL_BACKEND_ID } from '../local/backendEntry';
 
 export interface LastStatus { state: StatusState; detail?: string }
 
@@ -28,9 +29,9 @@ export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextE
 export interface MenuEntry { label: string; id: string }
 
 /** What the menu shows besides the status; a backend is undefined when that feature is off. */
-export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean }
+export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean; local?: true }
 
-type MenuSettings = { enabled: boolean; backends: unknown[]; fim: { enabled: boolean; backendId?: string }; nextEdit: { enabled: boolean; backendId?: string } };
+type MenuSettings = { enabled: boolean; backends: { id?: unknown }[]; fim: { enabled: boolean; backendId?: string }; nextEdit: { enabled: boolean; backendId?: string } };
 
 /**
  * The menu's inputs from the settings. The entries name their backends while the switch is off: that is what "Turn on" brings back.
@@ -43,6 +44,7 @@ export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs
     ...(s.fim.enabled ? { completionBackend: s.fim.backendId ?? 'none' } : {}),
     ...(s.nextEdit.enabled && s.nextEdit.backendId !== undefined ? { nextEditBackend: s.nextEdit.backendId } : {}),
     nativeNextEdit,
+    ...(s.backends.some((b) => b.id === LOCAL_BACKEND_ID) ? { local: true as const } : {}),
   };
 }
 
@@ -50,6 +52,8 @@ const RETRY: MenuEntry = { label: 'Retry now', id: 'retry' };
 const RESUME: MenuEntry = { label: 'Resume now', id: 'resume' };
 const MANAGE: MenuEntry = { label: 'Manage backends...', id: 'manageBackends' };
 const SET_UP_LOCAL: MenuEntry = { label: 'Set up local model...', id: 'setUpLocalModel' };
+/** In Set up local model's place once the `local` backend exists; both open the Local Models page. */
+const LOCAL_MODELS: MenuEntry = { label: 'Local models...', id: 'manageLocalModels' };
 const SWITCH: MenuEntry = { label: 'Turn off AI Autocomplete', id: 'toggleEnabled' };
 const COMPLETIONS: MenuEntry = { label: 'Completions: off', id: 'selectBackend' };
 const NEXT_EDIT: MenuEntry = { label: 'Next Edit: off', id: 'selectNextEditBackend' };
@@ -76,6 +80,7 @@ const GROUP_OF: Record<string, string> = {
   selectNextEditBackend: 'Backends',
   manageBackends: 'Backends',
   setUpLocalModel: 'Backends',
+  manageLocalModels: 'Backends',
   enableNativeNextEdit: 'Backends',
   toggleEnabled: 'Pause',
   snooze: 'Pause',
@@ -124,6 +129,7 @@ export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
     if (e === SWITCH) return m.enabled ? e : { ...e, label: 'Turn on AI Autocomplete' };
     if (e === COMPLETIONS) return { ...e, label: `Completions: ${m.completionBackend ?? 'off'}` };
     if (e === NEXT_EDIT) return { ...e, label: `Next Edit: ${m.nextEditBackend ?? 'off'}` };
+    if (e === SET_UP_LOCAL && m.local) return LOCAL_MODELS;
     return e;
   };
   const menu = MENU.filter((e) => !(m.nativeNextEdit && e === ENABLE_NATIVE)).map(label);

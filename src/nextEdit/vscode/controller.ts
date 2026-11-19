@@ -16,7 +16,7 @@ import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
 import type { ContextFile } from '../../types';
 import { decorationPlan, displayFor } from '../decorations';
-import { classify, editShow, toItemText, type LineEdit, type Pos } from '../diff';
+import { classify, cursorWithin, editShow, toItemText, type LineEdit, type Pos } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
 import { formatBudgets, type FormatAnswer, type NextEditFormat, type NextEditInput } from '../formats/format';
 import { EditHistory, recentEditsFile, type RecentSnippets, type Snippet } from '../history';
@@ -78,6 +78,11 @@ export class NextEditController implements vscode.Disposable {
   /** `region` is set once the request's input is built: typing inside it keeps the request running (see changed()). */
   private readonly inflight = new Map<string, { version: number; ctl: AbortController; region?: LineSpan }>();
   private result: Held | undefined;
+  /**
+   * The result last held for the item: the item's accept command runs after the accept's own change event has dropped
+   * `result`, so accepted() reads the predicted cursor from here (checked against the document first).
+   */
+  private lastItem: Held | undefined;
   /** An inline edit shown as decorations, waiting for Tab or Esc. Never returned by itemFor(). */
   private pending: Held | undefined;
   private readonly decorations = new EditDecorations();
@@ -140,11 +145,14 @@ export class NextEditController implements vscode.Disposable {
    * A Next Edit item was accepted; its change event has already run. Asks again shortly, so repeated Tabs walk through a change.
    * The chain skips the same-line cooldown, not the rejection cooldown or the gate.
    */
-  accepted(): void {
+  accepted(held: Held | undefined = this.lastItem): void {
     this.d.outcomes.accepted('nextEdit');
     this.d.statsChanged();
     this.result = undefined;
-    const doc = vscode.window.activeTextEditor?.document;
+    this.lastItem = undefined;
+    const editor = vscode.window.activeTextEditor;
+    if (editor && held) this.moveToPredicted(editor, held);
+    const doc = editor?.document;
     if (!doc || !this.eligible(doc)) return;
     const uri = doc.uri.toString();
     this.flush(doc);
@@ -164,6 +172,18 @@ export class NextEditController implements vscode.Disposable {
   rejected(): void {
     this.policy.rejected(Date.now());
     this.result = undefined;
+    this.lastItem = undefined;
+  }
+
+  /** Moves the cursor where the model predicted it, when the document holds the accepted lines at the edit's place. */
+  private moveToPredicted(editor: vscode.TextEditor, held: Held): void {
+    const doc = editor.document;
+    const at = held.cursorAfter;
+    if (!at || doc.uri.toString() !== held.uri) return;
+    const { startLine, newLines } = held.edit;
+    if (startLine + newLines.length > doc.lineCount || newLines.some((l, n) => doc.lineAt(startLine + n).text !== l)) return;
+    const pos = doc.validatePosition(new vscode.Position(at.line, at.character));
+    editor.selection = new vscode.Selection(pos, pos);
   }
 
   /** The inline edit shown as decorations, for tests. */
@@ -207,7 +227,7 @@ export class NextEditController implements vscode.Disposable {
     const at = last < 0 ? new vscode.Position(start.line, start.character) : new vscode.Position(startLine + last, newLines[last].length);
     const cursor = editor.document.validatePosition(at);
     editor.selection = new vscode.Selection(cursor, cursor);
-    this.accepted();
+    this.accepted(p);
   }
 
   /** Esc on a pending decoration: a rejection. An Esc with nothing pending (a stale context key) rejects nothing. */
@@ -253,6 +273,7 @@ export class NextEditController implements vscode.Disposable {
     for (const f of this.inflight.values()) f.ctl.abort();
     this.inflight.clear();
     this.result = undefined;
+    this.lastItem = undefined;
     this.clearPending();
     for (const t of [...this.pauseTimers.values(), ...this.chainTimers.values()]) clearTimeout(t);
     for (const { timer } of this.idleTimers.values()) clearTimeout(timer);
@@ -345,7 +366,7 @@ export class NextEditController implements vscode.Disposable {
     const kept = typing && this.result?.uri === uri ? this.rebased(this.result, doc, typing.cursor) : undefined;
     if (!active) return;
     this.cancel(uri, typing !== undefined && this.inRegion(uri, typing.change) && this.keepsWhileTyping());
-    if (kept) this.result = kept;
+    if (kept) this.result = this.lastItem = kept;
     this.restartIdle(doc);
     const reason = e.reason;
     if (reason === vscode.TextDocumentChangeReason.Undo || reason === vscode.TextDocumentChangeReason.Redo) return;
@@ -377,7 +398,9 @@ export class NextEditController implements vscode.Disposable {
     const text = doc.getText();
     const edit = rebaseEdit(r.edit, r.text, text);
     if (edit === undefined || edit === 'done') return undefined;
-    return { uri: r.uri, version: doc.version, cursor, edit, show: classify(edit, text.split(/\r?\n/), cursor), text };
+    // The rebased edit leads to the same text, so the predicted cursor stays where it was when the edit still writes its line.
+    const after = cursorWithin(edit, r.cursorAfter);
+    return { uri: r.uri, version: doc.version, cursor, edit, show: classify(edit, text.split(/\r?\n/), cursor), text, ...(after ? { cursorAfter: after } : {}) };
   }
 
   /** Whether a change lies inside the lines the document's running request rewrites, so its answer may still be typed along. */
@@ -701,6 +724,7 @@ export class NextEditController implements vscode.Disposable {
           : {}),
       });
       backoff.recordSuccess();
+      if (parsed?.kind === 'rewrite' && parsed.warning === 'markerSequence') log.debug('next edit: answer markers out of sequence, used from the first to the last');
       log.debug(
         `next edit ${id} model=${model ?? '?'} format=${format.id} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
           `→ ${fresh ? fresh.show.kind : 'no edit'} in ${Date.now() - started} ms`,
@@ -757,7 +781,7 @@ export class NextEditController implements vscode.Disposable {
         this.decorations.show(shown, decorationPlan(result.edit, current, shown.selection.active));
         return;
       }
-      this.result = result;
+      this.result = this.lastItem = result;
       this.note(uri, 'shown', { ms, chars });
       void vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
     } catch (err) {

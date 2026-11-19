@@ -615,6 +615,60 @@ suite('Next Edit', () => {
     });
   });
 
+  /** The Zeta answer for GREET: the return line, with the predicted cursor before `message`. */
+  const ZETA_CURSOR_ANSWER = ['<|marker_1|>', `${GREETED.join('\n')}\n    return <|user_cursor|>message`, '<|marker_2|>'];
+
+  test('accepting a Zeta ghost text moves the cursor where the answer put it', async () => {
+    const accepted = [...GREETED, RETURN_LINE].join('\n');
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ZETA_CURSOR_ANSWER } }, lmStudio, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => posts(m, '/v1/completions').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await commitWhen(editor, (t) => t === accepted);
+
+      assert.equal(editor.document.getText(), accepted);
+      const at = new vscode.Position(2, '    return '.length);
+      assert.ok(await waitFor(() => editor.selection.active.isEqual(at), 1000), `cursor at ${JSON.stringify(editor.selection.active)}`);
+    });
+  });
+
+  test('an accept after the document changed leaves the cursor where it is', async () => {
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ZETA_CURSOR_ANSWER } }, lmStudio, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      const uri = editor.document.uri.toString();
+      assert.ok(await waitFor(() => api.outcomes(uri).some((o) => o.feature === 'nextEdit' && o.kind === 'shown'), REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      // A character the suggestion does not have: the document no longer holds the text the item would add.
+      await typeKeys(editor, 'x');
+      const typed = new vscode.Position(1, GREETED[1].length + 1);
+      assert.ok(editor.selection.active.isEqual(typed));
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditAccepted');
+
+      assert.equal(editor.document.getText(), [GREET[0], `${GREETED[1]}x`].join('\n'));
+      assert.ok(editor.selection.active.isEqual(typed), `cursor at ${JSON.stringify(editor.selection.active)}`);
+    });
+  });
+
+  test('Tab on a Zeta decoration applies it and moves the cursor where the answer put it', async () => {
+    const line8 = RENAMED[8].replace('radius', '<|user_cursor|>radius');
+    const answer = RENAMED.map((l, i) => (i === 8 ? line8 : l)).join('\n');
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ['<|marker_1|>', answer, '<|marker_2|>'] } }, lmStudio, async (m) => {
+      const editor = await openAndRename();
+      assert.ok(await waitFor(() => posts(m, '/v1/completions').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+
+      assert.equal(editor.document.getText(), RENAMED.join('\n'));
+      assert.equal(editor.selection.active.line, 8);
+      assert.equal(editor.selection.active.character, RENAMED[8].indexOf('radius'));
+    }, { 'nextEdit.display': 'decorations' });
+  });
+
   test('a reserved string sends nothing', async () => {
     // `<|file_sep|>` in the window would become one of Sweep's control tokens.
     await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: ['x\n'] } }, llamaCpp, async (m) => {

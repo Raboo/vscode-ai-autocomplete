@@ -29,6 +29,11 @@ export function regionEdit(oldRegion: string[], newRegion: string[], regionStart
   return { startLine: regionStart + head, endLine: regionStart + oldEnd, newLines: newRegion.slice(head, newEnd) };
 }
 
+/** `p` when it lies on the lines the edit writes (none for a pure deletion), else undefined. */
+export function cursorWithin(e: LineEdit, p: Pos | undefined): Pos | undefined {
+  return p && p.line >= e.startLine && p.line < e.startLine + e.newLines.length ? p : undefined;
+}
+
 function significant(lines: string[]): string[] {
   return lines.map((l) => l.trim()).filter((l) => l !== '');
 }

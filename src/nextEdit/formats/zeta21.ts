@@ -106,9 +106,14 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
   offsets.push(old.length);
   if (s < 1 || e > offsets.length || s > e) return { kind: 'invalid', why: 'range' };
 
+  // A cursor tag counts only when the whole answer has exactly one; its offset is taken in the joined segments.
+  const oneCursor = text.split(CURSOR).length === 2;
+  let cursorAt: number | undefined;
   let inner = '';
   for (let n = 0; n + 1 < tags.length; n++) {
-    const segment = text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index).split(CURSOR).join('');
+    const raw = text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index);
+    if (oneCursor && raw.includes(CURSOR)) cursorAt = inner.length + raw.indexOf(CURSOR);
+    const segment = raw.split(CURSOR).join('');
     // A block before any marker but the closing one ends in a newline, else its last line would run into the next kept line.
     if (Number(tags[n + 1][1]) !== offsets.length && segment !== '' && !segment.endsWith('\n')) return { kind: 'invalid', why: 'glued' };
     inner += segment;
@@ -126,7 +131,15 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
     }
   }
   const next = head + inner + old.slice(offsets[e - 1]);
-  return next === old ? { kind: 'noChange' } : { kind: 'rewrite', lines: next.split('\n') };
+  if (next === old) return { kind: 'noChange' };
+  const before = cursorAt === undefined ? undefined : next.slice(0, head.length + Math.min(cursorAt, inner.length)).split('\n');
+  const inOrder = tags.every((t, n) => n === 0 || Number(t[1]) === Number(tags[n - 1][1]) + 1);
+  return {
+    kind: 'rewrite',
+    lines: next.split('\n'),
+    ...(before ? { cursor: { line: before.length - 1, character: before[before.length - 1].length } } : {}),
+    ...(inOrder ? {} : { warning: 'markerSequence' as const }),
+  };
 }
 
 /** Zed's Zeta 2.1 raw prompt: marker-delimited blocks of the editable region, edit history and related files. */

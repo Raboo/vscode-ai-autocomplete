@@ -18,7 +18,14 @@ export interface NextEditInput {
 }
 
 /** A parsed answer: the region's new lines, no change, or an answer that cannot be used. */
-export type FormatAnswer = { kind: 'rewrite'; lines: string[] } | { kind: 'noChange' } | { kind: 'invalid'; why: string };
+/**
+ * A rewrite's `cursor` is where the model predicts the cursor after the edit (line and character in the new region);
+ * `warning: 'markerSequence'` says the answer's markers did not count up by one.
+ */
+export type FormatAnswer =
+  | { kind: 'rewrite'; lines: string[]; cursor?: { line: number; character: number }; warning?: 'markerSequence' }
+  | { kind: 'noChange' }
+  | { kind: 'invalid'; why: string };
 
 interface FormatBase {
   id: FormatId;

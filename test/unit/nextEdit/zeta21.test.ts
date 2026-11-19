@@ -259,9 +259,52 @@ describe('zeta21 parse', () => {
     expect(a).toEqual({
       kind: 'rewrite',
       lines: ['def circumference(radius):', '    return 2 * 3.14159 * radius', '', '', 'def diameter(r):', '    return 2 * r'],
+      cursor: { line: 0, character: 'def circumference(radius):'.length },
     });
     expect(parse('<|marker_1|><|user_cursor|><|marker_1|>')).toEqual({ kind: 'noChange' });
   });
+});
+
+describe('zeta21 predicted cursor', () => {
+  const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
+  const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
+  const parse = (answer: string) => zeta21Format.parse(answer, i);
+
+  it('the tag once inside the rewritten span gives its line and character in the new region, without the tag', () => {
+    expect(parse('<|marker_2|>X<|user_cursor|>Y\nZ<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'XY', 'Z'], cursor: { line: 10, character: 1 } });
+    expect(parse('<|marker_1|>A\n<|user_cursor|><|marker_2|>')).toEqual({ kind: 'rewrite', lines: ['A', ...lines.slice(10)], cursor: { line: 1, character: 0 } });
+  });
+
+  it('a tag across two blocks counts its position over both', () => {
+    const a = parse(`<|marker_1|>${lines.slice(0, 10).join('\n')}\n<|marker_2|>${lines.slice(10, 19).join('\n')}\nl19<|user_cursor|>X<|marker_3|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 19), 'l19X'], cursor: { line: 19, character: 3 } });
+  });
+
+  it('a tag twice, or outside the markers, gives no cursor', () => {
+    expect(parse('<|marker_2|>X<|user_cursor|>Y<|user_cursor|>\n<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'XY'] });
+    expect(parse('<|user_cursor|><|marker_2|>X<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
+    expect(parse('<|marker_2|>X<|marker_3|><|user_cursor|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
+  });
+});
+
+describe('zeta21 marker sequence', () => {
+  const lines = Array.from({ length: 40 }, (_, n) => `l${n}`);
+  const i = input({ lines, region: { start: 0, end: 39 }, cursor: { line: 0, character: 0 } });
+  const parse = (answer: string) => zeta21Format.parse(answer, i);
+
+  it('markers out of order between the first and last are used from first to last with a warning', () => {
+    const a = parse(`<|marker_1|>A\n<|marker_3|>B\n<|marker_2|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: ['A', 'B', ...lines.slice(14)], warning: 'markerSequence' });
+  });
+
+  it('consecutive markers carry no warning', () => {
+    const a = parse(`<|marker_1|>A\n<|marker_2|>B\n<|marker_3|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: ['A', 'B', ...lines.slice(27)] });
+  });
+});
+
+describe('zeta21 parse, blocks', () => {
+  const parse = (answer: string, i: NextEditInput) => zeta21Format.parse(answer, i);
 
   it('a block before a marker other than the closing one must end in a newline', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);

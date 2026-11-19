@@ -53,12 +53,14 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - Next Edit (`src/nextEdit/`, all pure except `vscode/`):
   - `history.ts`: edit-diff history per file (merged per area, with structured hunks and the text before the latest change) and recently viewed snippets;
-  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages;
+  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages; Zeta 2.1 uses a length-based region (1225 chars, at most 40 lines) that ignores those settings;
   - `formats/format.ts`: the format interface (chat or raw completion transport), the answer type and the shared reserved-string and budgeting helpers;
   - `formats/index.ts`: `pickFormat`, which maps the `nextEdit.format` setting and the model id to a format;
   - `formats/chatXtab.ts`: the chat prompt (our own wording, Copilot/Mercury tag names) and the answer parser;
   - `formats/sweep.ts`: Sweep next-edit prompts (v1 and v2 layouts) and answer parser; adapts Apache-2.0 scripts, see `THIRD_PARTY_NOTICES.md`;
-  - `formats/zeta21.ts`: Zeta 2.1 prompt with marker blocks and answer parser, written from the model card only (never read Zed's GPL source);
+  - `formats/zeta21.ts`: Zeta 2.1 prompt with marker blocks and answer parser, follows the model card and Zed's published zed-zeta-bindings, read only, no code copied;
+  - `related.ts`: definitions as context, pure (identifiers near the cursor, excerpts, merging, cache);
+  - `vscode/definitions.ts`: the language-server lookup for `related.ts` (100 ms cap);
   - `diff.ts`: old region vs new region as one line edit, filters, ghost text or inline edit;
   - `decorations.ts`: the decoration plan for an inline edit (which text to mark, what to show, the hint, whether Tab jumps first) and `displayFor`, which picks item, decorations or drop from the `display` setting;
   - `trigger.ts`: when to ask (edit pause, cursor move after an edit) and the cooldowns;

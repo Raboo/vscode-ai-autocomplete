@@ -93,7 +93,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 
 Why each piece exists:
 
-- release-please turns Conventional Commits on `main` into a release PR that bumps `package.json` and writes `CHANGELOG.md`; merging it creates the tag and GitHub Release, and a follow-up job attaches the `.vsix`. Releases need no hand-edited files.
+- release-please turns Conventional Commits on `main` into a release PR that bumps `package.json` and writes `CHANGELOG.md`; merging it creates the tag and GitHub Release, and a follow-up job attaches the `.vsix`. Releases need no hand-edited files. Versions follow semver strictly: `fix:` is a patch, `feat:` a minor, and a breaking change (`feat!:`, `fix!:` or a `BREAKING CHANGE:` footer) a major version. With squash merges the PR title is the commit subject, so it decides the bump.
 - Dependabot keeps devDependencies and pinned action SHAs current. Patch/minor updates auto-merge once CI is green; major updates wait for a human or an AI session.
 - CodeQL scans the TypeScript on every PR and weekly.
 - `scripts/setup-github-repo.sh` records the repo settings these depend on (merge options, workflow permissions, security alerts, the `main` ruleset requiring `check` and `integration`), so they are reproducible and reviewable rather than clicked by hand.
@@ -101,15 +101,13 @@ Why each piece exists:
 Workflows (`.github/workflows/`):
 
 - `ci.yml`: jobs `check` (lint, typecheck, build, test, package) and `integration` (VS Code under `xvfb-run`). Job ids must stay `check` and `integration`, with no `name:`, because the ruleset requires those names.
-- `release-please.yml`: job `release-please` opens or updates the release PR; job `vsix` runs on release and uploads `ai-autocomplete-X.Y.Z.vsix` to the release.
+- `release-please.yml`: job `release-please` opens or updates the release PR and turns on auto-merge (squash) for it; job `vsix` runs on release and uploads `ai-autocomplete-X.Y.Z.vsix` to the release.
 - `dependabot-automerge.yml`: enables auto-merge (squash) for Dependabot patch and minor PRs.
 - `codeql.yml`: job `analyze`.
 - Every job has `timeout-minutes`; keep it when adding jobs.
 
-Release PRs opened with the default `GITHUB_TOKEN` do not trigger CI, so `check` and `integration` never report on them. Either add a `RELEASE_PLEASE_TOKEN` secret (fine-grained PAT: contents and pull requests write on this repo) or merge release PRs with the admin bypass (`gh pr merge --admin --squash`).
+Releases are automatic: release-please opens the release PR with the `RELEASE_PLEASE_TOKEN` secret (fine-grained PAT: contents and pull requests write on this repo, set on 2026-11-19), so CI runs on it, and the workflow turns on auto-merge; when `check` and `integration` pass it merges, which tags and publishes the release. Release PRs opened with the default `GITHUB_TOKEN` (the secret missing or expired) do not trigger CI and never merge on their own: renew the secret, or merge with the admin bypass (`gh pr merge --admin --squash`).
 
-Cut a release: merge the open release-please PR. The first one proposes `0.1.0`.
-
-Needs a human: creating the `RELEASE_PLEASE_TOKEN` secret, Marketplace and Open VSX tokens (Phase 5), approving major dependency updates.
+Needs a human: renewing the `RELEASE_PLEASE_TOKEN` secret when it expires, Marketplace and Open VSX tokens (Phase 5), approving major dependency updates.
 
 If the CI `integration` job ever fails with Chromium sandbox errors on ubuntu-24.04 (it passed on GitHub on 2026-11-13), add a CI-only `--no-sandbox` launch arg in `.vscode-test.mjs`, or a `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` step before it.

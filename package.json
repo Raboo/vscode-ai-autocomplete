@@ -7,7 +7,7 @@
     "color": "#0b1530",
     "theme": "dark"
   },
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
   "author": {
@@ -603,18 +603,53 @@
             "order": 4,
             "items": {
               "type": "object",
-              "required": ["name"],
+              "required": [
+                "name"
+              ],
               "properties": {
-                "name": { "type": "string", "description": "Model name, lowercase letters, digits, `.`, `_` and `-`." },
-                "repo": { "type": "string", "description": "Hugging Face repo, `<owner>/<name>`." },
-                "revision": { "type": "string", "description": "Commit hash the file is pinned to." },
-                "file": { "type": "string", "description": "File path in the repo." },
-                "bytes": { "type": "integer", "minimum": 1 },
-                "sha256": { "type": "string" },
-                "uses": { "type": "array", "items": { "enum": ["completions", "nextEdit"] } },
-                "contextTokens": { "type": "integer", "minimum": 1 },
-                "extraArgs": { "type": "string", "description": "Extra llama-server arguments, as one command line." },
-                "hidden": { "type": "boolean" }
+                "name": {
+                  "type": "string",
+                  "description": "Model name, lowercase letters, digits, `.`, `_` and `-`."
+                },
+                "repo": {
+                  "type": "string",
+                  "description": "Hugging Face repo, `<owner>/<name>`."
+                },
+                "revision": {
+                  "type": "string",
+                  "description": "Commit hash the file is pinned to."
+                },
+                "file": {
+                  "type": "string",
+                  "description": "File path in the repo."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "uses": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "completions",
+                      "nextEdit"
+                    ]
+                  }
+                },
+                "contextTokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "extraArgs": {
+                  "type": "string",
+                  "description": "Extra llama-server arguments, as one command line."
+                },
+                "hidden": {
+                  "type": "boolean"
+                }
               },
               "additionalProperties": false
             }

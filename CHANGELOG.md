@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.6.0...v1.0.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* the local model helper supports llama.cpp only, and `aiAutocomplete.local.lmsPath` is removed. LM Studio stays available as a normal backend on the Backends page. Local models now run on one llama-server in router mode, which needs a llama.cpp build with `--models-preset`.
+
+### Features
+
+* Manage Local Models page and one llama.cpp router ([bb0dc1e](https://github.com/Raboo/vscode-ai-autocomplete/commit/bb0dc1e1caca957359a733c4b5800c413e9d6911))
+
 ## [0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.5.1...v0.6.0) (2026-11-18)
 
 

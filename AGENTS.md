@@ -19,7 +19,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 - A git-ignored `.env` in the repo root may hold the user's local test endpoint credentials. Agents never commit them, copy them into docs, plans or tests, or print them; tests use mocks.
 - A file that copies or closely adapts upstream code starts with `// Portions adapted from <project> <path> @ <commit> (<license>). Copyright <holder>.`, and `THIRD_PARTY_NOTICES.md` gets an entry for that project (full MIT text for MIT projects).
 - Never touch the GitHub repo `Raboo/ai-autocomplete`.
-- Interactive sessions ask the user before creating repos, pushing, changing repo settings or releasing, and wait for a yes.
+- Approval (the owner's choice, 2026-11-19): designs and plans need the owner's approval; after that, agents push, open PRs and merge them without asking (see "Delivery" below). Agents still ask and wait for a yes before: creating or deleting repos; changing repo settings, rulesets, secrets or tokens; force-pushing or rewriting `main`; merging with `--admin` or any other bypass of failing or missing checks; publishing to the Marketplace or Open VSX; and work outside an approved plan other than a bug fix (new features, scope changes, a breaking change the plan did not name).
 - Commit subjects follow Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `build:`); nobody edits `CHANGELOG.md` or the `version` field by hand.
 - Commits carry no Co-Authored-By trailer: they show only the user (their choice, 2026-11-16).
 - Never run upstream code; read it only (for example with `gh api repos/<o>/<r>/contents/<path>?ref=<sha>`).
@@ -85,6 +85,15 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 2. Each phase gets a plan (`docs/superpowers/plans/`).
 3. Tasks run test-first, one commit per task, using the plan's commit message.
 4. The task's checkboxes are ticked in the plan in a `docs(plan): mark Task N complete` commit.
+
+## Delivery
+
+1. Work happens on a branch, never on `main`.
+2. Before merging, the branch gets a review (the plan's final whole-branch review, or one independent review for a bug fix) and its findings are fixed.
+3. The agent pushes the branch and opens a PR whose title is the Conventional Commit for the squash merge: it decides the release (`fix:` patch, `feat:` minor, `!` or a `BREAKING CHANGE:` note major; `docs:`/`test:`/`ci:`/`chore:` release nothing). Breaking changes get a `BREAKING CHANGE:` paragraph in the squash body, which becomes the changelog entry.
+4. The agent merges it itself (`gh pr merge --squash --delete-branch` with an explicit subject and body, no trailer) once the required checks `check` and `integration` pass. A red or missing check is fixed on the branch, never bypassed.
+5. The merge releases automatically (see GitHub automation). The owner smoke-tests released versions; what they report is fixed like any bug: a fix with a found cause needs no plan and goes through steps 1–4.
+6. The agent tells the owner what was merged and released, with links, and adds the release's manual checks to `docs/ROADMAP.md`.
 
 ## How to continue the work
 

@@ -6,6 +6,7 @@ import { MissingApiKeyError } from '../../backends/mistral';
 import type { ChatMessage, FimBackend } from '../../backends/types';
 import { docPath, inProject } from '../../completion/contextTracker';
 import { nextEditModel, resolveNextEdit } from '../../completion/effective';
+import { shouldWarmNextEdit, WarmLimiter, type NextEditWarmInput } from '../../completion/warmup';
 import { describeFailure, recordBackendFailure } from '../../completion/requestStatus';
 import { EFFORT_NONE_REJECTED, thinkingBlocked } from '../../completion/route';
 import { ThinkingError } from '../../completion/stream';
@@ -20,8 +21,8 @@ import type { NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
 import { rebaseEdit } from '../rebase';
 import { nextEditBudgets, type LineSpan } from '../region';
-import { runNextEdit, type NextEditResult } from '../request';
-import { CHAIN_DELAY_MS, EDIT_PAUSE_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, TriggerPolicy } from '../trigger';
+import { runNextEdit, warmNextEdit, type NextEditResult } from '../request';
+import { CHAIN_DELAY_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, nextEditPauseMs, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
 
 export interface NextEditDeps {
@@ -84,6 +85,10 @@ export class NextEditController implements vscode.Disposable {
   private readonly pauseTimers = new Map<string, Timer>();
   private readonly chainTimers = new Map<string, Timer>();
   private readonly idleTimers = new Map<string, { timer: Timer; doc: vscode.TextDocument }>();
+  /** When each document's Next Edit slot was last warmed (only with completions off). */
+  private readonly warmed = new WarmLimiter();
+  /** A warm-up is running (at most one at a time). */
+  private warming = false;
   private readonly logged = new Set<string>();
   private readonly notified = new Set<string>();
 
@@ -117,7 +122,7 @@ export class NextEditController implements vscode.Disposable {
     const change = this.lastChange.get(uri);
     if (change?.version !== version) return;
     this.lastChange.delete(uri);
-    this.schedulePause(uri, version, change.at + EDIT_PAUSE_MS - Date.now());
+    this.schedulePause(uri, version, change.at + nextEditPauseMs(this.d.getSettings()) - Date.now());
   }
 
   /**
@@ -132,6 +137,7 @@ export class NextEditController implements vscode.Disposable {
     this.flush(doc);
     this.clearTimer(this.pauseTimers, uri);
     this.clearTimer(this.chainTimers, uri);
+    this.warm(doc);
     this.chainTimers.set(
       uri,
       setTimeout(() => {
@@ -212,6 +218,7 @@ export class NextEditController implements vscode.Disposable {
   /** Forgets everything planned or recorded under the old settings; a newly excluded file must not keep diffs that would be sent. */
   reset(): void {
     this.clear();
+    this.warmed.clear();
     this.logged.clear();
     for (const doc of vscode.workspace.textDocuments) this.opened(doc);
   }
@@ -278,6 +285,7 @@ export class NextEditController implements vscode.Disposable {
     const uri = doc.uri.toString();
     this.cancel(uri);
     this.policy.closed(uri);
+    this.warmed.forget(uri);
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
     this.idleTimers.delete(uri);
@@ -322,7 +330,7 @@ export class NextEditController implements vscode.Disposable {
     this.lastChange.set(uri, { version: doc.version, at: now });
     // A language or file FIM is disabled in is not eligible here, so only these settings leave FIM inactive for the document.
     const s = this.d.getSettings();
-    if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, EDIT_PAUSE_MS);
+    if (!s.enabled || !s.fim.enabled || s.fim.backendId === undefined) this.schedulePause(uri, doc.version, nextEditPauseMs(s));
   }
 
   /**
@@ -416,6 +424,90 @@ export class NextEditController implements vscode.Disposable {
     // The current size, set just before this commit so it applies to it; 0 keeps no history.
     this.history.maxEntries = this.d.getSettings().nextEdit.historySize;
     this.history.commit(this.path(doc), doc.getText());
+  }
+
+  /**
+   * With completions off, fills the Next Edit slot's prompt cache for the cursor (local llama.cpp, raw formats only; see
+   * shouldWarmNextEdit). Shows nothing, records no history and no outcome. Never rejects.
+   */
+  warm(doc: vscode.TextDocument): void {
+    this.speculate(doc).catch((err: unknown) => this.d.log.debug(`next edit warm-up failed: ${err instanceof Error ? err.name : 'error'}`));
+  }
+
+  private async speculate(doc: vscode.TextDocument): Promise<void> {
+    const s = this.d.getSettings();
+    const uri = doc.uri.toString();
+    const editor = this.editorFor(doc);
+    if (!editor || !this.tracking() || !this.eligible(doc) || s.nextEdit.backendId === undefined) return;
+    const backend = this.d.getBackend(s.nextEdit.backendId);
+    if (!backend) return;
+    const id = backend.config.id;
+    const decide = (format: NextEditFormat['id'], own = false) => {
+      const input: NextEditWarmInput = {
+        kind: backend.config.kind,
+        baseUrl: backend.config.baseUrl,
+        enabled: s.enabled && s.nextEdit.enabled,
+        completionsOn: s.enabled && s.fim.enabled && s.fim.backendId !== undefined,
+        format,
+        snoozedUntil: this.d.snoozedUntil(),
+        now: Date.now(),
+        scheme: doc.uri.scheme,
+        languageId: doc.languageId,
+        disabledLanguages: [],
+        fileExcluded: false,
+        inBackoff: !this.d.backoff(id).canRequest(),
+        busy: (this.warming && !own) || this.inflight.has(uri),
+      };
+      return shouldWarmNextEdit(input, this.warmed.last(uri));
+    };
+    // A first look before the model is asked for: most setups (completions on, a remote backend) end here.
+    const early = decide('zeta21');
+    if (!early.ok) {
+      if (early.reason === 'recent' || early.reason === 'backoff' || early.reason === 'busy') this.d.log.debug(`next edit warm-up skipped: ${early.reason}`);
+      return;
+    }
+    this.warming = true;
+    const ctl = new AbortController();
+    try {
+      const model = await this.model(backend, ctl.signal);
+      const format = pickFormat(s.nextEdit.format, model);
+      if (format.transport !== 'completion' || this.d.getSettings() !== s || this.editorFor(doc) === undefined) return;
+      // Decided again with the format; the running warm-up is this one.
+      const decision = decide(format.id, true);
+      if (!decision.ok) return;
+      if (!this.routeFor(backend, format)) return;
+      const at = this.editorFor(doc)?.selection.active;
+      if (!at) return;
+      const lines = doc.getText().split(/\r?\n/);
+      const path = this.path(doc);
+      const budgets = nextEditBudgets(s.nextEdit.contextBudget);
+      const values = resolveNextEdit(backend.config, model, s);
+      const extra = values.extraContext;
+      const previous = this.history.previous(path);
+      const input: NextEditInput = {
+        path,
+        lines,
+        cursor: { line: at.line, character: at.character },
+        region: format.region(at.line, lines.length, { above: s.nextEdit.regionLinesAbove, below: s.nextEdit.regionLinesBelow }),
+        // Read only: the history is not flushed, so a warm-up never commits an entry.
+        history: this.history.entries(extra ? undefined : (p) => p === path),
+        snippets: extra ? this.d.snippets.pick(path, budgets.snippetsChars) : [],
+        budgets,
+        ...(previous ? { previous } : {}),
+      };
+      if (format.problem(input)) return;
+      this.warmed.mark(uri);
+      const started = Date.now();
+      try {
+        await warmNextEdit({ backend, values, model, format, input, signal: ctl.signal });
+        this.d.log.debug(`next edit warm-up ${id}: lines=${lines.length} history=${input.history.length} in ${Date.now() - started} ms`);
+      } catch (err) {
+        // A failing server is reported by the next real request; the raw error can quote server output.
+        this.d.log.debug(`next edit warm-up ${id}: failed (${classifyError(err).kind}) after ${Date.now() - started} ms`);
+      }
+    } finally {
+      this.warming = false;
+    }
   }
 
   private schedulePause(uri: string, version: number, delayMs: number): void {

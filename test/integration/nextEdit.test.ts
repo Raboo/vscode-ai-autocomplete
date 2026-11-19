@@ -81,6 +81,10 @@ const seen = (m: MockServer): string =>
 
 /** The POST requests the mock saw on `path`. */
 const posts = (m: MockServer, path: string): RecordedRequest[] => m.requests.filter((r) => r.method === 'POST' && r.path === path);
+/** The POST requests on `path` that ask for an answer: warm-ups (n_predict 0) are left out. */
+const answers = (m: MockServer, path: string): RecordedRequest[] => posts(m, path).filter((r) => r.body?.n_predict !== 0);
+/** The warm-ups on `path`: raw requests that generate nothing. */
+const warmUps = (m: MockServer, path: string): RecordedRequest[] => posts(m, path).filter((r) => r.body?.n_predict === 0);
 /** Model names `auto` picks the raw formats for. */
 const SWEEP_MODEL = 'sweep-next-edit-1.5b';
 const ZETA_MODEL = 'zeta-2.1';
@@ -550,16 +554,30 @@ suite('Next Edit', () => {
       const editor = await open(GREET);
 
       await typeKeys(editor, 'e');
-      assert.ok(await waitFor(() => posts(m, '/completion').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => answers(m, '/completion').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
       await commitWhen(editor, (t) => t === accepted);
 
       assert.equal(editor.document.getText(), accepted);
-      const body = posts(m, '/completion')[0].body ?? {};
+      const body = answers(m, '/completion')[0].body ?? {};
       assert.ok(typeof body.prompt === 'string' && body.prompt.includes('<|file_sep|>current/') && body.prompt.includes(SWEEP_TAG), JSON.stringify(body.prompt));
       assert.equal(body.temperature, 0);
       assert.ok(Array.isArray(body.stop) && body.stop.includes('<|file_sep|>'), JSON.stringify(body.stop));
       assert.ok(!('top_p' in body), JSON.stringify(body));
       assert.equal(posts(m, '/v1/chat/completions').length, 0, `mock saw ${seen(m)}`);
+    });
+  });
+
+  test('with completions off, an active editor warms the Next Edit slot with n_predict 0 and nothing shows', async () => {
+    await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: [`${GREETED.join('\n')}\n`] } }, llamaCpp, async (m) => {
+      const editor = await open(GREET);
+
+      assert.ok(await waitFor(() => warmUps(m, '/completion').length >= 1, REQUEST_WAIT_MS), `no warm-up; mock saw ${seen(m)}`);
+      const body = warmUps(m, '/completion')[0].body ?? {};
+      assert.ok(typeof body.prompt === 'string' && body.prompt.includes(SWEEP_TAG), JSON.stringify(body.prompt));
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(answers(m, '/completion').length, 0, `a warm-up is the only request; mock saw ${seen(m)}`);
+      assert.equal(editor.document.getText(), GREET.join('\n'));
+      assert.equal(api.nextEditPending(), undefined);
     });
   });
 

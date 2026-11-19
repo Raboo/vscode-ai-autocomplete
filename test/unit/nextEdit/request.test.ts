@@ -8,7 +8,7 @@ import { CHAT_XTAB_SYSTEM, chatXtabMessages } from '../../../src/nextEdit/format
 import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
 import type { CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from '../../../src/nextEdit/formats/format';
 import { editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
-import { nextEditMaxTokens, runNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
+import { nextEditMaxTokens, runNextEdit, warmNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
 import type { BackendConfig, HostFlavor } from '../../../src/types';
 
 const none: RawSettingsSource = { inspect: () => undefined };
@@ -292,5 +292,24 @@ describe('runNextEdit with a completion format', () => {
     const r = run([], { format: stubFormat(), chunks: ['x'], fail: new TimeoutError('t') });
     await expect(r.result).rejects.toMatchObject({ name: 'TimeoutError' });
     expect(r.captured.fim!.signal.aborted).toBe(true);
+  });
+});
+
+describe('warmNextEdit', () => {
+  test('sends the format prompt with maxTokens 0 on the Next Edit slot and returns nothing', async () => {
+    let fim: FimRequest | undefined;
+    const backend = {
+      streamFim: async function* (req: FimRequest) {
+        fim = req;
+        yield 'ignored';
+      },
+    } as unknown as FimBackend;
+    const format = sweepFormat('v2');
+    const snap = snapshot();
+    const out = await warmNextEdit({ backend, values, model: 'm', format, input: snap.input, signal: new AbortController().signal });
+    expect(out).toBeUndefined();
+    expect(fim?.sampling.maxTokens).toBe(0);
+    expect(fim?.slot).toBe('nextEdit');
+    expect(fim?.payload).toEqual({ route: 'template', prompt: format.prompt(snap.input).prompt });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { isLoopback, shouldPrefetch, shouldWarm, WARM_INTERVAL_MS, WarmLimiter, type SpeculateInput } from '../../src/completion/warmup';
+import { isLoopback, shouldPrefetch, shouldWarm, shouldWarmNextEdit, WARM_INTERVAL_MS, WarmLimiter, type NextEditWarmInput, type SpeculateInput } from '../../src/completion/warmup';
 
 const base: SpeculateInput = {
   kind: 'llamacpp',
@@ -100,5 +100,27 @@ describe('WarmLimiter', () => {
     l.mark('b');
     expect(l.last('a')).toBeUndefined();
     expect(l.last('b')).toBe(now);
+  });
+});
+
+describe('shouldWarmNextEdit', () => {
+  const ne: NextEditWarmInput = { ...base, completionsOn: false, format: 'zeta21' };
+  const warmNe = (o: Partial<NextEditWarmInput> = {}, lastWarmAt?: number) => shouldWarmNextEdit({ ...ne, ...o }, lastWarmAt);
+  test('completions off, loopback llama.cpp and a raw format warm', () => {
+    expect(warmNe()).toEqual({ ok: true });
+    expect(warmNe({ format: 'sweep' })).toEqual({ ok: true });
+  });
+  test('never while completions are on', () => expect(warmNe({ completionsOn: true })).toEqual({ ok: false, reason: 'completions on' }));
+  test('only a raw format', () => expect(warmNe({ format: 'chatXtab' })).toEqual({ ok: false, reason: 'not a raw format' }));
+  test('only loopback llama.cpp', () => {
+    expect(warmNe({ kind: 'openai' })).toEqual({ ok: false, reason: 'not llama.cpp' });
+    expect(warmNe({ baseUrl: 'http://192.168.1.5:8012' })).toEqual({ ok: false, reason: 'not loopback' });
+  });
+  test('skipped states and the 30 s limit follow the completions rules', () => {
+    expect(warmNe({ enabled: false })).toEqual({ ok: false, reason: 'disabled' });
+    expect(warmNe({ busy: true })).toEqual({ ok: false, reason: 'busy' });
+    expect(warmNe({ inBackoff: true })).toEqual({ ok: false, reason: 'backoff' });
+    expect(warmNe({}, ne.now - 1_000)).toEqual({ ok: false, reason: 'recent' });
+    expect(warmNe({}, ne.now - WARM_INTERVAL_MS)).toEqual({ ok: true });
   });
 });

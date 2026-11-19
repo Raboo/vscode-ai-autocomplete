@@ -2,6 +2,8 @@ import type { BackendKind } from '../types';
 
 /** Wait after the last change before asking for a Next Edit. */
 export const EDIT_PAUSE_MS = 400;
+/** The edit pause when completions are off: Next Edit then has nothing to wait for. */
+export const NEXT_EDIT_ONLY_PAUSE_MS = 150;
 /** A file's edits become one history entry after this much idle time. */
 export const HISTORY_IDLE_MS = 1500;
 /** Cursor moves ask for a Next Edit only this long after an edit to the same file. */
@@ -17,6 +19,11 @@ export const SAME_LINE_COOLDOWN_MS = 5_000;
 export const REJECTION_COOLDOWN_MS = 5_000;
 /** Delay before the next request after an accept, so repeated Tabs walk through a change. */
 export const CHAIN_DELAY_MS = 60;
+
+/** The edit pause: shorter with completions off, disabled or without a backend (Next Edit alone), else EDIT_PAUSE_MS. */
+export function nextEditPauseMs(s: { enabled: boolean; fim: { enabled: boolean; backendId?: string | undefined } }): number {
+  return !s.enabled || !s.fim.enabled || s.fim.backendId === undefined ? NEXT_EDIT_ONLY_PAUSE_MS : EDIT_PAUSE_MS;
+}
 
 /**
  * Whether a running Next Edit request keeps running while the user types inside its region (its answer is rebased when it

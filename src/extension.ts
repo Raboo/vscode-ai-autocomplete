@@ -174,7 +174,9 @@ export function activate(context: vscode.ExtensionContext): {
     clearTimeout(warmTimer);
     if (!editor) return;
     warmTimer = setTimeout(() => {
-      if (vscode.window.activeTextEditor === editor) provider.warm(editor.document, editor.selection.active);
+      if (vscode.window.activeTextEditor !== editor) return;
+      provider.warm(editor.document, editor.selection.active);
+      nextEdit.warm(editor.document);
     }, WARM_DELAY_MS);
   };
   sub(vscode.window.onDidChangeActiveTextEditor(warmSoon));

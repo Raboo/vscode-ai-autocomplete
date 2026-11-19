@@ -11,9 +11,8 @@ import { readFileSync } from 'node:fs';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
 import type { FimRequest } from '../../src/backends/types';
 import { pickFormat } from '../../src/nextEdit/formats';
-import type { CompletionFormat, NextEditInput } from '../../src/nextEdit/formats/format';
+import { formatBudgets, type CompletionFormat, type NextEditInput } from '../../src/nextEdit/formats/format';
 import { renderDiff } from '../../src/nextEdit/history';
-import { nextEditBudgets } from '../../src/nextEdit/region';
 
 const FILES = ['src/local/router.ts', 'src/local/extraArgs.ts', 'src/completion/outcomes.ts', 'src/nextEdit/trigger.ts', 'src/local/modelList.ts', 'src/backends/llamacpp.ts'];
 
@@ -40,7 +39,7 @@ function renameCase(path: string, typed: string): NextEditInput | undefined {
       region: format.region(i, lines, { above: 5, below: 10 }),
       history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] }],
       snippets: [],
-      budgets: nextEditBudgets(3500),
+      budgets: formatBudgets(format, 3500),
       previous: { lines: before, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] },
     };
   }

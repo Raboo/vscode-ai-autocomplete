@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { pickFormat } from '../../../src/nextEdit/formats';
-import type { NextEditInput } from '../../../src/nextEdit/formats/format';
+import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
+import { chatXtabFormat } from '../../../src/nextEdit/formats/chatXtab';
+import { formatBudgets, type NextEditInput } from '../../../src/nextEdit/formats/format';
 import { regionByChars } from '../../../src/nextEdit/region';
 import { markerBlocks, zeta21Format, ZETA_REGION_CHARS, ZETA_REGION_LINES } from '../../../src/nextEdit/formats/zeta21';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
@@ -338,5 +340,30 @@ describe('zeta21 reserved strings', () => {
     expect(p).toContain('--- a/other.py\n+++ b/other.py\n@@ -1,1 +1,1 @@\n-one\n+two\n');
     // Only our own headers carry the string: good.py, edit_history and circle.py.
     expect(p.split('<filename>').length - 1).toBe(3);
+  });
+});
+
+describe('context mix', () => {
+  it('budgets(3500) keeps 525 chars for the file and splits the rest', () => {
+    expect(zeta21Format.budgets?.(3500)).toEqual({ fileChars: 525, historyChars: 5862, snippetsChars: 5863 });
+    expect(formatBudgets(zeta21Format, 3500)).toEqual({ fileChars: 525, historyChars: 5862, snippetsChars: 5863 });
+  });
+  it('Sweep and chatXtab keep the default split', () => {
+    expect(formatBudgets(sweepFormat('v1' as never), 3500)).toEqual(nextEditBudgets(3500));
+    expect(formatBudgets(chatXtabFormat, 3500)).toEqual(nextEditBudgets(3500));
+  });
+  it('the text outside the region is within 525 chars', () => {
+    const lines = Array.from({ length: 200 }, (_, n) => `line number ${n} of the file`);
+    const region = { start: 90, end: 109 };
+    const i = input({ lines, region, cursor: { line: 100, character: 0 }, budgets: formatBudgets(zeta21Format, 3500), history: [] });
+    const p = promptOf(i).prompt;
+    const outside = lines.filter((l, n) => (n < region.start || n > region.end) && p.includes(`${l}\n`)).join('\n').length + 0;
+    expect(outside).toBeGreaterThan(0);
+    expect(outside).toBeLessThanOrEqual(525);
+  });
+  it('a normal Zeta region is not too long, one over 2 x 1225 chars is', () => {
+    const budgets = formatBudgets(zeta21Format, 3500);
+    expect(zeta21Format.problem(input({ lines: ['x'.repeat(2 * ZETA_REGION_CHARS)], region: { start: 0, end: 0 }, cursor: { line: 0, character: 0 }, budgets }))).toBeUndefined();
+    expect(zeta21Format.problem(input({ lines: ['x'.repeat(2 * ZETA_REGION_CHARS + 1)], region: { start: 0, end: 0 }, cursor: { line: 0, character: 0 }, budgets }))).toBe('tooLong');
   });
 });

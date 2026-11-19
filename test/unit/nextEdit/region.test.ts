@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { clipAroundRegion, editableRegion, nextEditBudgets, regionByChars } from '../../../src/nextEdit/region';
+import { clipAroundRegion, clipLinesAroundRegion, editableRegion, nextEditBudgets, regionByChars } from '../../../src/nextEdit/region';
 
 const lines = (n: number): string[] => Array.from({ length: n }, () => '123456789');
 
@@ -63,4 +63,17 @@ test('regionByChars keeps a cursor line over the budget alone', () => {
   const ls = lines(10);
   ls[5] = 'x'.repeat(100);
   expect(regionByChars(ls, 5, 50, 40)).toEqual({ start: 5, end: 5 });
+});
+
+test('clipLinesAroundRegion keeps whole lines within the budget, half above and the rest below', () => {
+  // 10 chars per line: budget 100 gives 5 lines above (50) and 5 below.
+  expect(clipLinesAroundRegion(lines(100), { start: 42, end: 47 }, 100)).toEqual({ start: 37, end: 52 });
+  expect(clipLinesAroundRegion(lines(100), { start: 42, end: 47 }, 105)).toEqual({ start: 37, end: 52 });
+});
+test('clipLinesAroundRegion moves unused budget above to below', () => {
+  expect(clipLinesAroundRegion(lines(100), { start: 2, end: 7 }, 100)).toEqual({ start: 0, end: 15 });
+});
+test('clipLinesAroundRegion returns the region when nothing fits or the file is empty', () => {
+  expect(clipLinesAroundRegion(lines(100), { start: 42, end: 47 }, 9)).toEqual({ start: 42, end: 47 });
+  expect(clipLinesAroundRegion([], { start: 0, end: 0 }, 100)).toEqual({ start: 0, end: 0 });
 });

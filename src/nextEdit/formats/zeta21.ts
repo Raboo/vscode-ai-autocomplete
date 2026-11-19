@@ -1,6 +1,7 @@
 // The prompt layout follows the format described on the zed-industries/zeta-2.1 model card (Apache-2.0); no code is copied from any implementation.
-import { clipAroundRegion, regionByChars, type LineSpan } from '../region';
-import { hasReserved, newestThatFit, pickSnippets, tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
+import { CHARS_PER_TOKEN } from '../../completion/effective';
+import { clipLinesAroundRegion, regionByChars, type LineSpan, type NextEditBudgets } from '../region';
+import { hasReserved, newestThatFit, pickSnippets, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
 
 const EOS = '<[end▁of▁sentence]>';
 const CURSOR = '<|user_cursor|>';
@@ -51,7 +52,19 @@ function historyDiffs(i: NextEditInput): string[] {
   );
 }
 
-const clipped = (i: NextEditInput): LineSpan => clipAroundRegion(i.lines, i.region, i.budgets.fileChars);
+const FILE_CHARS = 525;
+
+/** A small file budget outside the region; history and related files share the rest. */
+function budgets(contextTokens: number): NextEditBudgets {
+  const rest = Math.max(0, Math.round(contextTokens * CHARS_PER_TOKEN) - FILE_CHARS);
+  const historyChars = Math.floor(rest / 2);
+  return { fileChars: FILE_CHARS, historyChars, snippetsChars: rest - historyChars };
+}
+
+const clipped = (i: NextEditInput): LineSpan => clipLinesAroundRegion(i.lines, i.region, i.budgets.fileChars);
+
+/** The region's chars over twice the region budget (minified code); the file budget is small here. */
+const tooLong = (i: NextEditInput): boolean => take(i.lines, i.region).join('\n').length > 2 * ZETA_REGION_CHARS;
 
 function problem(i: NextEditInput): string | undefined {
   if (reserved(i.path, ...take(i.lines, clipped(i)))) return 'reserved';
@@ -122,6 +135,8 @@ export const zeta21Format: CompletionFormat = {
   transport: 'completion',
   region: (cursorLine, lines) => regionByChars(lines, cursorLine, ZETA_REGION_CHARS, ZETA_REGION_LINES),
   problem,
+  budgets,
+  tooLong,
   prompt,
   parse,
 };

@@ -104,3 +104,25 @@ export function clipAroundRegion(lines: string[], region: LineSpan, budgetChars:
   }
   return { start, end };
 }
+
+/**
+ * The part of the file around the region that goes into the prompt, in whole lines: the region plus lines above
+ * (up to half of `budgetChars`) and below (the rest, so unused budget above moves below). Each outside line costs
+ * length + 1 chars; the region itself is free. When no outside line fits, the region is returned.
+ */
+export function clipLinesAroundRegion(lines: string[], region: LineSpan, budgetChars: number): LineSpan {
+  if (lines.length === 0) return region;
+  let start = region.start;
+  let end = region.end;
+  let used = 0;
+  const aboveBudget = budgetChars / 2;
+  while (start > 0 && used + lines[start - 1].length + 1 <= aboveBudget) {
+    used += lines[start - 1].length + 1;
+    start--;
+  }
+  while (end < lines.length - 1 && used + lines[end + 1].length + 1 <= budgetChars) {
+    used += lines[end + 1].length + 1;
+    end++;
+  }
+  return { start, end };
+}

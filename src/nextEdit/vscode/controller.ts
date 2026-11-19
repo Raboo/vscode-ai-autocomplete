@@ -18,10 +18,10 @@ import type { ContextFile } from '../../types';
 import { decorationPlan, displayFor } from '../decorations';
 import { classify, editShow, toItemText, type LineEdit, type Pos } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
-import type { FormatAnswer, NextEditFormat, NextEditInput } from '../formats/format';
+import { formatBudgets, type FormatAnswer, type NextEditFormat, type NextEditInput } from '../formats/format';
 import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
 import { rebaseEdit } from '../rebase';
-import { nextEditBudgets, type LineSpan } from '../region';
+import { type LineSpan } from '../region';
 import { runNextEdit, warmNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, nextEditPauseMs, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
@@ -500,7 +500,7 @@ export class NextEditController implements vscode.Disposable {
       if (!at) return;
       const lines = doc.getText().split(/\r?\n/);
       const path = this.path(doc);
-      const budgets = nextEditBudgets(s.nextEdit.contextBudget);
+      const budgets = formatBudgets(format, s.nextEdit.contextBudget);
       const values = resolveNextEdit(backend.config, model, s);
       const extra = values.extraContext;
       const previous = this.history.previous(path);
@@ -628,7 +628,7 @@ export class NextEditController implements vscode.Disposable {
       const text = doc.getText();
       const lines = text.split(/\r?\n/);
       const path = this.path(doc);
-      const budgets = nextEditBudgets(s.nextEdit.contextBudget);
+      const budgets = formatBudgets(format, s.nextEdit.contextBudget);
       const base: NextEditInput = {
         path,
         lines,

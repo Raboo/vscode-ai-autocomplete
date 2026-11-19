@@ -109,6 +109,14 @@ test('RecentSnippets.pick skips the excluded path and keeps the newest that fit 
   expect(s.pick('', 4).map((x) => x.path)).toEqual(['d']);
 });
 
+test('RecentSnippets.pick leaves out the extra paths before filling the budget', () => {
+  const s = new RecentSnippets();
+  s.add('a', ['aaaa'], 0);
+  s.add('b', ['bbbb'], 0);
+  s.add('c', ['cccc'], 0);
+  expect(s.pick('', 8, new Set(['c'])).map((x) => x.path)).toEqual(['a', 'b']);
+});
+
 test('forget drops one path\'s snapshot and entries', () => {
   const h = new EditHistory();
   h.open('a', 'x\n');

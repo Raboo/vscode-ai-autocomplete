@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { docPath } from '../../completion/contextTracker';
+import { docPath, inProject } from '../../completion/contextTracker';
 import type { Log } from '../../log';
 import type { Snippet } from '../history';
 import type { LineSpan } from '../region';
@@ -91,7 +91,10 @@ export class DefinitionLookup {
     const self = doc.uri.toString();
     const generation = this.generation;
     const store = (): void => {
-      if (this.generation === generation) this.cache.set(key, build());
+      if (this.generation !== generation) return;
+      // An empty result (a language server still starting) is not remembered.
+      const items = build();
+      if (items.length > 0) this.cache.set(key, items);
     };
 
     const lookups = ids.map(async (id, rank) => {
@@ -137,7 +140,8 @@ export class DefinitionLookup {
   private async excerpt(f: Found, self: string): Promise<{ uri: string; path: string; lines: string[]; spans: LineSpan[] } | undefined> {
     const uri = 'targetUri' in f ? f.targetUri : f.uri;
     const range = 'targetUri' in f ? (f.targetSelectionRange ?? f.targetRange) : f.range;
-    if (uri.scheme !== 'file' || uri.toString() === self) return undefined;
+    // Files outside the workspace are never context, so they are not even opened.
+    if (uri.scheme !== 'file' || uri.toString() === self || !inProject(uri)) return undefined;
     const stat = await vscode.workspace.fs.stat(uri);
     if (stat.size > MAX_TARGET_BYTES) return undefined;
     const target = await vscode.workspace.openTextDocument(uri);

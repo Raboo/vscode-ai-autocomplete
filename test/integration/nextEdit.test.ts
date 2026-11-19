@@ -703,7 +703,7 @@ suite('Next Edit', () => {
   });
 
   suite('definitions as context', () => {
-    /** A file on disk outside any workspace folder, so its prompt path is its name. */
+    /** A file in the workspace folder (its prompt path is its name) and one on disk outside it. */
     const SHAPES = [
       'import math', '', '', 'class Shape:', '    def area(self):', '        return 0', '', '',
       'def circle_area(radius):', '    return math.pi * radius ** 2', '', '', 'def unrelated():', '    return 1',
@@ -713,18 +713,24 @@ suite('Next Edit', () => {
     const USES = ['total = circle_area(2)', 'x = 1'];
     let dir: string;
     let shapes: vscode.Uri;
+    let outside: vscode.Uri;
     const registered: vscode.Disposable[] = [];
 
     suiteSetup(async () => {
       dir = mkdtempSync(join(tmpdir(), 'ai-autocomplete-defs-'));
-      shapes = vscode.Uri.file(join(dir, 'shapes.py'));
-      writeFileSync(shapes.fsPath, `${SHAPES.join('\n')}\n`);
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      assert.ok(folder, 'the integration launch has a workspace folder');
+      shapes = vscode.Uri.joinPath(folder.uri, 'shapes.py');
+      outside = vscode.Uri.file(join(dir, 'outside.py'));
+      for (const u of [shapes, outside]) writeFileSync(u.fsPath, `${SHAPES.join('\n')}\n`);
       // Opened once, so the first lookup is not slowed by reading the file.
       await vscode.workspace.openTextDocument(shapes);
+      await vscode.workspace.openTextDocument(outside);
     });
 
     suiteTeardown(() => {
       rmSync(dir, { recursive: true, force: true });
+      rmSync(shapes.fsPath, { force: true });
     });
 
     teardown(() => {
@@ -732,7 +738,7 @@ suite('Next Edit', () => {
     });
 
     /** A language server for the test: `circle_area` in untitled Python files is defined in shapes.py, whose symbols it lists. */
-    function registerProviders(definition?: () => Promise<vscode.Location | undefined>): void {
+    function registerProviders(definition?: () => Promise<vscode.Location | undefined> | vscode.Location | undefined): void {
       registered.push(
         vscode.languages.registerDefinitionProvider({ language: 'python', scheme: 'untitled' }, {
           provideDefinition: (doc, pos) => {
@@ -812,6 +818,38 @@ suite('Next Edit', () => {
 
     testIn('main', 'with extra context off, no definition is sent', async () => {
       await askWithoutDefinition({ 'completions.extraContext': false });
+    });
+
+    testIn('main', 'a definition in a file outside the workspace is not sent', async () => {
+      registerProviders(() => new vscode.Location(outside, new vscode.Position(8, 4)));
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const editor = await open(USES);
+        for (const key of ['0', '1']) {
+          const before = nextEdits(m).length;
+          await typeKeys(editor, key);
+          assert.ok(await waitFor(() => nextEdits(m).length > before, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        }
+        for (const r of nextEdits(m)) {
+          const user = userMessage(r.body);
+          assert.ok(!user.includes('def circle_area') && !user.includes('outside.py'), user);
+        }
+      });
+    });
+
+    test('an empty lookup is not cached: the next request gets the definition', async () => {
+      let ready = false;
+      registerProviders(() => (ready ? new vscode.Location(shapes, new vscode.Position(8, 4)) : undefined));
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const editor = await open(USES);
+        await typeKeys(editor, '0');
+        assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        assert.ok(!userMessage(nextEdits(m)[0].body).includes('def circle_area'));
+        ready = true;
+        const last = () => userMessage(nextEdits(m)[nextEdits(m).length - 1]?.body);
+        const expected = `code_snippet_file_path: shapes.py\n${EXCERPT}\n<|/recently_viewed_code_snippet|>`;
+        const user = await askUntilDefinition(() => nextEdits(m).length, last, expected);
+        assert.ok(user.includes(expected), user);
+      });
     });
 
     testIn('main', 'a definition in an excluded file is not sent', async () => {

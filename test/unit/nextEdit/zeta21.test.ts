@@ -397,7 +397,7 @@ describe('context mix', () => {
     expect(formatBudgets(zeta21Format, 3500)).toEqual({ fileChars: 525, historyChars: 5862, snippetsChars: 5863 });
   });
   it('Sweep and chatXtab keep the default split', () => {
-    expect(formatBudgets(sweepFormat('v1' as never), 3500)).toEqual(nextEditBudgets(3500));
+    expect(formatBudgets(sweepFormat('v1'), 3500)).toEqual(nextEditBudgets(3500));
     expect(formatBudgets(chatXtabFormat, 3500)).toEqual(nextEditBudgets(3500));
   });
   it('the text outside the region is within 525 chars', () => {
@@ -405,7 +405,7 @@ describe('context mix', () => {
     const region = { start: 90, end: 109 };
     const i = input({ lines, region, cursor: { line: 100, character: 0 }, budgets: formatBudgets(zeta21Format, 3500), history: [] });
     const p = promptOf(i).prompt;
-    const outside = lines.filter((l, n) => (n < region.start || n > region.end) && p.includes(`${l}\n`)).join('\n').length + 0;
+    const outside = lines.filter((l, n) => (n < region.start || n > region.end) && p.includes(`${l}\n`)).join('\n').length;
     expect(outside).toBeGreaterThan(0);
     expect(outside).toBeLessThanOrEqual(525);
   });

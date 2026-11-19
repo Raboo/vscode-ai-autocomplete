@@ -256,13 +256,13 @@ export class RecentSnippets {
     this.snippets = [];
   }
 
-  /** The newest snippets of other files that fit the budget, oldest first. */
-  pick(excludePath: string, budgetChars: number): Snippet[] {
+  /** The newest snippets of other files that fit the budget, oldest first; `alsoExclude` paths are left out before the budget is spent. */
+  pick(excludePath: string, budgetChars: number, alsoExclude?: ReadonlySet<string>): Snippet[] {
     let remaining = budgetChars;
     const out: Snippet[] = [];
     for (let i = this.snippets.length - 1; i >= 0; i--) {
       const s = this.snippets[i];
-      if (s.path === excludePath || s.text.length > remaining) continue;
+      if (s.path === excludePath || alsoExclude?.has(s.path) || s.text.length > remaining) continue;
       remaining -= s.text.length;
       out.push(s);
     }

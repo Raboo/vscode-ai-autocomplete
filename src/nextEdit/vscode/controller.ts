@@ -805,7 +805,7 @@ export class NextEditController implements vscode.Disposable {
     const defs = s.nextEdit.definitions ? await this.definitions.related(doc, region, at, budgetChars) : [];
     const used = defs.reduce((n, d) => n + d.text.length, 0);
     const paths = new Set(defs.map((d) => d.path));
-    return [...defs, ...this.d.snippets.pick(path, budgetChars - used).filter((r) => !paths.has(r.path))];
+    return [...defs, ...this.d.snippets.pick(path, budgetChars - used, paths)];
   }
 
   /** Whether the backend has the route the format is sent on; logs once per backend and format when not. */

@@ -7,6 +7,7 @@ import { NEXT_EDIT_TAG, SWEEP_TAG, ZETA_TAG, startMockServer, userMessage, type 
 interface Api {
   nativeNextEdit: boolean;
   /** The inline edit shown as decorations, if any. */
+  outcomes(uri: string): { feature: string; kind: string }[];
   nextEditPending(): { uri: string; version: number; edit: { startLine: number; endLine: number; newLines: string[] } } | undefined;
 }
 
@@ -578,6 +579,16 @@ suite('Next Edit', () => {
       assert.equal(answers(m, '/completion').length, 0, `a warm-up is the only request; mock saw ${seen(m)}`);
       assert.equal(editor.document.getText(), GREET.join('\n'));
       assert.equal(api.nextEditPending(), undefined);
+    });
+  });
+
+  test('a Next Edit answer with completions off records a nextEdit shown outcome', async () => {
+    await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: [`${GREETED.join('\n')}\n`, `${RETURN_LINE}\n`] } }, llamaCpp, async (m) => {
+      const editor = await open(GREET);
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => answers(m, '/completion').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      const uri = editor.document.uri.toString();
+      assert.ok(await waitFor(() => api.outcomes(uri).some((o) => o.feature === 'nextEdit' && o.kind === 'shown'), REQUEST_WAIT_MS), JSON.stringify(api.outcomes(uri)));
     });
   });
 

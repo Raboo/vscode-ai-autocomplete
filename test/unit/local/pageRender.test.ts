@@ -35,7 +35,7 @@ describe('local models page render', () => {
     const bad = renderPage(state({}, [row({ note: '<script>n</script>' })]));
     expect(bad).not.toContain('<script>n');
     expect(bad).toContain('&lt;script&gt;n&lt;/script&gt;');
-    expect(only(renderPage(state()), 'm1')).not.toContain('class="note"');
+    expect(only(renderPage(state()), 'm1')).not.toContain('class="note');
   });
 
   test('download buttons follow the download kind', () => {

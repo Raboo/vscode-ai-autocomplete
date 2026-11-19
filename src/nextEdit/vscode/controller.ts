@@ -94,6 +94,8 @@ export class NextEditController implements vscode.Disposable {
   private readonly warmed = new WarmLimiter();
   /** A warm-up is running (at most one at a time). */
   private warming = false;
+  private warmCtl: AbortController | undefined;
+  private warmUri: string | undefined;
   private readonly logged = new Set<string>();
   private readonly notified = new Set<string>();
 
@@ -235,7 +237,15 @@ export class NextEditController implements vscode.Disposable {
     for (const d of this.disposables) d.dispose();
   }
 
+  private abortWarm(): void {
+    this.warmCtl?.abort();
+    this.warmCtl = undefined;
+    this.warmUri = undefined;
+    this.warming = false;
+  }
+
   private clear(): void {
+    this.abortWarm();
     for (const f of this.inflight.values()) f.ctl.abort();
     this.inflight.clear();
     this.result = undefined;
@@ -291,6 +301,7 @@ export class NextEditController implements vscode.Disposable {
   private closed(doc: vscode.TextDocument): void {
     const uri = doc.uri.toString();
     this.cancel(uri);
+    if (this.warmUri === uri) this.abortWarm();
     this.policy.closed(uri);
     this.warmed.forget(uri);
     const idle = this.idleTimers.get(uri);
@@ -475,6 +486,8 @@ export class NextEditController implements vscode.Disposable {
     }
     this.warming = true;
     const ctl = new AbortController();
+    this.warmCtl = ctl;
+    this.warmUri = uri;
     try {
       const model = await this.model(backend, ctl.signal);
       const format = pickFormat(s.nextEdit.format, model);
@@ -513,7 +526,11 @@ export class NextEditController implements vscode.Disposable {
         this.d.log.debug(`next edit warm-up ${id}: failed (${classifyError(err).kind}) after ${Date.now() - started} ms`);
       }
     } finally {
-      this.warming = false;
+      if (this.warmCtl === ctl) {
+        this.warmCtl = undefined;
+        this.warmUri = undefined;
+        this.warming = false;
+      }
     }
   }
 
@@ -678,6 +695,8 @@ export class NextEditController implements vscode.Disposable {
       if (!fresh) {
         if (truncated) return this.note(uri, 'filtered', { detail: 'truncated', ms });
         if (parsed?.kind === 'noChange') return this.note(uri, 'noChange', { ms });
+        const old = input.lines.slice(input.region.start, input.region.end + 1);
+        if (parsed?.kind === 'rewrite' && parsed.lines.join('\n').trimEnd() === old.join('\n').trimEnd()) return this.note(uri, 'noChange', { ms });
         return this.note(uri, 'filtered', { detail: parsed?.kind === 'invalid' ? 'invalid' : 'trivial', ms });
       }
       if (vscode.window.activeTextEditor?.document !== doc) {
@@ -712,10 +731,11 @@ export class NextEditController implements vscode.Disposable {
         return;
       }
       this.clearPending();
-      this.note(uri, 'shown', { ms, chars: result.show.kind === 'ghost' ? result.show.insertText.length : result.show.text.length });
+      const chars = result.show.kind === 'ghost' ? result.show.insertText.length : result.show.text.length;
       if (display === 'decorations') {
         const shown = vscode.window.activeTextEditor;
         if (!shown) return;
+        this.note(uri, 'shown', { ms, chars });
         this.result = undefined;
         const current = result.text.split(/\r?\n/);
         this.pending = { ...result, show: editShow(result.edit, current) };
@@ -723,6 +743,7 @@ export class NextEditController implements vscode.Disposable {
         return;
       }
       this.result = result;
+      this.note(uri, 'shown', { ms, chars });
       void vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
     } catch (err) {
       // A newer change, a settings change or dispose aborted it: nothing to record.

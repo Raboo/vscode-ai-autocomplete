@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.0.0...v1.1.0) (2026-11-19)
+
+
+### Features
+
+* Next Edit without completions, and Zeta 2.1 in Local Models ([f8aaa63](https://github.com/Raboo/vscode-ai-autocomplete/commit/f8aaa630cbb8c1c177331635c73d25d4e222d73d))
+
 ## [1.0.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v0.6.0...v1.0.0) (2026-11-19)
 
 

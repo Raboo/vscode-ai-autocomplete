@@ -4,7 +4,7 @@ import type { FimValues } from '../completion/effective';
 import { ThinkingError } from '../completion/stream';
 import { ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
 import type { HostFlavor } from '../types';
-import { classify, isTrivialEdit, regionEdit, type LineEdit, type NextEditShow, type Pos } from './diff';
+import { classify, cursorWithin, isTrivialEdit, regionEdit, type LineEdit, type NextEditShow, type Pos } from './diff';
 import type { ChatFormat, CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from './formats/format';
 
 export interface NextEditSnapshot {
@@ -19,6 +19,8 @@ export interface NextEditResult {
   cursor: Pos;
   edit: LineEdit;
   show: NextEditShow;
+  /** Where the model predicts the cursor after the edit, in the document once it is applied; only on the edit's new lines. */
+  cursorAfter?: Pos;
 }
 
 /** Room for a rewritten region (about 3.5 chars per token) with 50% slack and a small margin, at most 2048 tokens. */
@@ -192,11 +194,14 @@ function resultOf(snapshot: NextEditSnapshot, answer: FormatAnswer): NextEditRes
   if (input.region.end === input.lines.length - 1 && old.at(-1) === '' && lines.at(-1) !== '') lines.push('');
   const edit = regionEdit(old, lines, input.region.start);
   if (!edit || isTrivialEdit(edit, input.lines)) return undefined;
+  const predicted = answer.cursor && { line: input.region.start + answer.cursor.line, character: answer.cursor.character };
+  const cursorAfter = cursorWithin(edit, predicted);
   return {
     uri: snapshot.uri,
     version: snapshot.version,
     cursor: input.cursor,
     edit,
     show: classify(edit, input.lines, input.cursor),
+    ...(cursorAfter ? { cursorAfter } : {}),
   };
 }

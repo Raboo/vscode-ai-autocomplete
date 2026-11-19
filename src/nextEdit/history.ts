@@ -14,6 +14,8 @@ export interface DiffEntry {
   path: string;
   text: string;
   hunks: DiffHunk[];
+  /** The change with 3 context lines and real hunk headers, without the `---`/`+++` lines (Zeta 2.1's history format). */
+  contextText: string;
 }
 
 export interface Snippet {
@@ -35,6 +37,17 @@ function norm(s: string): string {
 /** Zero-context hunks, or `undefined` when the change exceeds the diff budget. */
 function hunksOf(path: string, before: string, after: string): StructuredPatchHunk[] | undefined {
   return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+}
+
+/** The 3-context hunk text for the base-to-after change; the zero-context text (minus its file headers) when the diff exceeds the budget. */
+export function contextTextOf(path: string, before: string, after: string, zeroText: string): string {
+  const hunks = structuredPatch(path, path, norm(before), norm(after), '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+  return withoutFileHeader(hunks === undefined || hunks.length === 0 ? zeroText : render(path, hunks));
+}
+
+/** A rendered diff without its two `---`/`+++` lines. */
+export function withoutFileHeader(diff: string): string {
+  return diff.split('\n').slice(2).join('\n');
 }
 
 function toDiffHunks(hunks: StructuredPatchHunk[]): DiffHunk[] {
@@ -120,6 +133,8 @@ interface Entry {
   hunks: DiffHunk[];
   /** The file text the entry started from, so a follow-up edit on the same line can be re-rendered against it. */
   base: string;
+  /** The 3-context hunk text, computed once when the entry is recorded. */
+  contextText: string;
   firstOldStart: number;
 }
 
@@ -168,12 +183,14 @@ export class EditHistory {
           this.stale.add(path); // the edits cancelled out
           return;
         }
-        this.list.push({ ...last, text: render(path, merged), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
+        const mergedText = render(path, merged);
+        this.list.push({ ...last, text: mergedText, contextText: contextTextOf(path, last.base, text, mergedText), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
         this.stale.delete(path);
         return;
       }
     }
-    this.list.push({ path, text: render(path, hunks), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
+    const rendered = render(path, hunks);
+    this.list.push({ path, text: rendered, contextText: contextTextOf(path, before, text, rendered), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
     this.stale.delete(path);
   }
 
@@ -196,7 +213,7 @@ export class EditHistory {
 
   /** Oldest first. */
   entries(filter?: (path: string) => boolean): DiffEntry[] {
-    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks }));
+    return this.list.filter((e) => !filter || filter(e.path)).map((e) => ({ path: e.path, text: e.text, hunks: e.hunks, contextText: e.contextText }));
   }
 
   /** The file before the change its newest entry records, as lines, with that entry's hunks. `undefined` when the path has no entry or a later commit of it recorded none. */
@@ -226,7 +243,8 @@ export class RecentSnippets {
     const size = Math.min(this.lines, lines.length);
     const start = Math.max(0, Math.min(centerLine - Math.floor(size / 2), lines.length - size));
     this.snippets = this.snippets.filter((s) => s.path !== path);
-    this.snippets.push({ path, text: lines.slice(start, start + size).join('\n') });
+    const text = lines.slice(start, start + size).join('\n');
+    this.snippets.push({ path, text: start + size < lines.length ? `${text}\n...` : text });
     if (this.snippets.length > this.max) this.snippets.splice(0, this.snippets.length - this.max);
   }
 
@@ -238,13 +256,13 @@ export class RecentSnippets {
     this.snippets = [];
   }
 
-  /** The newest snippets of other files that fit the budget, oldest first. */
-  pick(excludePath: string, budgetChars: number): Snippet[] {
+  /** The newest snippets of other files that fit the budget, oldest first; `alsoExclude` paths are left out before the budget is spent. */
+  pick(excludePath: string, budgetChars: number, alsoExclude?: ReadonlySet<string>): Snippet[] {
     let remaining = budgetChars;
     const out: Snippet[] = [];
     for (let i = this.snippets.length - 1; i >= 0; i--) {
       const s = this.snippets[i];
-      if (s.path === excludePath || s.text.length > remaining) continue;
+      if (s.path === excludePath || alsoExclude?.has(s.path) || s.text.length > remaining) continue;
       remaining -= s.text.length;
       out.push(s);
     }

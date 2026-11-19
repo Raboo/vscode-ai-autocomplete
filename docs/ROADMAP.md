@@ -15,6 +15,7 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 4b. Polish before publish | Settings renamed to `completions.*`, status tooltip stats and Why No Suggestion?, Next Edit kept while typing, Get Started walkthrough, local llama.cpp warm-up | [plan](superpowers/plans/2026-11-18-polish-before-publish.md) | released in [v0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.6.0) |
 | 4c. Local Models page | One llama-server router with Models in memory, the Manage Local Models page, Add model from Hugging Face, per-model settings, models folder, token, update checks | [plan](superpowers/plans/2026-11-18-local-models-page.md), [design](superpowers/specs/2026-11-18-local-models-page-design.md) | released in [v1.0.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.0.0) |
 | 4d. Next Edit without completions | Shorter Next Edit pause and llama.cpp warm-up with completions off, Next Edit in Why No Suggestion and the stats, Zeta 2.1 recipe, latency benchmark | [plan](superpowers/plans/2026-11-19-next-edit-only.md), [design](superpowers/specs/2026-11-19-next-edit-only-design.md) | released in the next minor version |
+| 4e. Full Zeta 2.1 coverage | Zeta region by length (1225 chars, up to 40 lines), 16-line marker blocks, Zeta budgets, three-line history context, definitions of nearby symbols as Next Edit context (`nextEdit.definitions`), cursor moves where Zeta predicted after Tab | [design](superpowers/specs/2026-11-19-zeta-full-design.md) | released in the next minor version |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -126,3 +127,10 @@ Phase 4d (check on the release `.vsix`; [plan](superpowers/plans/2026-11-19-next
 - **Why No Suggestion?** lists Next Edit entries ("Next Edit: shown", "no change", skipped reasons); the tooltip shows a Next Edit line.
 - The Local Models page lists Zeta 2.1 (community quant), already downloaded if the file is in the models folder; **Use for Next Edit** works; with Models in memory 1 and Sweep for completions, the swap warning shows.
 - Completions on again: Next Edit behaves as before (400 ms pause, no Next Edit warm-up).
+
+Phase 4e (check on the release `.vsix`; [design](superpowers/specs/2026-11-19-zeta-full-design.md)):
+
+- Zeta 2.1 suggests an edit about 20 lines below the cursor.
+- With `debug.logPrompts` on, the definitions of an imported function the edited code uses appear in the Next Edit prompt log.
+- After Tab, the cursor lands where Zeta predicted.
+- Turning `aiAutocomplete.nextEdit.definitions` off removes the definitions from the prompt.

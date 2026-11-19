@@ -11,9 +11,8 @@ import { readFileSync } from 'node:fs';
 import { LlamaCppBackend } from '../../src/backends/llamacpp';
 import type { FimRequest } from '../../src/backends/types';
 import { pickFormat } from '../../src/nextEdit/formats';
-import type { CompletionFormat, NextEditInput } from '../../src/nextEdit/formats/format';
-import { renderDiff } from '../../src/nextEdit/history';
-import { nextEditBudgets } from '../../src/nextEdit/region';
+import { formatBudgets, type CompletionFormat, type NextEditInput } from '../../src/nextEdit/formats/format';
+import { renderDiff, withoutFileHeader } from '../../src/nextEdit/history';
 
 const FILES = ['src/local/router.ts', 'src/local/extraArgs.ts', 'src/completion/outcomes.ts', 'src/nextEdit/trigger.ts', 'src/local/modelList.ts', 'src/backends/llamacpp.ts'];
 
@@ -37,10 +36,10 @@ function renameCase(path: string, typed: string): NextEditInput | undefined {
       path,
       lines,
       cursor,
-      region: format.region(i, lines.length, { above: 5, below: 10 }),
-      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] }],
+      region: format.region(i, lines, { above: 5, below: 10 }),
+      history: [{ path, text, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }], contextText: withoutFileHeader(text) }],
       snippets: [],
-      budgets: nextEditBudgets(3500),
+      budgets: formatBudgets(format, 3500),
       previous: { lines: before, hunks: [{ oldStart: i, newStart: i, oldLines: [before[i]], newLines: [lines[i]] }] },
     };
   }
@@ -91,7 +90,7 @@ async function main(): Promise<void> {
           const input = renameCase(path, typed);
           if (!input) return undefined;
           const format = pickFormat('auto', model) as CompletionFormat;
-          const p = format.prompt({ ...input, region: format.region(input.cursor.line, input.lines.length, { above: 5, below: 10 }) });
+          const p = format.prompt({ ...input, region: format.region(input.cursor.line, input.lines, { above: 5, below: 10 }) });
           return backend.streamFim(request(model, { payload: { route: 'template', prompt: p.prompt }, slot: 'nextEdit', stop: p.stop, sampling: { temperature: 0, maxTokens: p.maxTokens } }));
         }
         const { prefix, suffix } = completionCase(path, typed);

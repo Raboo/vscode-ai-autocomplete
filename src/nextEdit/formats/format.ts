@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../../backends/types';
 import type { DiffEntry, DiffHunk, Snippet } from '../history';
-import type { LineSpan, NextEditBudgets } from '../region';
+import { nextEditBudgets, type LineSpan, type NextEditBudgets } from '../region';
 
 export type FormatId = 'chatXtab' | 'sweep' | 'zeta21';
 
@@ -18,14 +18,25 @@ export interface NextEditInput {
 }
 
 /** A parsed answer: the region's new lines, no change, or an answer that cannot be used. */
-export type FormatAnswer = { kind: 'rewrite'; lines: string[] } | { kind: 'noChange' } | { kind: 'invalid'; why: string };
+/**
+ * A rewrite's `cursor` is where the model predicts the cursor after the edit (line and character in the new region);
+ * `warning: 'markerSequence'` says the answer's markers did not count up by one.
+ */
+export type FormatAnswer =
+  | { kind: 'rewrite'; lines: string[]; cursor?: { line: number; character: number }; warning?: 'markerSequence' }
+  | { kind: 'noChange' }
+  | { kind: 'invalid'; why: string };
 
 interface FormatBase {
   id: FormatId;
   /** The lines the model may rewrite. `size` is the settings' lines above and below the cursor. */
-  region(cursorLine: number, lineCount: number, size: { above: number; below: number }): LineSpan;
+  region(cursorLine: number, lines: string[], size: { above: number; below: number }): LineSpan;
   /** Why this input cannot be sent in this format, or undefined. */
   problem(input: NextEditInput): string | undefined;
+  /** The format's own split of the context budget; without it `nextEditBudgets` applies. */
+  budgets?(contextTokens: number): NextEditBudgets;
+  /** The format's own limit for a region that is too long; without it `tooLong` applies. */
+  tooLong?(input: NextEditInput): boolean;
 }
 
 /** A format on the backend's chat route. */
@@ -49,6 +60,10 @@ export interface CompletionFormat extends FormatBase {
 }
 
 export type NextEditFormat = ChatFormat | CompletionFormat;
+
+/** The budgets for `contextTokens`: the format's own split, else the default one. */
+export const formatBudgets = (format: NextEditFormat, contextTokens: number): NextEditBudgets =>
+  format.budgets ? format.budgets(contextTokens) : nextEditBudgets(contextTokens);
 
 /** A region longer than twice the file budget (minified code) would make a prompt far over the budget. */
 export function tooLong(input: NextEditInput): boolean {

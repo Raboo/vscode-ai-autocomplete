@@ -13,7 +13,11 @@ const userDataDir = join(dirname(fileURLToPath(import.meta.url)), '.vscode-test'
 mkdirSync(join(userDataDir, 'User'), { recursive: true });
 writeFileSync(join(userDataDir, 'User', 'settings.json'), `${JSON.stringify({ 'chat.disableAIFeatures': true }, null, 2)}\n`);
 
-const shared = { version: 'stable', mocha: { timeout: 20000 } };
+// An empty workspace folder: files a test writes into it count as project files (files outside it are never context).
+const workspaceDir = join(dirname(fileURLToPath(import.meta.url)), '.vscode-test', 'workspace');
+mkdirSync(workspaceDir, { recursive: true });
+
+const shared = { version: 'stable', mocha: { timeout: 20000 }, workspaceFolder: workspaceDir };
 
 // Two launches, run one after the other: `main` runs every test on Stable as users get it (no proposed API),
 // `proposed` runs the Next Edit tests again with the inline-edit proposal enabled. Tests read their launch from the env.

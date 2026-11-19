@@ -7,6 +7,7 @@ import { pickFormat } from '../../../src/nextEdit/formats';
 import { CHAT_XTAB_SYSTEM, chatXtabMessages } from '../../../src/nextEdit/formats/chatXtab';
 import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
 import type { CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from '../../../src/nextEdit/formats/format';
+import { cursorWithin } from '../../../src/nextEdit/diff';
 import { editableRegion, nextEditBudgets } from '../../../src/nextEdit/region';
 import { nextEditMaxTokens, runNextEdit, warmNextEdit, type NextEditSnapshot } from '../../../src/nextEdit/request';
 import type { BackendConfig, HostFlavor } from '../../../src/types';
@@ -79,7 +80,7 @@ function stubFormat(answer: (text: string) => FormatAnswer = () => ({ kind: 'noC
     id: 'sweep',
     transport: 'completion',
     parsed,
-    region: (c, n) => editableRegion(c, n),
+    region: (c, n) => editableRegion(c, n.length),
     problem: () => undefined,
     prompt: () => ({ prompt: 'P', prefill: 'pre\n', stop: ['<|x|>'], maxTokens: 99 }),
     parse: (text) => {
@@ -217,6 +218,42 @@ describe('runNextEdit with a completion format', () => {
     expect(res?.edit).toMatchObject({ startLine: 7, endLine: 9, newLines: ['def circle_circumference(radius):', '    return 2 * math.pi * radius'] });
   });
 
+  test('a predicted cursor becomes cursorAfter in document coordinates when the edit holds its line', async () => {
+    const snap = snapshot();
+    const start = snap.input.region.start;
+    const region = renamed.slice(start, snap.input.region.end + 1);
+    const at = (line: number) => stubFormat(() => ({ kind: 'rewrite', lines: region, cursor: { line: line - start, character: 10 } }));
+    expect((await run([], { format: at(8), snap, chunks: ['x'] }).result)?.cursorAfter).toEqual({ line: 8, character: 10 });
+    expect((await run([], { format: at(7), snap, chunks: ['x'] }).result)?.cursorAfter).toEqual({ line: 7, character: 10 });
+    // Lines 4 and 9 are not part of the shown edit (lines 7 and 8).
+    const four = await run([], { format: at(4), snap, chunks: ['x'] }).result;
+    expect(four?.edit.startLine).toBe(7);
+    expect(four?.cursorAfter).toBeUndefined();
+    expect((await run([], { format: at(9), snap, chunks: ['x'] }).result)?.cursorAfter).toBeUndefined();
+    const plain = await run([], { format: stubFormat(() => ({ kind: 'rewrite', lines: region })), snap, chunks: ['x'] }).result;
+    expect(plain && 'cursorAfter' in plain).toBe(false);
+  });
+
+  test('a pure deletion has no cursorAfter', async () => {
+    const snap = snapshot();
+    const start = snap.input.region.start;
+    const region = CIRCLE.filter((_, n) => n !== 8).slice(start, snap.input.region.end);
+    const format = stubFormat(() => ({ kind: 'rewrite', lines: region, cursor: { line: 8 - start, character: 0 } }));
+    const res = await run([], { format, snap, chunks: ['x'] }).result;
+    expect(res?.edit).toMatchObject({ startLine: 8, endLine: 9, newLines: [] });
+    expect(res?.cursorAfter).toBeUndefined();
+  });
+
+  test('cursorWithin keeps a position only on the new lines of the edit', () => {
+    const edit = { startLine: 7, endLine: 9, newLines: ['a', 'b'] };
+    expect(cursorWithin(edit, { line: 7, character: 1 })).toEqual({ line: 7, character: 1 });
+    expect(cursorWithin(edit, { line: 8, character: 0 })).toEqual({ line: 8, character: 0 });
+    expect(cursorWithin(edit, { line: 6, character: 0 })).toBeUndefined();
+    expect(cursorWithin(edit, { line: 9, character: 0 })).toBeUndefined();
+    expect(cursorWithin({ startLine: 7, endLine: 8, newLines: [] }, { line: 7, character: 0 })).toBeUndefined();
+    expect(cursorWithin(edit, undefined)).toBeUndefined();
+  });
+
   test('a truncated completion gives no result', async () => {
     const snap = snapshot();
     const format = stubFormat(() => ({ kind: 'rewrite', lines: renamed.slice(snap.input.region.start, snap.input.region.end + 1) }));
@@ -280,7 +317,7 @@ describe('runNextEdit with a completion format', () => {
     const lines = Array.from({ length: 30 }, (_, n) => `line ${n}`);
     const format = sweepFormat('v2');
     const input: NextEditInput = {
-      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines.length, { above: 5, below: 10 }),
+      path: 'a.py', lines, cursor: { line: 12, character: 0 }, region: format.region(12, lines, { above: 5, below: 10 }),
       history: [], snippets: [], budgets: nextEditBudgets(3500),
     };
     const snap = { uri: 'file:///a.py', version: 1, input };

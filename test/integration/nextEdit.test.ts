@@ -1,4 +1,7 @@
 import * as assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { commit, commitWhen, configure, registerProbe, showAtEnd, sleep, trigger, unconfigure, waitFor } from './helpers';
 import { NEXT_EDIT_TAG, SWEEP_TAG, ZETA_TAG, startMockServer, userMessage, type MockOptions, type MockServer, type RecordedRequest } from './mockServer';
@@ -26,7 +29,7 @@ function testIn(launch: Launch, title: string, fn: () => Promise<void>): void {
 const BACKEND_ID = 'test';
 const MODEL = 'qwen3.8-flash-next-iq3_s';
 /** Every setting a test may write; teardown resets them so tests stay independent. */
-const TOUCHED = ['backends', 'enabled', 'completions.backend', 'completions.enabled', 'completions.extraContext', 'completions.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display', 'privacy.localOnly'];
+const TOUCHED = ['backends', 'enabled', 'completions.backend', 'completions.enabled', 'completions.extraContext', 'completions.disableInLanguages', 'nextEdit.backend', 'nextEdit.format', 'nextEdit.display', 'nextEdit.definitions', 'completions.disableInFiles', 'privacy.localOnly'];
 /** FIM's answer in these tests: nothing to insert, so FIM lets Next Edit ask after the edit pause. */
 const EMPTY_FIM = { content: ['<COMPLETION></COMPLETION>'] };
 /** Covers the edit pause (400 ms), FIM's request and Next Edit's own against the local mock. */
@@ -612,6 +615,60 @@ suite('Next Edit', () => {
     });
   });
 
+  /** The Zeta answer for GREET: the return line, with the predicted cursor before `message`. */
+  const ZETA_CURSOR_ANSWER = ['<|marker_1|>', `${GREETED.join('\n')}\n    return <|user_cursor|>message`, '<|marker_2|>'];
+
+  test('accepting a Zeta ghost text moves the cursor where the answer put it', async () => {
+    const accepted = [...GREETED, RETURN_LINE].join('\n');
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ZETA_CURSOR_ANSWER } }, lmStudio, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      assert.ok(await waitFor(() => posts(m, '/v1/completions').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await commitWhen(editor, (t) => t === accepted);
+
+      assert.equal(editor.document.getText(), accepted);
+      const at = new vscode.Position(2, '    return '.length);
+      assert.ok(await waitFor(() => editor.selection.active.isEqual(at), 1000), `cursor at ${JSON.stringify(editor.selection.active)}`);
+    });
+  });
+
+  test('an accept after the document changed leaves the cursor where it is', async () => {
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ZETA_CURSOR_ANSWER } }, lmStudio, async (m) => {
+      const editor = await open(GREET);
+
+      await typeKeys(editor, 'e');
+      const uri = editor.document.uri.toString();
+      assert.ok(await waitFor(() => api.outcomes(uri).some((o) => o.feature === 'nextEdit' && o.kind === 'shown'), REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      // A character the suggestion does not have: the document no longer holds the text the item would add.
+      await typeKeys(editor, 'x');
+      const typed = new vscode.Position(1, GREETED[1].length + 1);
+      assert.ok(editor.selection.active.isEqual(typed));
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditAccepted');
+
+      assert.equal(editor.document.getText(), [GREET[0], `${GREETED[1]}x`].join('\n'));
+      assert.ok(editor.selection.active.isEqual(typed), `cursor at ${JSON.stringify(editor.selection.active)}`);
+    });
+  });
+
+  test('Tab on a Zeta decoration applies it and moves the cursor where the answer put it', async () => {
+    const line8 = RENAMED[8].replace('radius', '<|user_cursor|>radius');
+    const answer = RENAMED.map((l, i) => (i === 8 ? line8 : l)).join('\n');
+    await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ['<|marker_1|>', answer, '<|marker_2|>'] } }, lmStudio, async (m) => {
+      const editor = await openAndRename();
+      assert.ok(await waitFor(() => posts(m, '/v1/completions').length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      assert.ok(await waitFor(() => api.nextEditPending() !== undefined, PENDING_WAIT_MS), 'no pending edit');
+      assert.deepEqual(api.nextEditPending()?.edit, RENAME_EDIT);
+
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+      await vscode.commands.executeCommand('aiAutocomplete.nextEditTab');
+
+      assert.equal(editor.document.getText(), RENAMED.join('\n'));
+      assert.equal(editor.selection.active.line, 8);
+      assert.equal(editor.selection.active.character, RENAMED[8].indexOf('radius'));
+    }, { 'nextEdit.display': 'decorations' });
+  });
+
   test('a reserved string sends nothing', async () => {
     // `<|file_sep|>` in the window would become one of Sweep's control tokens.
     await withRawNextEdit({ alias: SWEEP_MODEL, nextEditRaw: { content: ['x\n'] } }, llamaCpp, async (m) => {
@@ -643,5 +700,178 @@ suite('Next Edit', () => {
       await typeKeys(editor, '1');
       assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
     }, { 'nextEdit.format': 'sweep' });
+  });
+
+  suite('definitions as context', () => {
+    /** A file in the workspace folder (its prompt path is its name) and one on disk outside it. */
+    const SHAPES = [
+      'import math', '', '', 'class Shape:', '    def area(self):', '        return 0', '', '',
+      'def circle_area(radius):', '    return math.pi * radius ** 2', '', '', 'def unrelated():', '    return 1',
+    ];
+    /** circle_area's symbol (lines 8 and 9) whole, and `...` because the file continues. */
+    const EXCERPT = 'def circle_area(radius):\n    return math.pi * radius ** 2\n...';
+    const USES = ['total = circle_area(2)', 'x = 1'];
+    let dir: string;
+    let shapes: vscode.Uri;
+    let outside: vscode.Uri;
+    const registered: vscode.Disposable[] = [];
+
+    suiteSetup(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'ai-autocomplete-defs-'));
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      assert.ok(folder, 'the integration launch has a workspace folder');
+      shapes = vscode.Uri.joinPath(folder.uri, 'shapes.py');
+      outside = vscode.Uri.file(join(dir, 'outside.py'));
+      for (const u of [shapes, outside]) writeFileSync(u.fsPath, `${SHAPES.join('\n')}\n`);
+      // Opened once, so the first lookup is not slowed by reading the file.
+      await vscode.workspace.openTextDocument(shapes);
+      await vscode.workspace.openTextDocument(outside);
+    });
+
+    suiteTeardown(() => {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(shapes.fsPath, { force: true });
+    });
+
+    teardown(() => {
+      for (const d of registered.splice(0)) d.dispose();
+    });
+
+    /** A language server for the test: `circle_area` in untitled Python files is defined in shapes.py, whose symbols it lists. */
+    function registerProviders(definition?: () => Promise<vscode.Location | undefined> | vscode.Location | undefined): void {
+      registered.push(
+        vscode.languages.registerDefinitionProvider({ language: 'python', scheme: 'untitled' }, {
+          provideDefinition: (doc, pos) => {
+            if (definition) return definition();
+            const word = doc.getWordRangeAtPosition(pos);
+            return word && doc.getText(word) === 'circle_area' ? new vscode.Location(shapes, new vscode.Position(8, 4)) : undefined;
+          },
+        }),
+        vscode.languages.registerDocumentSymbolProvider({ language: 'python', scheme: 'file' }, {
+          provideDocumentSymbols: () => {
+            const sym = (name: string, start: number, end: number, children: vscode.DocumentSymbol[] = []) => {
+              const range = new vscode.Range(start, 0, end, SHAPES[end].length);
+              const s = new vscode.DocumentSymbol(name, '', vscode.SymbolKind.Function, range, range);
+              s.children = children;
+              return s;
+            };
+            return [sym('Shape', 3, 5, [sym('area', 4, 5)]), sym('circle_area', 8, 9), sym('unrelated', 12, 13)];
+          },
+        }),
+      );
+    }
+
+    /**
+     * Types in a document using circle_area until a request whose prompt (`prompt` reads it) has the definition, at most
+     * twice: a slow first lookup is cut at 100 ms and fills the cache for the next request. Returns the last prompt.
+     */
+    async function askUntilDefinition(count: () => number, prompt: () => string, expected: string): Promise<string> {
+      const editor = await open(USES);
+      for (const key of ['0', '1']) {
+        const before = count();
+        await typeKeys(editor, key);
+        assert.ok(await waitFor(() => count() > before, REQUEST_WAIT_MS), `no request after typing ${key}`);
+        if (prompt().includes(expected)) break;
+      }
+      return prompt();
+    }
+
+    test('a definition in another file reaches a Zeta prompt as a <filename> section', async () => {
+      registerProviders();
+      await withRawNextEdit({ alias: ZETA_MODEL, nextEditRaw: { content: ['NO_EDITS'] } }, lmStudio, async (m) => {
+        const zeta = () => posts(m, '/v1/completions');
+        const last = () => String(zeta()[zeta().length - 1]?.body?.prompt ?? '');
+        const prompt = await askUntilDefinition(() => zeta().length, last, `<filename>shapes.py\n${EXCERPT}\n`);
+        assert.ok(prompt.includes(`<filename>shapes.py\n${EXCERPT}\n`), prompt);
+        assert.ok(!prompt.includes('def unrelated'), prompt);
+      });
+    });
+
+    test('a definition in another file reaches the chatXtab snippets section', async () => {
+      registerProviders();
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const last = () => userMessage(nextEdits(m)[nextEdits(m).length - 1]?.body);
+        const expected = `code_snippet_file_path: shapes.py\n${EXCERPT}\n<|/recently_viewed_code_snippet|>`;
+        const user = await askUntilDefinition(() => nextEdits(m).length, last, expected);
+        const section = user.slice(user.indexOf('<|recently_viewed_code_snippets|>'), user.indexOf('<|/recently_viewed_code_snippets|>'));
+        assert.ok(section.includes(expected), user);
+      });
+    });
+
+    /** Asks twice in a document using circle_area and returns both prompts' user messages, which must not have the definition. */
+    async function askWithoutDefinition(settings: Record<string, unknown>): Promise<void> {
+      registerProviders();
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const editor = await open(USES);
+        for (const key of ['0', '1']) {
+          const before = nextEdits(m).length;
+          await typeKeys(editor, key);
+          assert.ok(await waitFor(() => nextEdits(m).length > before, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        }
+        for (const r of nextEdits(m)) assert.ok(!userMessage(r.body).includes('def circle_area'), userMessage(r.body));
+      }, settings);
+    }
+
+    testIn('main', 'with nextEdit.definitions off, no definition is sent', async () => {
+      await askWithoutDefinition({ 'nextEdit.definitions': false });
+    });
+
+    testIn('main', 'with extra context off, no definition is sent', async () => {
+      await askWithoutDefinition({ 'completions.extraContext': false });
+    });
+
+    testIn('main', 'a definition in a file outside the workspace is not sent', async () => {
+      registerProviders(() => new vscode.Location(outside, new vscode.Position(8, 4)));
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const editor = await open(USES);
+        for (const key of ['0', '1']) {
+          const before = nextEdits(m).length;
+          await typeKeys(editor, key);
+          assert.ok(await waitFor(() => nextEdits(m).length > before, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        }
+        for (const r of nextEdits(m)) {
+          const user = userMessage(r.body);
+          assert.ok(!user.includes('def circle_area') && !user.includes('outside.py'), user);
+        }
+      });
+    });
+
+    test('an empty lookup is not cached: the next request gets the definition', async () => {
+      let ready = false;
+      registerProviders(() => (ready ? new vscode.Location(shapes, new vscode.Position(8, 4)) : undefined));
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        const editor = await open(USES);
+        await typeKeys(editor, '0');
+        assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        assert.ok(!userMessage(nextEdits(m)[0].body).includes('def circle_area'));
+        ready = true;
+        const last = () => userMessage(nextEdits(m)[nextEdits(m).length - 1]?.body);
+        const expected = `code_snippet_file_path: shapes.py\n${EXCERPT}\n<|/recently_viewed_code_snippet|>`;
+        const user = await askUntilDefinition(() => nextEdits(m).length, last, expected);
+        assert.ok(user.includes(expected), user);
+      });
+    });
+
+    testIn('main', 'a definition in an excluded file is not sent', async () => {
+      await askWithoutDefinition({ 'completions.disableInFiles': ['**/shapes.py'] });
+    });
+
+    testIn('main', 'a definition provider that never answers does not hold up the request', async () => {
+      registerProviders(() => new Promise<undefined>(() => undefined));
+      await withNextEdit({ content: ['NO_CHANGE'] }, async (m) => {
+        // A recently viewed file, whose snippet still goes with the request.
+        const viewed = await open(['helper_value = 42']);
+        const editor = await open(USES);
+        await typeKeys(editor, '0');
+        const typed = Date.now();
+        assert.ok(await waitFor(() => nextEdits(m).length >= 1, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+        // The 400 ms edit pause, FIM's answer and the 100 ms cap, with room for a slow machine.
+        const elapsed = Date.now() - typed;
+        assert.ok(elapsed < 2000, `the request came ${elapsed} ms after typing`);
+        const user = userMessage(nextEdits(m)[0].body);
+        assert.ok(user.includes(`code_snippet_file_path: ${pathOf(viewed.document)}\nhelper_value = 42`), user);
+        assert.ok(!user.includes('def circle_area'), user);
+      });
+    });
   });
 });

@@ -1,7 +1,6 @@
 import type { Settings } from '../config/settings';
-import type { NextEditFormat, NextEditInput } from '../nextEdit/formats/format';
-import { renderDiff } from '../nextEdit/history';
-import { nextEditBudgets } from '../nextEdit/region';
+import { formatBudgets, type NextEditFormat, type NextEditInput } from '../nextEdit/formats/format';
+import { renderDiff, withoutFileHeader } from '../nextEdit/history';
 
 const PATH = 'sample.py';
 const BEFORE = ['def total(width, height):', '    area = width * height', '    print(area)', '    return area * 2', ''];
@@ -21,10 +20,10 @@ export function nextEditSample(format: NextEditFormat, settings: Settings): Next
     path: PATH,
     lines,
     cursor: { line: cursorLine, character: RENAMED.length },
-    region: format.region(cursorLine, lines.length, { above: settings.nextEdit.regionLinesAbove, below: settings.nextEdit.regionLinesBelow }),
-    history: [{ path: PATH, text, hunks: HUNKS }],
+    region: format.region(cursorLine, lines, { above: settings.nextEdit.regionLinesAbove, below: settings.nextEdit.regionLinesBelow }),
+    history: [{ path: PATH, text, hunks: HUNKS, contextText: withoutFileHeader(text) }],
     snippets: [],
-    budgets: nextEditBudgets(settings.nextEdit.contextBudget),
+    budgets: formatBudgets(format, settings.nextEdit.contextBudget),
     previous: { lines: BEFORE, hunks: HUNKS },
   };
 }

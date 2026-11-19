@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { pickFormat } from '../../../src/nextEdit/formats';
-import type { NextEditInput } from '../../../src/nextEdit/formats/format';
-import { markerBlocks, zeta21Format } from '../../../src/nextEdit/formats/zeta21';
+import { sweepFormat } from '../../../src/nextEdit/formats/sweep';
+import { chatXtabFormat } from '../../../src/nextEdit/formats/chatXtab';
+import { formatBudgets, type NextEditInput } from '../../../src/nextEdit/formats/format';
+import { regionByChars } from '../../../src/nextEdit/region';
+import { markerBlocks, zeta21Format, ZETA_REGION_CHARS, ZETA_REGION_LINES } from '../../../src/nextEdit/formats/zeta21';
 import { nextEditBudgets } from '../../../src/nextEdit/region';
 
 // Our own fixture (from a live probe): circle.py with `area(r)` renamed to `area(radius)`, the cursor at the end of `def circumference(r):`.
@@ -35,7 +38,7 @@ const input = (over: Partial<NextEditInput> = {}): NextEditInput => ({
   lines: FILE,
   cursor: { line: 4, character: 'def circumference(r):'.length },
   region: { start: 4, end: 9 },
-  history: [{ path: 'circle.py', text: DIFF, hunks: [] }],
+  history: [{ path: 'circle.py', text: DIFF, hunks: [], contextText: DIFF.split('\n').slice(2).join('\n') }],
   snippets: [],
   budgets: nextEditBudgets(3500),
   ...over,
@@ -49,19 +52,16 @@ describe('markerBlocks', () => {
     expect(markerBlocks([])).toEqual([0]);
   });
 
-  it('a block ends after 16 lines', () => {
-    expect(markerBlocks(Array.from({ length: 20 }, (_, n) => `l${n}`))).toEqual([0, 16]);
-    expect(markerBlocks(Array.from({ length: 16 }, (_, n) => `l${n}`))).toEqual([0]);
-    expect(markerBlocks(Array.from({ length: 33 }, (_, n) => `l${n}`))).toEqual([0, 16, 32]);
+  it('splits into ceil(n / 16) near-equal blocks, larger first', () => {
+    const n = (k: number) => Array.from({ length: k }, (_, x) => `l${x}`);
+    expect(markerBlocks(n(16))).toEqual([0]);
+    expect(markerBlocks(n(31))).toEqual([0, 16]);
+    expect(markerBlocks(n(17))).toEqual([0, 9]);
+    expect(markerBlocks(n(40))).toEqual([0, 14, 27]);
   });
 
-  it('a block ends at a non-blank line after a blank one once it has 6 lines', () => {
-    expect(markerBlocks(['a', 'b', 'c', 'd', 'e', 'f', '', 'g'])).toEqual([0, 7]);
-  });
-
-  it('a blank line before line 3 does not split', () => {
-    expect(markerBlocks(['a', '', 'b', 'c'])).toEqual([0]);
-    expect(markerBlocks(['a', 'b', '', 'c', 'd', 'e', 'f'])).toEqual([0]);
+  it('blank lines do not split', () => {
+    expect(markerBlocks(['a', 'b', 'c', 'd', 'e', 'f', '', 'g'])).toEqual([0]);
   });
 });
 
@@ -104,9 +104,9 @@ describe('zeta21 prompt', () => {
       '<[fim-suffix]>\n' +
         '<[fim-prefix]><filename>circle.py\n' +
         '<|marker_1|><|user_cursor|>l0\n' +
-        lines.slice(1, 16).join('\n') +
+        lines.slice(1, 10).join('\n') +
         '\n<|marker_2|>' +
-        lines.slice(16).join('\n') +
+        lines.slice(10).join('\n') +
         '<|marker_3|>\n<[fim-middle]>',
     );
   });
@@ -128,13 +128,18 @@ describe('zeta21 prompt', () => {
     expect(p).not.toContain('big.py');
   });
 
+  it('the history section is the file header plus the entry contextText', () => {
+    const history = [{ path: 'f.py', text: '--- f.py\n+++ f.py\n@@ -5,1 +5,1 @@\n-a\n+b', hunks: [], contextText: '@@ -2,3 +2,3 @@\n x\n-a\n+b\n y' }];
+    expect(promptOf(input({ history })).prompt).toContain('<filename>edit_history\n--- a/f.py\n+++ b/f.py\n@@ -2,3 +2,3 @@\n x\n-a\n+b\n y\n');
+  });
+
   it('related files come before the history', () => {
     const p = promptOf(input({ snippets: [{ path: 'a.py', text: 'AAA' }] })).prompt;
     expect(p).toContain('<[fim-prefix]><filename>a.py\nAAA\n\n<filename>edit_history\n--- a/circle.py\n');
   });
 
   it('history keeps the newest entries that fit, oldest first, at most 6', () => {
-    const entry = (n: number) => ({ path: 'f.py', text: `--- f.py\n+++ f.py\n@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}`, hunks: [] });
+    const entry = (n: number) => ({ path: 'f.py', text: `--- f.py\n+++ f.py\n@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}`, hunks: [], contextText: `@@ -${n},1 +${n},1 @@\n-a${n}\n+b${n}` });
     const history = Array.from({ length: 8 }, (_, n) => entry(n + 1));
     const p = promptOf(input({ history })).prompt;
     expect(p).not.toContain('@@ -2,1');
@@ -161,9 +166,18 @@ describe('zeta21 prompt', () => {
     expect(promptOf(big).maxTokens).toBe(1024);
   });
 
-  it('region uses the settings sizes', () => {
-    expect(zeta21Format.region(10, 100, { above: 3, below: 7 })).toEqual({ start: 7, end: 17 });
-    expect(zeta21Format.region(0, 3, { above: 5, below: 10 })).toEqual({ start: 0, end: 2 });
+  it('region ignores size and is sized by characters', () => {
+    const lines = Array.from({ length: 100 }, () => '123456789');
+    expect(zeta21Format.region(10, lines, { above: 3, below: 7 })).toEqual(regionByChars(lines, 10, ZETA_REGION_CHARS, ZETA_REGION_LINES));
+    expect(zeta21Format.region(0, ['a', 'b', 'c'], { above: 5, below: 10 })).toEqual({ start: 0, end: 2 });
+  });
+
+  it('a 31-line region has markers 1, 2 (at line 16) and the closing 3', () => {
+    const ls = Array.from({ length: 31 }, (_, n) => `l${n}`);
+    const p = promptOf(input({ lines: ls, region: { start: 0, end: 30 }, cursor: { line: 40, character: 0 }, history: [] })).prompt;
+    expect(p).toContain('<|marker_1|>l0\n');
+    expect(p).toContain('\n<|marker_2|>l16\n');
+    expect(p).toContain('l30<|marker_3|>');
   });
 
   it('is registered', () => {
@@ -208,20 +222,20 @@ describe('zeta21 parse', () => {
   it('a span over the second block keeps the first', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|>X<|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 16), 'X'] });
+    expect(parse('<|marker_2|>X<|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
   });
 
   it('a span over the first block keeps the second', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_1|>X\n<|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: ['X', ...lines.slice(16)] });
+    expect(parse('<|marker_1|>X\n<|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: ['X', ...lines.slice(10)] });
   });
 
   it('an empty answer between two markers deletes the lines, also at the end of the region', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|><|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(0, 16) });
-    expect(parse('<|marker_1|><|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(16) });
+    expect(parse('<|marker_2|><|marker_3|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(0, 10) });
+    expect(parse('<|marker_1|><|marker_2|>', i)).toEqual({ kind: 'rewrite', lines: lines.slice(10) });
   });
 
   it('the same marker twice is no change even with text between', () => {
@@ -245,9 +259,52 @@ describe('zeta21 parse', () => {
     expect(a).toEqual({
       kind: 'rewrite',
       lines: ['def circumference(radius):', '    return 2 * 3.14159 * radius', '', '', 'def diameter(r):', '    return 2 * r'],
+      cursor: { line: 0, character: 'def circumference(radius):'.length },
     });
     expect(parse('<|marker_1|><|user_cursor|><|marker_1|>')).toEqual({ kind: 'noChange' });
   });
+});
+
+describe('zeta21 predicted cursor', () => {
+  const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
+  const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
+  const parse = (answer: string) => zeta21Format.parse(answer, i);
+
+  it('the tag once inside the rewritten span gives its line and character in the new region, without the tag', () => {
+    expect(parse('<|marker_2|>X<|user_cursor|>Y\nZ<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'XY', 'Z'], cursor: { line: 10, character: 1 } });
+    expect(parse('<|marker_1|>A\n<|user_cursor|><|marker_2|>')).toEqual({ kind: 'rewrite', lines: ['A', ...lines.slice(10)], cursor: { line: 1, character: 0 } });
+  });
+
+  it('a tag across two blocks counts its position over both', () => {
+    const a = parse(`<|marker_1|>${lines.slice(0, 10).join('\n')}\n<|marker_2|>${lines.slice(10, 19).join('\n')}\nl19<|user_cursor|>X<|marker_3|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 19), 'l19X'], cursor: { line: 19, character: 3 } });
+  });
+
+  it('a tag twice, or outside the markers, gives no cursor', () => {
+    expect(parse('<|marker_2|>X<|user_cursor|>Y<|user_cursor|>\n<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'XY'] });
+    expect(parse('<|user_cursor|><|marker_2|>X<|marker_3|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
+    expect(parse('<|marker_2|>X<|marker_3|><|user_cursor|>')).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 10), 'X'] });
+  });
+});
+
+describe('zeta21 marker sequence', () => {
+  const lines = Array.from({ length: 40 }, (_, n) => `l${n}`);
+  const i = input({ lines, region: { start: 0, end: 39 }, cursor: { line: 0, character: 0 } });
+  const parse = (answer: string) => zeta21Format.parse(answer, i);
+
+  it('markers out of order between the first and last are used from first to last with a warning', () => {
+    const a = parse(`<|marker_1|>A\n<|marker_3|>B\n<|marker_2|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: ['A', 'B', ...lines.slice(14)], warning: 'markerSequence' });
+  });
+
+  it('consecutive markers carry no warning', () => {
+    const a = parse(`<|marker_1|>A\n<|marker_2|>B\n<|marker_3|>`);
+    expect(a).toEqual({ kind: 'rewrite', lines: ['A', 'B', ...lines.slice(27)] });
+  });
+});
+
+describe('zeta21 parse, blocks', () => {
+  const parse = (answer: string, i: NextEditInput) => zeta21Format.parse(answer, i);
 
   it('a block before a marker other than the closing one must end in a newline', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
@@ -260,7 +317,7 @@ describe('zeta21 parse', () => {
   it('markers between the first and the last are dropped from the text', () => {
     const lines = Array.from({ length: 20 }, (_, n) => `l${n}`);
     const i = input({ lines, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    const a = parse(`<|marker_1|>${lines.slice(0, 16).join('\n')}\n<|marker_2|>${lines.slice(16).join('\n')}X<|marker_3|>`, i);
+    const a = parse(`<|marker_1|>${lines.slice(0, 10).join('\n')}\n<|marker_2|>${lines.slice(10).join('\n')}X<|marker_3|>`, i);
     expect(a).toEqual({ kind: 'rewrite', lines: [...lines.slice(0, 19), 'l19X'] });
   });
 });
@@ -289,7 +346,7 @@ describe('zeta21 parse, region at the end of a file that ends with a newline', (
   it('deleting the last block keeps the final newline', () => {
     const long = [...Array.from({ length: 19 }, (_, n) => `l${n}`), ''];
     const at = input({ lines: long, region: { start: 0, end: 19 }, cursor: { line: 0, character: 0 } });
-    expect(parse('<|marker_2|><|marker_3|>', at)).toEqual({ kind: 'rewrite', lines: [...long.slice(0, 16), ''] });
+    expect(parse('<|marker_2|><|marker_3|>', at)).toEqual({ kind: 'rewrite', lines: [...long.slice(0, 10), ''] });
   });
 });
 
@@ -319,8 +376,8 @@ describe('zeta21 reserved strings', () => {
     ];
     const bad = DIFF.replace('+def area(radius):', '+<filename>');
     const history = [
-      { path: 'circle.py', text: bad, hunks: [] },
-      { path: 'other.py', text: '--- other.py\n+++ other.py\n@@ -1,1 +1,1 @@\n-one\n+two', hunks: [] },
+      { path: 'circle.py', text: bad, hunks: [], contextText: bad.split('\n').slice(2).join('\n') },
+      { path: 'other.py', text: '--- other.py\n+++ other.py\n@@ -1,1 +1,1 @@\n-one\n+two', hunks: [], contextText: '@@ -1,1 +1,1 @@\n-one\n+two' },
     ];
     const p = promptOf(input({ snippets, history })).prompt;
     expect(p).not.toContain('bad.py');
@@ -331,5 +388,30 @@ describe('zeta21 reserved strings', () => {
     expect(p).toContain('--- a/other.py\n+++ b/other.py\n@@ -1,1 +1,1 @@\n-one\n+two\n');
     // Only our own headers carry the string: good.py, edit_history and circle.py.
     expect(p.split('<filename>').length - 1).toBe(3);
+  });
+});
+
+describe('context mix', () => {
+  it('budgets(3500) keeps 525 chars for the file and splits the rest', () => {
+    expect(zeta21Format.budgets?.(3500)).toEqual({ fileChars: 525, historyChars: 5862, snippetsChars: 5863 });
+    expect(formatBudgets(zeta21Format, 3500)).toEqual({ fileChars: 525, historyChars: 5862, snippetsChars: 5863 });
+  });
+  it('Sweep and chatXtab keep the default split', () => {
+    expect(formatBudgets(sweepFormat('v1'), 3500)).toEqual(nextEditBudgets(3500));
+    expect(formatBudgets(chatXtabFormat, 3500)).toEqual(nextEditBudgets(3500));
+  });
+  it('the text outside the region is within 525 chars', () => {
+    const lines = Array.from({ length: 200 }, (_, n) => `line number ${n} of the file`);
+    const region = { start: 90, end: 109 };
+    const i = input({ lines, region, cursor: { line: 100, character: 0 }, budgets: formatBudgets(zeta21Format, 3500), history: [] });
+    const p = promptOf(i).prompt;
+    const outside = lines.filter((l, n) => (n < region.start || n > region.end) && p.includes(`${l}\n`)).join('\n').length;
+    expect(outside).toBeGreaterThan(0);
+    expect(outside).toBeLessThanOrEqual(525);
+  });
+  it('a normal Zeta region is not too long, one over 2 x 1225 chars is', () => {
+    const budgets = formatBudgets(zeta21Format, 3500);
+    expect(zeta21Format.problem(input({ lines: ['x'.repeat(2 * ZETA_REGION_CHARS)], region: { start: 0, end: 0 }, cursor: { line: 0, character: 0 }, budgets }))).toBeUndefined();
+    expect(zeta21Format.problem(input({ lines: ['x'.repeat(2 * ZETA_REGION_CHARS + 1)], region: { start: 0, end: 0 }, cursor: { line: 0, character: 0 }, budgets }))).toBe('tooLong');
   });
 });

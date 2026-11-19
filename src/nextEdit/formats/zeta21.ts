@@ -1,29 +1,30 @@
 // The prompt layout follows the format described on the zed-industries/zeta-2.1 model card (Apache-2.0); no code is copied from any implementation.
-import { clipAroundRegion, editableRegion, type LineSpan } from '../region';
-import { hasReserved, newestThatFit, pickSnippets, tooLong, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
+import { CHARS_PER_TOKEN } from '../../completion/effective';
+import { clipLinesAroundRegion, regionByChars, type LineSpan, type NextEditBudgets } from '../region';
+import { hasReserved, newestThatFit, pickSnippets, type CompletionFormat, type FormatAnswer, type NextEditInput } from './format';
 
 const EOS = '<[end▁of▁sentence]>';
 const CURSOR = '<|user_cursor|>';
 const RESERVED = ['<[fim-', '<filename>', '<|marker_', CURSOR, EOS];
 
 const MAX_BLOCK_LINES = 16;
-const MIN_BLOCK_LINES = 6;
+export const ZETA_REGION_CHARS = 1225;
+export const ZETA_REGION_LINES = 40;
 const MAX_HISTORY_ENTRIES = 6;
 
-const isBlank = (line: string): boolean => line.trim() === '';
 const reserved = (...texts: string[]): boolean => hasReserved(texts, RESERVED);
 const take = (lines: string[], span: LineSpan): string[] => (span.end < span.start ? [] : lines.slice(span.start, span.end + 1));
 
-/** The 0-based line indexes where marker blocks start: after 16 lines, or at a non-blank line after a blank one once the block has 6 lines. */
+/** The 0-based line indexes where marker blocks start: ceil(n / 16) blocks of near-equal size, the larger first. */
 export function markerBlocks(lines: string[]): number[] {
-  const starts = [0];
-  let blockStart = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const size = i - blockStart;
-    if (size >= MAX_BLOCK_LINES || (size >= MIN_BLOCK_LINES && !isBlank(lines[i]) && isBlank(lines[i - 1]))) {
-      starts.push(i);
-      blockStart = i;
-    }
+  const count = Math.max(1, Math.ceil(lines.length / MAX_BLOCK_LINES));
+  const base = Math.floor(lines.length / count);
+  const extra = lines.length % count;
+  const starts: number[] = [];
+  let at = 0;
+  for (let k = 0; k < count; k++) {
+    starts.push(at);
+    at += base + (k < extra ? 1 : 0);
   }
   return starts;
 }
@@ -45,13 +46,25 @@ function markedRegion(i: NextEditInput, region: string[]): string {
 function historyDiffs(i: NextEditInput): string[] {
   return newestThatFit(
     i.history,
-    (e) => (reserved(e.path, e.text) ? undefined : [`--- a/${e.path}`, `+++ b/${e.path}`, ...e.text.split('\n').slice(2)].join('\n')),
+    (e) => (reserved(e.path, e.contextText) ? undefined : `--- a/${e.path}\n+++ b/${e.path}\n${e.contextText}`),
     i.budgets.historyChars,
     MAX_HISTORY_ENTRIES,
   );
 }
 
-const clipped = (i: NextEditInput): LineSpan => clipAroundRegion(i.lines, i.region, i.budgets.fileChars);
+const FILE_CHARS = 525;
+
+/** A small file budget outside the region; history and related files share the rest. */
+function budgets(contextTokens: number): NextEditBudgets {
+  const rest = Math.max(0, Math.round(contextTokens * CHARS_PER_TOKEN) - FILE_CHARS);
+  const historyChars = Math.floor(rest / 2);
+  return { fileChars: FILE_CHARS, historyChars, snippetsChars: rest - historyChars };
+}
+
+const clipped = (i: NextEditInput): LineSpan => clipLinesAroundRegion(i.lines, i.region, i.budgets.fileChars);
+
+/** The region's chars over twice the region budget (minified code); the file budget is small here. */
+const tooLong = (i: NextEditInput): boolean => take(i.lines, i.region).join('\n').length > 2 * ZETA_REGION_CHARS;
 
 function problem(i: NextEditInput): string | undefined {
   if (reserved(i.path, ...take(i.lines, clipped(i)))) return 'reserved';
@@ -93,9 +106,14 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
   offsets.push(old.length);
   if (s < 1 || e > offsets.length || s > e) return { kind: 'invalid', why: 'range' };
 
+  // A cursor tag counts only when the whole answer has exactly one; its offset is taken in the joined segments.
+  const oneCursor = text.split(CURSOR).length === 2;
+  let cursorAt: number | undefined;
   let inner = '';
   for (let n = 0; n + 1 < tags.length; n++) {
-    const segment = text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index).split(CURSOR).join('');
+    const raw = text.slice(tags[n].index + tags[n][0].length, tags[n + 1].index);
+    if (oneCursor && raw.includes(CURSOR)) cursorAt = inner.length + raw.indexOf(CURSOR);
+    const segment = raw.split(CURSOR).join('');
     // A block before any marker but the closing one ends in a newline, else its last line would run into the next kept line.
     if (Number(tags[n + 1][1]) !== offsets.length && segment !== '' && !segment.endsWith('\n')) return { kind: 'invalid', why: 'glued' };
     inner += segment;
@@ -113,15 +131,25 @@ function parse(answer: string, i: NextEditInput): FormatAnswer {
     }
   }
   const next = head + inner + old.slice(offsets[e - 1]);
-  return next === old ? { kind: 'noChange' } : { kind: 'rewrite', lines: next.split('\n') };
+  if (next === old) return { kind: 'noChange' };
+  const before = cursorAt === undefined ? undefined : next.slice(0, head.length + Math.min(cursorAt, inner.length)).split('\n');
+  const inOrder = tags.every((t, n) => n === 0 || Number(t[1]) === Number(tags[n - 1][1]) + 1);
+  return {
+    kind: 'rewrite',
+    lines: next.split('\n'),
+    ...(before ? { cursor: { line: before.length - 1, character: before[before.length - 1].length } } : {}),
+    ...(inOrder ? {} : { warning: 'markerSequence' as const }),
+  };
 }
 
 /** Zed's Zeta 2.1 raw prompt: marker-delimited blocks of the editable region, edit history and related files. */
 export const zeta21Format: CompletionFormat = {
   id: 'zeta21',
   transport: 'completion',
-  region: (cursorLine, lineCount, size) => editableRegion(cursorLine, lineCount, size.above, size.below),
+  region: (cursorLine, lines) => regionByChars(lines, cursorLine, ZETA_REGION_CHARS, ZETA_REGION_LINES),
   problem,
+  budgets,
+  tooLong,
   prompt,
   parse,
 };

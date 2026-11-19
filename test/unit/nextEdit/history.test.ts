@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { EditHistory, recentEditsFile, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
+import { contextTextOf, EditHistory, recentEditsFile, RecentSnippets, renderDiff, spanBefore } from '../../../src/nextEdit/history';
 
 test('renderDiff renders zero-context hunks with 1-based numbers', () => {
   expect(renderDiff('f.py', 'a\nb\nc\n', 'a\nB\nc\n')).toBe('--- f.py\n+++ f.py\n@@ -2,1 +2,1 @@\n-b\n+B');
@@ -83,9 +83,20 @@ test('RecentSnippets trims to 20 lines around the center line', () => {
   const lines = Array.from({ length: 100 }, (_, i) => `l${i}`);
   s.add('a', lines, 50);
   const t = s.pick('', 10000)[0].text.split('\n');
-  expect(t).toHaveLength(20);
+  expect(t).toHaveLength(21);
   expect(t).toContain('l50');
   expect(t[0]).toBe('l40');
+  expect(t[19]).toBe('l59');
+  expect(t[20]).toBe('...');
+});
+
+test('RecentSnippets adds no ... when the window ends at the last line', () => {
+  const s = new RecentSnippets();
+  const lines = Array.from({ length: 100 }, (_, i) => `l${i}`);
+  s.add('a', lines, 99);
+  const t = s.pick('', 10000)[0].text.split('\n');
+  expect(t).toHaveLength(20);
+  expect(t[19]).toBe('l99');
 });
 
 test('RecentSnippets.pick skips the excluded path and keeps the newest that fit the budget, returned oldest first', () => {
@@ -96,6 +107,14 @@ test('RecentSnippets.pick skips the excluded path and keeps the newest that fit 
   s.add('d', ['dddd'], 0);
   expect(s.pick('d', 8).map((x) => x.path)).toEqual(['b', 'c']);
   expect(s.pick('', 4).map((x) => x.path)).toEqual(['d']);
+});
+
+test('RecentSnippets.pick leaves out the extra paths before filling the budget', () => {
+  const s = new RecentSnippets();
+  s.add('a', ['aaaa'], 0);
+  s.add('b', ['bbbb'], 0);
+  s.add('c', ['cccc'], 0);
+  expect(s.pick('', 8, new Set(['c'])).map((x) => x.path)).toEqual(['a', 'b']);
 });
 
 test('forget drops one path\'s snapshot and entries', () => {
@@ -373,4 +392,48 @@ test('recentEditsFile drops the oldest hunks to fit, and is undefined when nothi
   expect(last).toBe('--- b\n+++ b\n@@ -1,1 +1,1 @@\n-p\n+P');
   expect(recentEditsFile(h.entries(), 3, 5)).toBeUndefined();
   expect(recentEditsFile([], 3, 1e6)).toBeUndefined();
+});
+
+const numbered = (n: number) => Array.from({ length: n }, (_, i) => `l${i + 1}`);
+
+test('contextText has 3 context lines around a change', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[9] = 'X10';
+  h.commit('f', lines.join('\n') + '\n');
+  const [e] = h.entries();
+  expect(e.contextText).toBe('@@ -7,7 +7,7 @@\n l7\n l8\n l9\n-l10\n+X10\n l11\n l12\n l13');
+  expect(e.text).toBe('--- f\n+++ f\n@@ -10,1 +10,1 @@\n-l10\n+X10');
+});
+
+test('contextText of a change at line 1 has no lines before', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[0] = 'X1';
+  h.commit('f', lines.join('\n') + '\n');
+  expect(h.entries()[0].contextText).toBe('@@ -1,4 +1,4 @@\n-l1\n+X1\n l2\n l3\n l4');
+});
+
+test('a merged entry contextText covers the base-to-newest change', () => {
+  const h = new EditHistory();
+  const lines = numbered(20);
+  h.open('f', lines.join('\n') + '\n');
+  lines[9] = 'X10';
+  h.commit('f', lines.join('\n') + '\n');
+  lines[9] = 'XY10';
+  h.commit('f', lines.join('\n') + '\n');
+  expect(h.entries()).toHaveLength(1);
+  expect(h.entries()[0].contextText).toBe('@@ -7,7 +7,7 @@\n l7\n l8\n l9\n-l10\n+XY10\n l11\n l12\n l13');
+});
+
+test('contextTextOf falls back to the zero-context text when the context diff exceeds the budget', () => {
+  const before = Array.from({ length: 3000 }, (_, i) => `a${i}`).join('\n') + '\n';
+  const after = Array.from({ length: 3000 }, (_, i) => `b${i}`).join('\n') + '\n';
+  expect(contextTextOf('f', before, after, '--- f\n+++ f\n@@ -1,1 +1,1 @@\n-x\n+y')).toBe('@@ -1,1 +1,1 @@\n-x\n+y');
+});
+
+test('contextTextOf falls back when the texts are equal', () => {
+  expect(contextTextOf('f', 'a\n', 'a\n', '--- f\n+++ f\n@@ -1,1 +1,1 @@\n-x\n+y')).toBe('@@ -1,1 +1,1 @@\n-x\n+y');
 });

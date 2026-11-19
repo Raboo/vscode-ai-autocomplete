@@ -174,9 +174,13 @@ A Next Edit answer rewrites a whole region, so it arrives later than a completio
 | Sweep Next Edit 1.5B Q8_0 | completions | 0.39 s | 1.1 s | 1.2 s |
 | Mellum 4B Q8_0 | completions | 0.98 s | 1.5 s | 2.8 s |
 | Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.34 s | 3.2 s | 3.2 s |
-| Zeta 2.1 Q4_K_M (8B) | Next Edit | 3.0 s | 10 s | 16 s |
+| Zeta 2.1 Q4_K_M (8B) | Next Edit | 1.8 s | 8.4 s | 9.3 s |
 
-On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone. Zeta 2.1 is better at edits further from the cursor, but it takes about 10 s per answer here, so use it next to a completion model rather than instead of one.
+On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone. Zeta 2.1 is better at edits further from the cursor, but it takes about 8 s per answer here (the prompt now follows Zeta's trained layout; the first request after loading the model took 12 s), so use it next to a completion model rather than instead of one.
+
+#### Definitions as context
+
+With extra context on, Next Edit also sends the definitions of symbols near the cursor (for example an imported function the edited code calls), as short excerpts that the language server finds. Each lookup is capped at 100 ms, and the excerpts share the context budget with the recently viewed snippets. It needs a language server for the file's language. Turn it off with `aiAutocomplete.nextEdit.definitions` (default on). With `aiAutocomplete.debug.logPrompts` you can see them in the logged prompt.
 
 ### Why no suggestion?
 

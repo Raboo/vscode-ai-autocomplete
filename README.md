@@ -103,12 +103,13 @@ The page has:
 | Model | Size | Use | Licence | Model name |
 | --- | --- | --- | --- | --- |
 | Sweep Next Edit 1.5B (recommended) | 1.5 GB | completions and Next Edit | Apache-2.0 | `sweep-next-edit-1.5b` |
+| Zeta 2.1 (community quant, not official) | 5.1 GB | Next Edit | Apache-2.0 | `zeta-2.1` |
 | Qwen2.5-Coder 1.5B | 1.6 GB | completions | Apache-2.0 | `qwen2.5-coder-1.5b` |
 | Qwen2.5-Coder 3B | 3.3 GB | completions | Apache-2.0 | `qwen2.5-coder-3b` |
 | Qwen2.5-Coder 7B | 8.1 GB | completions | Apache-2.0 | `qwen2.5-coder-7b` |
 | Mellum 4B | 4.3 GB | completions | Apache-2.0 | `mellum-4b-base` |
 
-Zeta 2.1 and Sweep v2 7B have no official GGUF, so they are not in the list; set them up by hand on the Backends page (or add a GGUF you trust with Add model).
+Zeta 2.1 has no official GGUF: the list offers a community quant (Q4_K_M by mradermacher), marked as such. It is never the recommended first model, and it does Next Edit only (it cannot do completions). Sweep v2 7B has no official GGUF either, so it is not in the list; set it up by hand on the Backends page (or add a GGUF you trust with Add model).
 
 **Where files go.** Under `models/<owner>/<repo>/<file>` in the models folder. On macOS the default is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
 
@@ -159,9 +160,27 @@ Click **AI** in the status bar for the menu:
 - **Completions: <backend>** picks the completion backend, or **Off** (`aiAutocomplete.completions.enabled`); the backend choice stays, and picking a backend turns completions back on. **Next Edit: <backend>** works the same way for Next Edit (`aiAutocomplete.nextEdit.enabled`). With completions off and Next Edit on, the status bar stays normal and its tooltip says "Completions: off".
 - **Snooze...** pauses both for 15 minutes, an hour or until VS Code restarts.
 
+### Next Edit without completions
+
+Next Edit models also predict code at the cursor, and such an insertion shows as ghost text that Tab accepts. You can pick **Completions: Off** and run on Next Edit alone. Then:
+- Next Edit asks 150 ms after you stop typing (400 ms while completions are on).
+- With a local llama.cpp Next Edit backend and the Sweep or Zeta format, the extension warms the server's prompt cache when you open a file and after you accept, at most once per file every 30 s.
+- **Why No Suggestion?** and the tooltip stats cover Next Edit too.
+
+A Next Edit answer rewrites a whole region, so it arrives later than a completion. Measured on an Apple M3 Pro (18 GB) with this repository's own files, through the extension's request code (`scripts/bench/latency.ts`; "warm" is the same prompt after one more typed character, as while typing):
+
+| Model (llama.cpp, Metal) | Feature | First token, warm | Whole answer, warm | Whole answer, cold |
+| --- | --- | --- | --- | --- |
+| Sweep Next Edit 1.5B Q8_0 | completions | 0.39 s | 1.1 s | 1.2 s |
+| Mellum 4B Q8_0 | completions | 0.98 s | 1.5 s | 2.8 s |
+| Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.34 s | 3.2 s | 3.2 s |
+| Zeta 2.1 Q4_K_M (8B) | Next Edit | 3.0 s | 10 s | 16 s |
+
+On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone. Zeta 2.1 is better at edits further from the cursor, but it takes about 10 s per answer here, so use it next to a completion model rather than instead of one.
+
 ### Why no suggestion?
 
-When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion requests for the active file, newest first, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts and the median latency. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
+When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion and Next Edit requests for the active file, newest first, each labelled with its feature, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts (a second line for Next Edit once it has been asked) and the median latency of both features. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
 
 ### What a backend is used for
 

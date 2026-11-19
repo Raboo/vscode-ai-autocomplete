@@ -12,3 +12,6 @@ out/
 # Local test credentials (never commit)
 .env
 .env.*
+
+# Claude Code personal settings
+.claude/settings.local.json

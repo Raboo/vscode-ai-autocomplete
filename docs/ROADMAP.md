@@ -13,7 +13,8 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 3d. LM Studio MLX fixes | The leading space MLX drops from completions, the StopIteration error at the token limit | [plan](superpowers/plans/2026-11-16-lmstudio-mlx-fixes.md), [design](superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md) | released in [v0.5.1](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.5.1) |
 | 4. Local model helper | Curated recipes, llama-server/lms manager, download progress, automatic backend registration | [plan](superpowers/plans/2026-11-16-local-model-helper.md), [design](superpowers/specs/2026-11-16-local-model-helper-design.md) | released in [v0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.6.0) |
 | 4b. Polish before publish | Settings renamed to `completions.*`, status tooltip stats and Why No Suggestion?, Next Edit kept while typing, Get Started walkthrough, local llama.cpp warm-up | [plan](superpowers/plans/2026-11-18-polish-before-publish.md) | released in [v0.6.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v0.6.0) |
-| 4c. Local Models page | One llama-server router with Models in memory, the Manage Local Models page, Add model from Hugging Face, per-model settings, models folder, token, update checks | [plan](superpowers/plans/2026-11-18-local-models-page.md), [design](superpowers/specs/2026-11-18-local-models-page-design.md) | implemented on `feat/local-models-page` (not merged or released) |
+| 4c. Local Models page | One llama-server router with Models in memory, the Manage Local Models page, Add model from Hugging Face, per-model settings, models folder, token, update checks | [plan](superpowers/plans/2026-11-18-local-models-page.md), [design](superpowers/specs/2026-11-18-local-models-page-design.md) | released in [v1.0.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.0.0) |
+| 4d. Next Edit without completions | Shorter Next Edit pause and llama.cpp warm-up with completions off, Next Edit in Why No Suggestion and the stats, Zeta 2.1 recipe, latency benchmark | [plan](superpowers/plans/2026-11-19-next-edit-only.md), [design](superpowers/specs/2026-11-19-next-edit-only-design.md) | released in the next minor version |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -106,7 +107,7 @@ Phase 4 (released in v0.6.0; the server parts are replaced by 4c; [plan](superpo
 - The Get Started walkthrough opens and its steps complete.
 - Warm-up on local llama.cpp: switching files and accepting a suggestion makes the next one fast.
 
-Phase 4c (check before merging the `feat/local-models-page` branch; [plan](superpowers/plans/2026-11-18-local-models-page.md)):
+Phase 4c (released in v1.0.0; check on the release `.vsix`; [plan](superpowers/plans/2026-11-18-local-models-page.md)):
 
 - Real llama-server, Sweep 1.5B for both completions and Next Edit.
 - Qwen2.5-Coder 3B for completions with Sweep for Next Edit at Models in memory 1 (the swap warning shows, swaps are visible in the log) and 2 (no swaps).
@@ -117,3 +118,11 @@ Phase 4c (check before merging the `feat/local-models-page` branch; [plan](super
 - Remove from list and Hide of a model `local` uses: the selection is cleared and the page says so.
 - Restart from the page brings the router back with the same models.
 - Remove Downloaded Models offers leftover files the model list no longer names.
+
+Phase 4d (check on the release `.vsix`; [plan](superpowers/plans/2026-11-19-next-edit-only.md)):
+
+- Completions → Off, Next Edit on `local` with Sweep 1.5B: typing pauses show ghost text after about 150 ms plus the answer time; Tab accepts; typing the start of a suggestion keeps it.
+- With the Debug log on, opening a file sends one Next Edit warm-up (`n_predict` 0) to llama-server, and none again for 30 s.
+- **Why No Suggestion?** lists Next Edit entries ("Next Edit: shown", "no change", skipped reasons); the tooltip shows a Next Edit line.
+- The Local Models page lists Zeta 2.1 (community quant), already downloaded if the file is in the models folder; **Use for Next Edit** works; with Models in memory 1 and Sweep for completions, the swap warning shows.
+- Completions on again: Next Edit behaves as before (400 ms pause, no Next Edit warm-up).

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { AFTER_EDIT_WINDOW_MS, EDIT_ECHO_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy, keepRequestWhileTyping } from '../../../src/nextEdit/trigger';
+import { AFTER_EDIT_WINDOW_MS, EDIT_ECHO_MS, EDIT_PAUSE_MS, NEXT_EDIT_ONLY_PAUSE_MS, REJECTION_COOLDOWN_MS, SAME_LINE_COOLDOWN_MS, TriggerPolicy, keepRequestWhileTyping, nextEditPauseMs } from '../../../src/nextEdit/trigger';
 
 test('a cursor move within 10 s of an edit triggers; after 10 s it does not', () => {
   const p = new TriggerPolicy();
@@ -92,5 +92,19 @@ describe('keepRequestWhileTyping', () => {
     expect(keepRequestWhileTyping({ ...base, slots: 1 })).toBe(false);
     expect(keepRequestWhileTyping(base)).toBe(false);
     expect(keepRequestWhileTyping({ ...base, kind: 'openai', slots: 2 })).toBe(false);
+  });
+});
+
+describe('nextEditPauseMs', () => {
+  const s = (enabled: boolean, fimEnabled: boolean, backendId: string | undefined) => ({ enabled, fim: { enabled: fimEnabled, backendId } });
+  test('completions on: 400 ms', () => {
+    expect(nextEditPauseMs(s(true, true, 'a'))).toBe(EDIT_PAUSE_MS);
+    expect(EDIT_PAUSE_MS).toBe(400);
+  });
+  test('completions off, the extension disabled or no completion backend: 150 ms', () => {
+    expect(NEXT_EDIT_ONLY_PAUSE_MS).toBe(150);
+    expect(nextEditPauseMs(s(true, false, 'a'))).toBe(150);
+    expect(nextEditPauseMs(s(false, true, 'a'))).toBe(150);
+    expect(nextEditPauseMs(s(true, true, undefined))).toBe(150);
   });
 });

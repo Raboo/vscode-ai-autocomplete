@@ -1,3 +1,4 @@
+import type { FormatId } from '../nextEdit/formats/format';
 import type { BackendKind } from '../types';
 import { gate } from './gate';
 
@@ -60,6 +61,20 @@ export function shouldWarm(i: SpeculateInput, lastWarmAt: number | undefined): D
   if (!d.ok) return d;
   if (lastWarmAt !== undefined && i.now - lastWarmAt < WARM_INTERVAL_MS) return { ok: false, reason: 'recent' };
   return d;
+}
+
+/** A Next Edit warm-up's input: `kind`, `baseUrl` and `enabled` describe the Next Edit backend and feature. */
+export interface NextEditWarmInput extends SpeculateInput {
+  /** Completions on (`enabled` and `completions.enabled`, with a completion backend): then they warm the cache and Next Edit does not. */
+  completionsOn: boolean;
+  format: FormatId;
+}
+
+/** Whether to fill the Next Edit slot's prompt cache: only when Next Edit runs alone, as a raw format on loopback llama.cpp. */
+export function shouldWarmNextEdit(i: NextEditWarmInput, lastWarmAt: number | undefined): Decision {
+  if (i.completionsOn) return { ok: false, reason: 'completions on' };
+  if (i.format === 'chatXtab') return { ok: false, reason: 'not a raw format' };
+  return shouldWarm(i, lastWarmAt);
 }
 
 /** Whether to ask for the completion at the cursor after an accepted one, to cache it without showing it. */

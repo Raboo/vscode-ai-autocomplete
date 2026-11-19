@@ -58,6 +58,25 @@ export async function runNextEdit(o: RunOptions): Promise<NextEditResult | undef
   return resultOf(o.snapshot, answer);
 }
 
+/**
+ * Warms the Next Edit slot: the format's prompt with no tokens to generate, so llama.cpp only fills its prompt cache.
+ * The answer is drained and ignored. Raw formats only. Throws the backend's errors.
+ */
+export async function warmNextEdit(o: { backend: FimBackend; values: FimValues; model: string | undefined; format: CompletionFormat; input: NextEditInput; signal: AbortSignal }): Promise<void> {
+  const p = o.format.prompt(o.input);
+  const chunks = o.backend.streamFim({
+    ...(o.model ? { model: o.model } : {}),
+    payload: { route: 'template', prompt: p.prompt },
+    slot: 'nextEdit',
+    stop: p.stop,
+    sampling: { temperature: 0, maxTokens: 0 },
+    extraBody: o.values.extraBody,
+    signal: o.signal,
+    timeoutMs: o.values.timeoutMs,
+  });
+  for await (const chunk of chunks) void chunk;
+}
+
 /** Links an inner controller to the caller's signal; `done()` unlinks it. */
 function linked(signal: AbortSignal): { ctl: AbortController; abort(): void; done(): void } {
   const ctl = new AbortController();

@@ -20,6 +20,8 @@ export interface ModelRow {
   usedFor: BackendUse[];
   /** The file is above 40% of the memory. */
   mayNotFit: boolean;
+  /** Fixed text from a built-in recipe, shown next to the label. */
+  note?: string;
   update?: UpdateView;
 }
 

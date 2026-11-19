@@ -4,6 +4,12 @@ import { RECIPES } from '../../../src/local/recipes';
 
 const added = { name: 'mine', repo: 'o/r', revision: 'abc', file: 'm.gguf', bytes: 10, sha256: 'ff' };
 
+test('a recipe note reaches the merged model; added models have none', () => {
+  const { models } = mergeModels([{ ...RECIPES[0], note: 'community quant' }], [{ name: 'mine', repo: 'o/r', revision: 'a'.repeat(40), file: 'f.gguf', bytes: 1, sha256: 'b'.repeat(64) }]);
+  expect(models[0].note).toBe('community quant');
+  expect(models[1].note).toBeUndefined();
+});
+
 describe('mergeModels', () => {
   test('no entries: the built-ins in recipe order', () => {
     const { models, problems } = mergeModels(RECIPES, []);

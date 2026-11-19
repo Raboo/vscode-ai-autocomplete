@@ -225,7 +225,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   }
 
   private note(uri: string, kind: CompletionOutcome['kind'], extra: Partial<Pick<CompletionOutcome, 'detail' | 'ms' | 'chars'>> = {}): void {
-    this.d.outcomes.record({ at: Date.now(), uri, kind, ...extra });
+    this.d.outcomes.record({ at: Date.now(), uri, feature: 'completions', kind, ...extra });
   }
 
   /** The request pipeline. A speculative mode (no `ctx`) was already checked by speculate() and returns silently wherever a shown request would report. */

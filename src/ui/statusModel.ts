@@ -1,4 +1,4 @@
-import { sessionLine, type SessionStats } from '../completion/outcomes';
+import { nextEditLine, sessionLine, type SessionStats } from '../completion/outcomes';
 import type { StatusState } from '../completion/requestStatus';
 import { LOCAL_BACKEND_ID } from '../local/backendEntry';
 
@@ -159,5 +159,7 @@ export function tooltipLines(o: { shown: LastStatus; snoozedUntil: number; locke
   lines.push(`Completions: ${o.menu.completionBackend ?? 'off'}`, `Next Edit: ${o.menu.nextEditBackend ?? 'off'}`);
   if (o.locked) lines.push('Local only: requests go to loopback or private-network hosts only');
   lines.push(sessionLine(o.session));
+  const nextEdit = nextEditLine(o.session.nextEdit);
+  if (nextEdit) lines.push(nextEdit);
   return lines;
 }

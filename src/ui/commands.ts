@@ -7,7 +7,7 @@ import type { Secrets } from '../config/secrets';
 import { usesFor, writesToWorkspace, type BackendUse } from '../config/settings';
 import { readSettings } from '../config/vscodeSettings';
 import type { OpenOptions } from './backendsPanel';
-import { describeOutcome, relativeTime, type OutcomeLog } from '../completion/outcomes';
+import { outcomeLabel, relativeTime, type OutcomeLog } from '../completion/outcomes';
 import type { StatusBar } from './statusBar';
 import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
@@ -211,13 +211,13 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       const doc = vscode.window.activeTextEditor?.document;
       const list = doc ? d.outcomes.forUri(doc.uri.toString()) : [];
       if (list.length === 0) {
-        void vscode.window.showInformationMessage('No completion requests for this file yet.');
+        void vscode.window.showInformationMessage('No completion or Next Edit requests for this file yet.');
         return;
       }
       const now = Date.now();
       await vscode.window.showQuickPick(
-        list.map((o) => ({ label: describeOutcome(o), description: relativeTime(now, o.at) })),
-        { placeHolder: 'Why no suggestion? The latest completion requests for this file, newest first' },
+        list.map((o) => ({ label: outcomeLabel(o), description: relativeTime(now, o.at) })),
+        { placeHolder: 'Why no suggestion? The latest completion and Next Edit requests for this file, newest first' },
       );
     }),
     reg('accepted', () => {

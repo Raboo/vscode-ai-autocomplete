@@ -15,6 +15,8 @@ export interface Recipe {
   /** Name the server is started with (`--alias`) and the backend's model setting. */
   modelName: string;
   contextTokens: number;
+  /** Shown next to the label on the Local Models page, e.g. that a quant is not official. */
+  note?: string;
   /** Overrides the Hugging Face URL; test recipes only. */
   url?: string;
 }
@@ -34,6 +36,22 @@ export const RECIPES: readonly Recipe[] = [
     uses: ['completions', 'nextEdit'],
     modelName: 'sweep-next-edit-1.5b',
     contextTokens: 8192,
+  },
+  // Zeta 2.1 has no official GGUF; this is a community quant (read from the Hugging Face API on 2026-11-19). The name matches /zeta/i,
+  // so `nextEdit.format: auto` picks the Zeta 2.1 format. Never the first-run default.
+  {
+    id: 'zeta-2.1',
+    label: 'Zeta 2.1 (community quant)',
+    repo: 'mradermacher/zeta-2.1-i1-GGUF',
+    revision: '92c5ffc501a76d9c92bd04c0022cebfffa461dc8',
+    file: 'zeta-2.1.i1-Q4_K_M.gguf',
+    bytes: 5071410336,
+    sha256: '216ddb5722a49f9ff49b21a050c4db3c801ef6f34e4bd1702d5db43e3325b076',
+    license: 'Apache-2.0',
+    uses: ['nextEdit'],
+    modelName: 'zeta-2.1',
+    contextTokens: 8192,
+    note: 'community quant, not official',
   },
   {
     id: 'qwen2.5-coder-1.5b',

@@ -46,6 +46,8 @@ export function activate(context: vscode.ExtensionContext): {
   nativeNextEdit: boolean;
   nextEditPending: () => ReturnType<NextEditController['pendingEdit']>;
   /** Test runs only: swaps the recipes setup offers and the router's presets list. */
+  /** Test runs only: the in-memory outcomes of a document, newest first. */
+  outcomes?: (uri: string) => { feature: string; kind: string }[];
   local?: { setRecipes(r: Recipe[] | undefined): void; rerunMigration(legacy: unknown): Promise<void> };
 } {
   const sub = (d: vscode.Disposable): void => void context.subscriptions.push(d);
@@ -119,6 +121,8 @@ export function activate(context: vscode.ExtensionContext): {
     backoff,
     isLocal,
     log,
+    outcomes,
+    statsChanged: () => status.refresh(),
     snoozedUntil,
     snippets,
     isExcluded: offLimits,
@@ -174,7 +178,9 @@ export function activate(context: vscode.ExtensionContext): {
     clearTimeout(warmTimer);
     if (!editor) return;
     warmTimer = setTimeout(() => {
-      if (vscode.window.activeTextEditor === editor) provider.warm(editor.document, editor.selection.active);
+      if (vscode.window.activeTextEditor !== editor) return;
+      provider.warm(editor.document, editor.selection.active);
+      nextEdit.warm(editor.document);
     }, WARM_DELAY_MS);
   };
   sub(vscode.window.onDidChangeActiveTextEditor(warmSoon));
@@ -327,6 +333,7 @@ export function activate(context: vscode.ExtensionContext): {
     nextEditPending: () => nextEdit.pendingEdit(),
     ...(context.extensionMode === vscode.ExtensionMode.Test
       ? {
+          outcomes: (uri: string) => outcomes.forUri(uri).map((o) => ({ feature: o.feature, kind: o.kind })),
           local: {
             setRecipes: (r: Recipe[] | undefined) => {
               testRecipes = r;

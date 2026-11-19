@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { activity, displayState, hhmm, menuEntries, menuGroups, menuInputs, noCompletionBackend, stateName, tooltipLines, type MenuInputs } from '../../src/ui/statusModel';
 import { memoizeIsLocal } from '../../src/config/localOnly';
 
+const Z = { requests: 0, shown: 0, accepted: 0 };
+
 describe('displayState', () => {
   const last = { state: 'error', detail: 'boom' } as const;
   test('disabled beats snoozed and last', () => {
@@ -186,8 +188,12 @@ describe('tooltip', () => {
     expect(stateName('snoozed', at)).toBe('Snoozed until 09:05');
     expect(hhmm(new Date(2026, 0, 1, 23, 59).getTime())).toBe('23:59');
   });
+  test('adds a Next Edit line once Next Edit has been asked', () => {
+    const lines = tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, session: { requests: 0, shown: 0, accepted: 0, nextEdit: { requests: 5, shown: 3, accepted: 2 } }, menu: M() });
+    expect(lines.slice(-2)).toEqual(['This session: 0 requests · 0 shown · 0 accepted', 'Next Edit this session: 5 requests · 3 shown · 2 accepted']);
+  });
   test('lists the state, its detail, both backends, local-only and the session counts', () => {
-    expect(tooltipLines({ shown: { state: 'error', detail: 'coder: HTTP 503' }, snoozedUntil: 0, locked: true, session: { requests: 42, shown: 17, accepted: 3, medianMs: 380 }, menu: M() })).toEqual([
+    expect(tooltipLines({ shown: { state: 'error', detail: 'coder: HTTP 503' }, snoozedUntil: 0, locked: true, session: { requests: 42, shown: 17, accepted: 3, medianMs: 380, nextEdit: Z }, menu: M() })).toEqual([
       'AI Autocomplete: Error',
       'coder: HTTP 503',
       'Completions: coder',
@@ -197,7 +203,7 @@ describe('tooltip', () => {
     ]);
   });
   test('a feature without a backend reads off', () => {
-    expect(tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, session: { requests: 0, shown: 0, accepted: 0 }, menu: M({ completionBackend: undefined, nextEditBackend: undefined }) })).toEqual([
+    expect(tooltipLines({ shown: { state: 'idle' }, snoozedUntil: 0, locked: false, session: { requests: 0, shown: 0, accepted: 0, nextEdit: Z }, menu: M({ completionBackend: undefined, nextEditBackend: undefined }) })).toEqual([
       'AI Autocomplete: Ready',
       'Completions: off',
       'Next Edit: off',
@@ -205,7 +211,7 @@ describe('tooltip', () => {
     ]);
   });
   test('a snooze with an end time names it', () => {
-    expect(tooltipLines({ shown: { state: 'snoozed' }, snoozedUntil: at, locked: false, session: { requests: 0, shown: 0, accepted: 0 }, menu: M() })[0]).toBe('AI Autocomplete: Snoozed until 09:05');
+    expect(tooltipLines({ shown: { state: 'snoozed' }, snoozedUntil: at, locked: false, session: { requests: 0, shown: 0, accepted: 0, nextEdit: Z }, menu: M() })[0]).toBe('AI Autocomplete: Snoozed until 09:05');
   });
 });
 

@@ -94,7 +94,7 @@ function modelRow(m: ModelRow): string {
   ];
   const tags = [...(m.usedFor.length > 0 ? [`In use for ${useList(m.usedFor)}`] : []), ...(m.hidden ? ['Hidden'] : [])];
   return `<li class="card${m.hidden ? ' hidden' : ''}" data-model="${e(m.name)}">`
-    + `<div class="card-head"><span class="card-title">${e(m.label)}</span><span class="meta">${e(m.name)} · ${e(formatBytes(m.bytes))} · ${e(useList(m.uses))}</span>`
+    + `<div class="card-head"><span class="card-title">${e(m.label)}</span>${m.note !== undefined ? `<span class="note meta">${e(m.note)}</span>` : ''}<span class="meta">${e(m.name)} · ${e(formatBytes(m.bytes))} · ${e(useList(m.uses))}</span>`
     + (tags.length > 0 ? `<span class="badge">${tags.map(e).join(' · ')}</span>` : '') + `</div>`
     + `<p class="meta">${e(progress)}${d.kind === 'failed' ? hfLink(d.link) : ''}${loadText ? ` · ${e(loadText)}` : ''}`
     + `${m.update !== undefined ? ` · ${e(updateText(m.update))}${typeof m.update === 'object' && 'error' in m.update ? hfLink(m.update.link) : ''}` : ''}</p>`

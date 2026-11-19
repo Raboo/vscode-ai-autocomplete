@@ -311,6 +311,7 @@ A value outside its limits is ignored, and a warning names it. The region settin
 - A workspace, or any folder of a multi-root workspace, can turn `aiAutocomplete.privacy.localOnly` on, but not off.
 - Files matching `aiAutocomplete.completions.disableInFiles` (by default `.env`, `.env.*`, `*.pem`, `*.key`, `.npmrc`, `.pypirc`, `*.tfvars`, `*.p12`, `*.pfx`, `.netrc`, `.docker/config.json` and SSH keys `id_rsa*` and `id_ed25519*`) get no completions and are never sent. A workspace can add patterns to this list but cannot remove the ones from your user settings.
 - Prompt and completion text, reasoning text and server error bodies are written to the log only when `aiAutocomplete.debug.logPrompts` is on.
+- The local llama-server's output goes to `llama-server.log` in the extension's global storage folder (Open server log on the Local Models page). It holds prompt text only if you turn on llama-server's verbose logging yourself (for example `--verbose` in extra arguments).
 - Known limitation: the local-only check resolves the backend's hostname before the request, and the request then does its own lookup. It guards against a misconfigured `baseUrl`, not against a hostile DNS server that answers differently the second time. Use an IP address in `baseUrl` if that matters to you.
 
 ## License

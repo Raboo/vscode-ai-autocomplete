@@ -37,8 +37,9 @@ function server(s: LocalPageState): string {
   const actions = v.state === 'running' || v.state === 'starting'
     ? button('stop', 'Stop') + button('restart', 'Restart')
     : button('start', 'Start', undefined, { cls: 'btn primary' });
-  const log = v.log.length > 0
-    ? `<details class="log" id="server-log"><summary>Server log (${v.log.length} lines)</summary><pre>${v.log.map(e).join('\n')}</pre>${button('openLog', 'Open full log')}</details>` : '';
+  const log = (v.logFile ? `<p class="line">${button('openLog', 'Open server log')}</p>` : '')
+    + (v.log.length > 0
+      ? `<details class="log" id="server-log"><summary>Server log (last ${v.log.length} lines)</summary><pre>${v.log.map(e).join('\n')}</pre>${v.logFile ? '' : button('openLog', 'Open full log')}</details>` : '');
   return `<section class="section" aria-labelledby="h-server"><h2 id="h-server">Server</h2>`
     + `<p class="line"><span class="status ${e(v.state)}">${e(status)}</span>${actions}</p>`
     + `<p class="muted">${v.binary !== undefined ? `llama-server: ${e(v.binary)}${v.version !== undefined ? ` (${e(v.version)})` : ''}` : 'llama-server not found'}</p>`

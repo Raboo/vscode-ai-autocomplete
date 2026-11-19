@@ -8,7 +8,8 @@ import { pageState } from '../local/page/state';
 import type { DownloadView, HostMessage, LocalPageState, PageMessage } from '../local/page/protocol';
 import { RouterClient, type RouterModel } from '../local/router';
 import { LocalModelsActions } from '../local/vscode/localModelsActions';
-import { downloadedPath, modelsDir, realEnv } from '../local/vscode/servers';
+import { readLogTail } from '../local/serverLog';
+import { downloadedPath, modelsDir, realEnv, serverLogPath } from '../local/vscode/servers';
 import { defaultModelName, localModels, overridesNow, settingUp, type LocalDeps } from '../local/vscode/setup';
 
 export type LocalModelsPanelDeps = LocalDeps & { showLog(): void };
@@ -16,6 +17,8 @@ export type LocalModelsPanelDeps = LocalDeps & { showLog(): void };
 const VIEW_TYPE = 'aiAutocomplete.localModels';
 const POLL_MS = 2000;
 const VERSION_TIMEOUT_MS = 5000;
+/** Server log lines on the page. */
+const LOG_LINES = 200;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -196,10 +199,12 @@ export class LocalModelsPanel implements vscode.Disposable {
       const view = this.actions.view();
       const failure = d.router.failure() ?? (binary === undefined ? `llama-server was not found. ${INSTALL_HINT.llamaServer}` : undefined);
       const offerName = defaultModelName(d.recipes());
+      // The shared file has the output of a router another window started too; this window's lines are the fallback.
+      const fileLog = await readLogTail(serverLogPath(d.context), LOG_LINES);
       const state = pageState({
         models, problems, downloads, routerModels: this.routerModels, settings,
         server: {
-          state: d.router.state(), log: d.router.lastOutput().slice(-100),
+          state: d.router.state(), log: fileLog ?? d.router.lastOutput().slice(-LOG_LINES), ...(fileLog !== undefined ? { logFile: true } : {}),
           ...(failure !== undefined ? { failure } : {}),
           ...(d.router.port() !== undefined ? { port: d.router.port() } : {}),
           ...(binary !== undefined ? { binary } : {}), ...(version !== undefined ? { version } : {}),

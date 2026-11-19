@@ -14,6 +14,7 @@ import type { LocalModel } from '../modelList';
 import { RECIPES, modelPathSegments, type Recipe } from '../recipes';
 import { RouterClient, probeRouter } from '../router';
 import { findRuntime, type RuntimeEnv } from '../runtimes';
+import { SERVER_LOG_FILE, ServerLogFile } from '../serverLog';
 import { ServerPool, launchLlamaServer } from '../serverPool';
 
 export interface LocalServersDeps {
@@ -45,6 +46,11 @@ export function realEnv(): RuntimeEnv {
 /** Where downloaded models live: `aiAutocomplete.local.modelsDir`, or `<globalStorage>/models`. */
 export function modelsDir(context: vscode.ExtensionContext, s: Settings): string {
   return s.local.modelsDir ?? join(context.globalStorageUri.fsPath, 'models');
+}
+
+/** The llama-server log every window shares: `<globalStorage>/llama-server.log`. */
+export function serverLogPath(context: vscode.ExtensionContext): string {
+  return join(context.globalStorageUri.fsPath, SERVER_LOG_FILE);
 }
 
 /** `<models folder>/<owner>/<name>/<file>` when that file is there with the model's size (its sha256 was checked when it was downloaded). */
@@ -160,6 +166,7 @@ export class LocalServers implements vscode.Disposable {
         void vscode.window.showErrorMessage('The local model server stopped unexpectedly.', 'Show Log').then((c) => c && d.showLog());
       },
       onReady: (id) => d.onReady?.(id),
+      serverLog: new ServerLogFile(serverLogPath(d.context), { onError: (err) => d.log.warn(`local models: writing the server log file failed: ${err instanceof Error ? err.message : String(err)}`) }),
       focused: () => vscode.window.state.focused,
       ...(d.recipes ? { recipes: d.recipes } : {}),
     });

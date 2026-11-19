@@ -65,6 +65,8 @@ export interface LocalPageState {
     memoryWarning?: string;
     /** Uses that workspace or folder settings select another backend for (Use for… does not apply in this window). */
     overrides?: PageOverride[];
+    /** Whether the shared server log file exists (the Open server log button). */
+    logFile?: boolean;
   };
   settings: { modelsDir: string; tokenSet: boolean };
   /** The model-list problems from merging the settings. */

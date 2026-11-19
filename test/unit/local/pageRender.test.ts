@@ -67,6 +67,15 @@ describe('local models page render', () => {
     expect(html).toContain('In this workspace, Next Edit uses x (set in folder settings).');
   });
 
+  test('Open server log shows whenever the shared log file exists, also with no lines', () => {
+    const base = { state: 'stopped' as const, modelsInMemory: 1, swapWarning: false };
+    expect(renderPage(state({ server: { ...base, log: [], logFile: true } }))).toContain('data-action="openLog"');
+    expect(renderPage(state({ server: { ...base, log: [] } }))).not.toContain('data-action="openLog"');
+    const html = renderPage(state({ server: { ...base, log: ['a'], logFile: true } }));
+    expect(html).toContain('Open server log');
+    expect(html).not.toContain('Open full log');
+  });
+
   test('server section: warnings, note, token never shown', () => {
     const html = renderPage(state({ server: { state: 'running', port: 8012, modelsInMemory: 1, log: ['l1'], swapWarning: true, memoryWarning: 'mem' } }));
     expect(html).toContain('different models');

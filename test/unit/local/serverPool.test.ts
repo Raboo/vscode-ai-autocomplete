@@ -131,6 +131,7 @@ function setup(o: {
   load?: (port: number, name: string) => Promise<void>;
   reload?: (port: number) => void;
   focused?: boolean;
+  serverLog?: ServerPoolDeps['serverLog'];
 }) {
   const logs: { level: string; m: string }[] = [];
   const at = (level: string) => (m: string) => void logs.push({ level, m });
@@ -182,6 +183,7 @@ function setup(o: {
     focused: () => o.focused ?? true,
     sleep: clock.sleep,
     killGraceMs: 20,
+    ...(o.serverLog ? { serverLog: o.serverLog } : {}),
   });
   return {
     pool,
@@ -258,6 +260,20 @@ describe('ServerPool', () => {
     expect(logs).toContainEqual({ level: 'debug', m: 'llama-server: router listening' });
     for (let i = 0; i < 205; i++) await pool.restart();
     expect(pool.lastOutput()).toHaveLength(200);
+  });
+
+  test('the router output goes to the shared log file, after a section line for each start; an adopted router writes nothing', async () => {
+    const { launch } = fakeLaunch({ autoReady: true });
+    const file: string[] = [];
+    const serverLog = { start: (port: number) => void file.push(`start ${port}`), line: (t: string) => void file.push(t) };
+    const { pool } = setup({ launch, serverLog });
+    await pool.start();
+    expect(file).toEqual(['start 8012', 'router listening']);
+    const states: Record<number, PortState> = { 8012: 'ours' };
+    const other: string[] = [];
+    const b = setup({ launch, probe: portStates(states), serverLog: { start: () => void other.push('start'), line: (t) => void other.push(t) } });
+    await b.pool.start();
+    expect(other).toEqual([]);
   });
 
   test('state changes are announced', async () => {

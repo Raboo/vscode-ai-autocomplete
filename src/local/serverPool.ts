@@ -141,6 +141,8 @@ export interface ServerPoolDeps {
   sleep?(ms: number, signal: AbortSignal): Promise<void>;
   recipes?(): readonly Recipe[];
   killGraceMs?: number;
+  /** The log file shared by the windows: this window writes the output of the routers it starts. */
+  serverLog?: { start(port: number): void; line(text: string): void };
 }
 
 /** A start that a stop, a newer start or shutdown cut short: not a failure worth an error. */
@@ -219,6 +221,7 @@ export class ServerPool {
         if (slot.cancelled) throw cancelled();
       }
       let proc: RunningServer;
+      this.d.serverLog?.start(port);
       try {
         proc = await this.d.launch({
           binary,
@@ -666,6 +669,7 @@ export class ServerPool {
   private output_(line: string): void {
     this.output.push(line);
     if (this.output.length > OUTPUT_LINES) this.output.splice(0, this.output.length - OUTPUT_LINES);
+    this.d.serverLog?.line(line);
     this.d.log.debug(`llama-server: ${line}`);
   }
 

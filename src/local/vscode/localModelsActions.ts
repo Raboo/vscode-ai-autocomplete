@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import type { BackendUse } from '../../config/settings';
 import { DownloadError } from '../download';
@@ -9,7 +10,7 @@ import { addModelEdits, modelForm, removeModelEdits, saveModelEdits, unhideEdits
 import type { AddFile, AddState, ModelForm, ModelRow, PageMessage } from '../page/protocol';
 import { modelPathSegments } from '../recipes';
 import { RouterClient } from '../router';
-import { downloadedPath, modelsDir } from './servers';
+import { downloadedPath, modelsDir, serverLogPath } from './servers';
 import {
   defaultModelName, downloadFile, hfProblem, localModels, modelPath, setUpModel, useModel, userValue, writeAll, writeUser, type LocalDeps,
 } from './setup';
@@ -104,7 +105,7 @@ export class LocalModelsActions {
         await writeUser('local.modelsInMemory', m.n);
         return;
       case 'openLog':
-        return this.d.showLog();
+        return this.openLog();
       case 'download':
         return this.download(m.name);
       case 'cancelDownload':
@@ -152,6 +153,14 @@ export class LocalModelsActions {
         this.addSerial++;
         return;
     }
+  }
+
+  /** Opens the shared llama-server log file in an editor; without one, the output channel. */
+  private async openLog(): Promise<void> {
+    const path = serverLogPath(this.d.context);
+    if (!existsSync(path)) return this.d.showLog();
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(path));
+    await vscode.window.showTextDocument(doc, { preview: true });
   }
 
   private download(name: string): void {

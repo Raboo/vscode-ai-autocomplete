@@ -10,6 +10,7 @@ import { shouldWarmNextEdit, WarmLimiter, type NextEditWarmInput } from '../../c
 import { describeFailure, recordBackendFailure } from '../../completion/requestStatus';
 import { EFFORT_NONE_REJECTED, thinkingBlocked } from '../../completion/route';
 import { ThinkingError } from '../../completion/stream';
+import type { CompletionOutcome, OutcomeLog } from '../../completion/outcomes';
 import type { Settings } from '../../config/settings';
 import type { Log } from '../../log';
 import type { Capabilities } from '../../models/capabilities';
@@ -17,7 +18,7 @@ import type { ContextFile } from '../../types';
 import { decorationPlan, displayFor } from '../decorations';
 import { classify, editShow, toItemText, type LineEdit, type Pos } from '../diff';
 import { formatRoute, pickFormat } from '../formats';
-import type { NextEditFormat, NextEditInput } from '../formats/format';
+import type { FormatAnswer, NextEditFormat, NextEditInput } from '../formats/format';
 import { EditHistory, recentEditsFile, type RecentSnippets } from '../history';
 import { rebaseEdit } from '../rebase';
 import { nextEditBudgets, type LineSpan } from '../region';
@@ -32,6 +33,10 @@ export interface NextEditDeps {
   backoff(id: string): ErrorBackoff;
   isLocal(baseUrl: string): Promise<boolean>;
   log: Log;
+  /** Next Edit's requests and results are recorded here next to completions' (in memory, never code text). */
+  outcomes: OutcomeLog;
+  /** The session counts changed: the status bar tooltip redraws. */
+  statsChanged(): void;
   snoozedUntil(): number;
   snippets: RecentSnippets;
   /** Files completions may not use (completions.disableInFiles, completions.disableInLanguages): no history, snippet or request. */
@@ -130,6 +135,8 @@ export class NextEditController implements vscode.Disposable {
    * The chain skips the same-line cooldown, not the rejection cooldown or the gate.
    */
   accepted(): void {
+    this.d.outcomes.accepted('nextEdit');
+    this.d.statsChanged();
     this.result = undefined;
     const doc = vscode.window.activeTextEditor?.document;
     if (!doc || !this.eligible(doc)) return;
@@ -521,6 +528,11 @@ export class NextEditController implements vscode.Disposable {
     this.pauseTimers.set(uri, timer);
   }
 
+  private note(uri: string, kind: CompletionOutcome['kind'], extra: Partial<Pick<CompletionOutcome, 'detail' | 'ms' | 'chars'>> = {}): void {
+    this.d.outcomes.record({ at: Date.now(), uri, feature: 'nextEdit', kind, ...extra });
+    this.d.statsChanged();
+  }
+
   private clearTimer(timers: Map<string, Timer>, uri: string): void {
     const t = timers.get(uri);
     if (t !== undefined) clearTimeout(t);
@@ -551,22 +563,26 @@ export class NextEditController implements vscode.Disposable {
     if (this.pending?.uri === uri && this.pending.version === version) return;
     const asked = this.asked.get(uri);
     if (asked?.version === version && asked.line === editor.selection.active.line) return;
-    if (!s.enabled || !s.nextEdit.enabled || s.nextEdit.backendId === undefined || this.d.snoozedUntil() > Date.now() || !this.eligible(doc)) return;
+    if (!s.enabled || !s.nextEdit.enabled || s.nextEdit.backendId === undefined) return this.note(uri, 'skipped', { detail: 'disabled' });
+    if (this.d.snoozedUntil() > Date.now()) return this.note(uri, 'skipped', { detail: 'snoozed' });
+    if (!this.eligible(doc)) return this.note(uri, 'skipped', { detail: 'excluded' });
     const backend = this.d.getBackend(s.nextEdit.backendId);
-    if (!backend) return;
+    if (!backend) return this.note(uri, 'blocked', { detail: 'no-backend' });
     const id = backend.config.id;
     const backoff = this.d.backoff(id);
-    if (!backoff.canRequest()) return;
+    if (!backoff.canRequest()) return this.note(uri, 'blocked', { detail: 'backoff' });
 
     // Registered before the first await, so a change aborts it.
     const ctl = new AbortController();
     this.inflight.get(uri)?.ctl.abort();
     this.inflight.set(uri, { version, ctl });
     let model: string | undefined;
+    let sent = false;
     const flavor = inferHostFlavor(backend.config);
     try {
       if (s.privacy.localOnly && !(await this.d.isLocal(backend.config.baseUrl))) {
         this.once(`local:${id}:${backend.config.baseUrl}`, () => this.d.log.warn(`next edit blocked: backend "${id}" (${backend.config.baseUrl}) is not local and privacy.localOnly is on`));
+        this.note(uri, 'blocked', { detail: 'local-only' });
         return;
       }
       model = await this.model(backend, ctl.signal);
@@ -574,10 +590,11 @@ export class NextEditController implements vscode.Disposable {
       if (model === undefined && flavor === 'openrouter') {
         // OpenRouter would pick the payer's default model, so code would go to a model the user never chose.
         this.once(`model:${id}`, () => this.d.log.warn(`next edit: backend "${id}": OpenRouter needs a model: choose one in AI Autocomplete: Manage Backends`));
+        this.note(uri, 'blocked', { detail: 'no-model' });
         return;
       }
       const format = pickFormat(s.nextEdit.format, model);
-      if (!this.routeFor(backend, format)) return;
+      if (!this.routeFor(backend, format)) return this.note(uri, 'blocked', { detail: 'no-route' });
       const values = resolveNextEdit(backend.config, model, s);
       const learned = this.d.capabilities.get(id, model);
       // Thinking is a chat-route matter: a raw completion has no reasoning channel.
@@ -585,6 +602,7 @@ export class NextEditController implements vscode.Disposable {
       if (blocked) {
         const why = blocked === 'cannotDisable' ? 'cannot turn thinking off' : 'keeps thinking';
         this.once(`thinking:${blocked}:${id}:${model ?? ''}`, () => this.d.log.info(`next edit: backend "${id}": ${model ?? 'the model'} ${why}; no Next Edit requests to it`));
+        this.note(uri, 'blocked', { detail: 'thinking' });
         return;
       }
       // The cursor may have moved while the checks above awaited.
@@ -625,6 +643,10 @@ export class NextEditController implements vscode.Disposable {
       this.policy.requested(uri, at.line, started);
       this.asked.set(uri, { version, line: at.line });
       const log = this.d.log;
+      let parsed: FormatAnswer | undefined;
+      let truncated = false;
+      this.d.outcomes.requestSent('nextEdit');
+      sent = true;
       const fresh = await runNextEdit({
         backend,
         values,
@@ -635,7 +657,13 @@ export class NextEditController implements vscode.Disposable {
         rejected: learned.rejected,
         signal: ctl.signal,
         onRejected: (fields) => this.rejectedFields(id, model, fields),
-        onTruncated: () => log.debug('next edit: answer cut at max_tokens'),
+        onTruncated: () => {
+          truncated = true;
+          log.debug('next edit: answer cut at max_tokens');
+        },
+        onParsed: (a) => {
+          parsed = a;
+        },
         ...(s.debug.logPrompts
           ? { onPrompt: (m: ChatMessage[] | string) => log.debug(`next edit prompt: ${JSON.stringify(m)}`), onAnswer: (a: string) => log.debug(`next edit answer: ${JSON.stringify(a)}`) }
           : {}),
@@ -645,13 +673,21 @@ export class NextEditController implements vscode.Disposable {
         `next edit ${id} model=${model ?? '?'} format=${format.id} lines=${lines.length} history=${input.history.length} snippets=${input.snippets.length} ` +
           `→ ${fresh ? fresh.show.kind : 'no edit'} in ${Date.now() - started} ms`,
       );
-      if (!fresh || ctl.signal.aborted) return;
+      const ms = Date.now() - started;
+      if (ctl.signal.aborted) return this.note(uri, 'cancelled');
+      if (!fresh) {
+        if (truncated) return this.note(uri, 'filtered', { detail: 'truncated', ms });
+        if (parsed?.kind === 'noChange') return this.note(uri, 'noChange', { ms });
+        return this.note(uri, 'filtered', { detail: parsed?.kind === 'invalid' ? 'invalid' : 'trivial', ms });
+      }
       if (vscode.window.activeTextEditor?.document !== doc) {
         log.debug('next edit: result dropped, the editor changed');
+        this.note(uri, 'filtered', { detail: 'editor-changed', ms });
         return;
       }
       if (this.d.snoozedUntil() > Date.now()) {
         log.debug('next edit: result dropped, snoozed');
+        this.note(uri, 'filtered', { detail: 'snoozed', ms });
         return;
       }
       const cursor = this.editorFor(doc)?.selection.active;
@@ -659,20 +695,24 @@ export class NextEditController implements vscode.Disposable {
       const result = doc.version === version ? { ...fresh, text } : cursor && this.rebased({ ...fresh, text }, doc, { line: cursor.line, character: cursor.character });
       if (!result) {
         log.debug('next edit: result dropped, the document changed');
+        this.note(uri, 'filtered', { detail: 'document-changed', ms });
         return;
       }
       // Stored for another cursor, it would show nothing and the trigger below would make FIM answer at the new cursor.
       if (result.show.kind === 'ghost' && !(cursor && samePos(cursor, result.cursor))) {
         log.debug('next edit: result dropped, the cursor moved');
+        this.note(uri, 'filtered', { detail: 'cursor-moved', ms });
         return;
       }
       const display = displayFor(result.show, s.nextEdit.display, this.native);
       if (display === 'drop') {
         log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
+        this.note(uri, 'filtered', { detail: 'needs-inline-edit-ui', ms });
         this.offerNativeUi();
         return;
       }
       this.clearPending();
+      this.note(uri, 'shown', { ms, chars: result.show.kind === 'ghost' ? result.show.insertText.length : result.show.text.length });
       if (display === 'decorations') {
         const shown = vscode.window.activeTextEditor;
         if (!shown) return;
@@ -686,8 +726,11 @@ export class NextEditController implements vscode.Disposable {
       void vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
     } catch (err) {
       // A newer change, a settings change or dispose aborted it: nothing to record.
-      if (ctl.signal.aborted) return;
-      this.failed(err, backend, model, s.nextEdit.timeoutMs, s.debug.logPrompts);
+      if (ctl.signal.aborted) {
+        if (sent) this.note(uri, 'cancelled');
+        return;
+      }
+      this.failed(err, uri, backend, model, s.nextEdit.timeoutMs, s.debug.logPrompts);
     } finally {
       if (this.inflight.get(uri)?.ctl === ctl) this.inflight.delete(uri);
     }
@@ -708,6 +751,7 @@ export class NextEditController implements vscode.Disposable {
     if (!problem) return false;
     if (this.skipped.get(uri) !== version) {
       this.skipped.set(uri, version);
+      this.note(uri, 'skipped', { detail: problem });
       this.d.log.debug(`next edit: not asked, ${problem}`);
     }
     return true;
@@ -724,24 +768,27 @@ export class NextEditController implements vscode.Disposable {
       .then(undefined, (err: unknown) => this.d.log.debug(`next edit: native UI notice failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
-  private failed(err: unknown, backend: FimBackend, model: string | undefined, timeoutMs: number, logPrompts: boolean): void {
+  private failed(err: unknown, uri: string, backend: FimBackend, model: string | undefined, timeoutMs: number, logPrompts: boolean): void {
     const id = backend.config.id;
     if (err instanceof ThinkingError) {
       // Configuration, not a backend failure: the gate stops the next request, so no backoff.
       this.d.capabilities.sawThinking(id, model);
+      this.note(uri, 'blocked', { detail: 'thinking' });
       this.d.log.debug(`next edit ${id}: ${model ?? 'the model'} reasoned with thinking off`);
       this.notifyOnce(`thinking:${id}`, `AI Autocomplete: Next Edit stopped for "${id}": ${model ?? 'the model'} keeps thinking.`);
       return;
     }
     const cls = classifyError(err);
-    if (cls.kind === 'abort') return;
+    if (cls.kind === 'abort') return this.note(uri, 'cancelled');
     this.models.delete(backend); // the server may have restarted with another model
     if (err instanceof MissingApiKeyError) {
       // Configuration too, and FIM does not back off for it either.
       this.once(`key:${id}`, () => this.d.log.warn(`backend "${id}" has no API key; run "AI Autocomplete: Set API Key"`));
+      this.note(uri, 'error', { detail: `Set API key for ${id}` });
       this.notifyOnce(`error:${id}:key`, `AI Autocomplete: Next Edit request to "${id}" failed (no API key).`);
       return;
     }
+    this.note(uri, 'error', { detail: describeFailure(err, cls, timeoutMs) });
     const { detail, warn } = recordBackendFailure(this.d.backoff(id), id, err, cls, logPrompts, timeoutMs);
     if (warn) this.d.log.warn(`next edit: ${warn}`);
     else this.d.log.debug(`next edit: ${detail}`);

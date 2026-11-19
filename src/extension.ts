@@ -119,6 +119,8 @@ export function activate(context: vscode.ExtensionContext): {
     backoff,
     isLocal,
     log,
+    outcomes,
+    statsChanged: () => status.refresh(),
     snoozedUntil,
     snippets,
     isExcluded: offLimits,

@@ -161,7 +161,7 @@ Click **AI** in the status bar for the menu:
 
 ### Why no suggestion?
 
-When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion requests for the active file, newest first, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts and the median latency. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
+When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the status bar menu). It lists the latest completion and Next Edit requests for the active file, newest first, each labelled with its feature, with the reason in plain words (for example "Skipped: the cursor is inside a word") and how long ago. The status bar tooltip also shows this session's request, shown and accepted counts (a second line for Next Edit once it has been asked) and the median latency of both features. These records and counts stay in memory, hold no code or prompt text, are gone when the window closes and are never sent anywhere.
 
 ### What a backend is used for
 

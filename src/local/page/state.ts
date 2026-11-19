@@ -48,6 +48,7 @@ export function pageState(o: PageStateInput): LocalPageState {
       name: m.name, label: m.label, bytes: m.bytes, uses: m.uses, builtIn: m.builtIn, hidden: m.hidden,
       download: o.downloads[m.name] ?? NO_DOWNLOAD,
       load: loadOf(m.name), usedFor, mayNotFit: m.bytes > 0.4 * o.totalMem,
+      ...(m.note !== undefined ? { note: m.note } : {}),
       ...(update !== undefined ? { update } : {}),
     };
   });

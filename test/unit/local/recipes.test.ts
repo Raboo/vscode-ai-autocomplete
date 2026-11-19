@@ -13,7 +13,7 @@ const byId = (id: string): Recipe => {
 describe('RECIPES', () => {
   test('ids are unique and the default comes first', () => {
     expect(new Set(RECIPES.map((r) => r.id)).size).toBe(RECIPES.length);
-    expect(RECIPES.map((r) => r.id)).toEqual(['sweep-1.5b', 'qwen2.5-coder-1.5b', 'qwen2.5-coder-3b', 'qwen2.5-coder-7b', 'mellum-4b']);
+    expect(RECIPES.map((r) => r.id)).toEqual(['sweep-1.5b', 'zeta-2.1', 'qwen2.5-coder-1.5b', 'qwen2.5-coder-3b', 'qwen2.5-coder-7b', 'mellum-4b']);
     expect(RECIPES[0].id).toBe('sweep-1.5b');
   });
 
@@ -32,8 +32,28 @@ describe('RECIPES', () => {
     for (const id of ['qwen2.5-coder-1.5b', 'qwen2.5-coder-3b', 'qwen2.5-coder-7b', 'mellum-4b']) expect(byId(id).uses).toEqual(['completions']);
   });
 
+  test('Zeta 2.1 is a pinned community quant for Next Edit only, with a note, and not the default', () => {
+    const z = byId('zeta-2.1');
+    expect(z).toMatchObject({
+      repo: 'mradermacher/zeta-2.1-i1-GGUF',
+      revision: '92c5ffc501a76d9c92bd04c0022cebfffa461dc8',
+      file: 'zeta-2.1.i1-Q4_K_M.gguf',
+      bytes: 5071410336,
+      sha256: '216ddb5722a49f9ff49b21a050c4db3c801ef6f34e4bd1702d5db43e3325b076',
+      license: 'Apache-2.0',
+      uses: ['nextEdit'],
+      modelName: 'zeta-2.1',
+      contextTokens: 8192,
+    });
+    expect(z.note).toBe('community quant, not official');
+    expect(RECIPES[0].id).not.toBe('zeta-2.1');
+    expect(pickFormat('auto', z.modelName).id).toBe('zeta21');
+    expect(downloadUrl(z)).toBe('https://huggingface.co/mradermacher/zeta-2.1-i1-GGUF/resolve/92c5ffc501a76d9c92bd04c0022cebfffa461dc8/zeta-2.1.i1-Q4_K_M.gguf');
+    expect(RECIPES.filter((r) => r.id !== 'zeta-2.1').every((r) => r.note === undefined)).toBe(true);
+  });
+
   test('labels', () => {
-    expect(RECIPES.map((r) => r.label)).toEqual(['Sweep Next Edit 1.5B', 'Qwen2.5-Coder 1.5B', 'Qwen2.5-Coder 3B', 'Qwen2.5-Coder 7B', 'Mellum 4B']);
+    expect(RECIPES.map((r) => r.label)).toEqual(['Sweep Next Edit 1.5B', 'Zeta 2.1 (community quant)', 'Qwen2.5-Coder 1.5B', 'Qwen2.5-Coder 3B', 'Qwen2.5-Coder 7B', 'Mellum 4B']);
   });
 
   test('model names work with the existing model rules', () => {

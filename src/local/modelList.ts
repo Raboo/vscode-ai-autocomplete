@@ -31,6 +31,8 @@ export interface LocalModel {
   extraArgs: string[];
   builtIn: boolean;
   hidden: boolean;
+  /** A built-in model's note (from its recipe). */
+  note?: string;
 }
 
 // A copy of BACKEND_USES from settings.ts: importing the value would make a runtime import cycle (settings.ts imports parseLocalModels from here).
@@ -105,7 +107,7 @@ export function mergeModels(recipes: readonly Recipe[], entries: LocalModelEntry
   };
   const builtIns: LocalModel[] = recipes.map((r) => ({
     name: r.modelName, label: r.label, repo: r.repo, revision: r.revision, file: r.file, bytes: r.bytes, sha256: r.sha256,
-    license: r.license, uses: [...r.uses], contextTokens: r.contextTokens, extraArgs: [], builtIn: true, hidden: false,
+    license: r.license, uses: [...r.uses], contextTokens: r.contextTokens, extraArgs: [], builtIn: true, hidden: false, ...(r.note !== undefined ? { note: r.note } : {}),
   }));
   const byName = new Map(builtIns.map((m) => [m.name, m]));
   const seen = new Set<string>();

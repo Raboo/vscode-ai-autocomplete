@@ -45,6 +45,12 @@ describe('local page state', () => {
     expect(pageState(input({ models: [model('a', 8), model('b', 5)], downloads: done, settings: settings({ inMemory: 2 }) })).server.memoryWarning).toBeDefined();
   });
 
+  test('a model note goes to its row', () => {
+    const s = pageState(input({ models: [model('a', 1, { note: 'community quant, not official' }), model('b', 1)] }));
+    expect(s.models[0].note).toBe('community quant, not official');
+    expect('note' in s.models[1]).toBe(false);
+  });
+
   test('mayNotFit above 40% of memory', () => {
     const s = pageState(input({ models: [model('a', 7), model('b', 6)] }));
     expect(s.models.map((m) => m.mayNotFit)).toEqual([true, false]);

@@ -29,6 +29,15 @@ describe('local models page render', () => {
     expect(html).toContain('&lt;script&gt;x&lt;/script&gt;');
   });
 
+  test('a model note shows next to the label and is escaped', () => {
+    const html = only(renderPage(state({}, [row({ note: 'community quant, not official' })])), 'm1');
+    expect(html).toContain('community quant, not official');
+    const bad = renderPage(state({}, [row({ note: '<script>n</script>' })]));
+    expect(bad).not.toContain('<script>n');
+    expect(bad).toContain('&lt;script&gt;n&lt;/script&gt;');
+    expect(only(renderPage(state()), 'm1')).not.toContain('class="note"');
+  });
+
   test('download buttons follow the download kind', () => {
     const at = (kind: ModelRow['download']['kind']): string => only(renderPage(state({}, [row({ download: { kind } })])), 'm1');
     expect(at('none')).toContain('data-action="download"');

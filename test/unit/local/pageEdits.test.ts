@@ -149,33 +149,38 @@ describe('unhideEdits and addModelEdits', () => {
 
 describe('workspaceOverrides', () => {
   type L = { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown };
+  const IDS = ['local', 'codestral', 'local-mellum-4b', 'a', 'b'];
   const from = (m: Record<string, L>) => (key: string): L | undefined => m[key];
 
   test('none when only user settings select a backend, or the workspace selects local', () => {
-    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local' }, 'nextEdit.backend': { globalValue: 'x' } }))).toEqual([]);
-    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'x', workspaceValue: 'local' } }))).toEqual([]);
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local' }, 'nextEdit.backend': { globalValue: 'x' } }), IDS)).toEqual([]);
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'x', workspaceValue: 'local' } }), IDS)).toEqual([]);
   });
 
   test('the new name in workspace settings', () => {
-    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local', workspaceValue: 'codestral' } })))
-      .toEqual([{ use: 'completions', value: 'codestral', level: 'workspace', key: 'completions.backend' }]);
+    expect(workspaceOverrides(from({ 'completions.backend': { globalValue: 'local', workspaceValue: 'codestral' } }), IDS))
+      .toEqual([{ use: 'completions', value: 'codestral', key: 'completions.backend' }]);
   });
 
-  test('the old fim.backend name counts, and is named for removal; the new name wins at the same level', () => {
-    expect(workspaceOverrides(from({ 'fim.backend': { workspaceValue: 'local-mellum-4b' } })))
-      .toEqual([{ use: 'completions', value: 'local-mellum-4b', level: 'workspace', key: 'completions.backend', oldKey: 'fim.backend' }]);
-    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'codestral' }, 'fim.backend': { workspaceValue: 'local-mellum-4b' } })))
-      .toEqual([{ use: 'completions', value: 'codestral', level: 'workspace', key: 'completions.backend', oldKey: 'fim.backend' }]);
+  test('the old fim.backend name counts, and is named for removal; the new name wins', () => {
+    expect(workspaceOverrides(from({ 'fim.backend': { workspaceValue: 'local-mellum-4b' } }), IDS))
+      .toEqual([{ use: 'completions', value: 'local-mellum-4b', key: 'completions.backend', oldKey: 'fim.backend' }]);
+    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'codestral' }, 'fim.backend': { workspaceValue: 'local-mellum-4b' } }), IDS))
+      .toEqual([{ use: 'completions', value: 'codestral', key: 'completions.backend', oldKey: 'fim.backend' }]);
   });
 
-  test('folder settings win over workspace settings', () => {
-    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceValue: 'a', workspaceFolderValue: 'b' } })))
-      .toEqual([{ use: 'nextEdit', value: 'b', level: 'workspaceFolder', key: 'nextEdit.backend' }]);
-    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceValue: 'a', workspaceFolderValue: 'local' } }))).toEqual([]);
+  test('folder values are not read (the settings reader ignores per-folder backend values)', () => {
+    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceFolderValue: 'b' } }), IDS)).toEqual([]);
+  });
+
+  test('an empty value is skipped; an id no backend has is named as such', () => {
+    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: '' } }), IDS)).toEqual([]);
+    expect(workspaceOverrides(from({ 'nextEdit.backend': { workspaceValue: 'gone' } }), IDS))
+      .toEqual([{ use: 'nextEdit', value: 'gone (no such backend)', key: 'nextEdit.backend' }]);
   });
 
   test('both uses', () => {
-    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'a' }, 'nextEdit.backend': { workspaceValue: 'b' } })).map((o) => o.use))
+    expect(workspaceOverrides(from({ 'completions.backend': { workspaceValue: 'a' }, 'nextEdit.backend': { workspaceValue: 'b' } }), IDS).map((o) => o.use))
       .toEqual(['completions', 'nextEdit']);
   });
 });

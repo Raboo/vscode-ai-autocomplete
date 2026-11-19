@@ -33,16 +33,21 @@ describe('server log file', () => {
     expect(await readLogTail(path, 2)).toEqual(['l3', 'l4']);
   });
 
-  test('a file past the limit is cut to its last part', async () => {
+  test('a file past the limit is cut to its last part when a section starts, not on every append', async () => {
     const path = join(dir, 'llama-server.log');
-    await writeFile(path, `${'x'.repeat(50)}\n`.repeat(10), 'utf8');
-    const log = new ServerLogFile(path, { maxBytes: 300, keepBytes: 120 });
+    const big = `${'x'.repeat(50)}\n`.repeat(10);
+    await writeFile(path, big, 'utf8');
+    const log = new ServerLogFile(path, { maxBytes: 300, keepBytes: 120, now: () => new Date('2026-11-19T10:00:00Z') });
+    log.line('more');
+    await log.flush();
+    expect(await readFile(path, 'utf8')).toBe(`${big}more\n`);
+    log.start(8012);
     log.line('new');
     await log.flush();
     const text = await readFile(path, 'utf8');
-    expect(text.length).toBeLessThanOrEqual(120);
-    expect(text.endsWith('new\n')).toBe(true);
     expect(text.startsWith('x')).toBe(true);
+    expect(text.endsWith(`${sectionLine(new Date('2026-11-19T10:00:00Z'), 8012)}\nnew\n`)).toBe(true);
+    expect(text.length).toBeLessThanOrEqual(120 + 80);
   });
 
   test('no file: the tail is undefined', async () => {

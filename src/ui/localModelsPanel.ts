@@ -210,7 +210,7 @@ export class LocalModelsPanel implements vscode.Disposable {
           ...(binary !== undefined ? { binary } : {}), ...(version !== undefined ? { version } : {}),
           ...(view.modelsInMemoryError !== undefined ? { modelsInMemoryError: view.modelsInMemoryError } : {}),
         },
-        modelsDir: dir, tokenSet, totalMem: totalmem(), updates: view.updates, overrides: overridesNow(),
+        modelsDir: dir, tokenSet, totalMem: totalmem(), updates: view.updates, overrides: overridesNow(settings.backends.map((b) => b.id)),
         ...(view.form ? { form: view.form } : {}), ...(view.add ? { add: view.add } : {}),
         ...(offerName !== undefined ? { offer: { name: offerName, busy: settingUp() } } : {}),
       });

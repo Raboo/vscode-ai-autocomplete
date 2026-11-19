@@ -38,8 +38,8 @@ export async function readLogTail(path: string, n: number): Promise<string[] | u
     const size = (await fh.stat()).size;
     const len = Math.min(size, TAIL_BYTES);
     const buf = Buffer.alloc(len);
-    await fh.read(buf, 0, len, size - len);
-    let lines = buf.toString('utf8').split(/\r?\n/);
+    const { bytesRead } = await fh.read(buf, 0, len, size - len);
+    let lines = buf.subarray(0, bytesRead).toString('utf8').split(/\r?\n/);
     if (len < size) lines = lines.slice(1);
     if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
     return lines.slice(-n);
@@ -64,11 +64,16 @@ export class ServerLogFile {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private chain: Promise<void> = Promise.resolve();
   private failed = false;
+  /** A section starts: the file is cut (when past the limit) before it is written. */
+  private trimNext = false;
 
   constructor(readonly path: string, private readonly o: ServerLogOptions = {}) {}
 
   /** A new section: the router starts on `port`. */
   start(port: number): void {
+    // Lines of the section before go out first, so the cut happens at the section boundary.
+    void this.flush();
+    this.trimNext = true;
     this.line(sectionLine(this.o.now?.() ?? new Date(), port));
   }
 
@@ -82,20 +87,23 @@ export class ServerLogFile {
     clearTimeout(this.timer);
     this.timer = undefined;
     const lines = this.pending;
+    const trim = this.trimNext;
     this.pending = [];
-    if (lines.length > 0) this.chain = this.chain.then(() => this.write(lines));
+    this.trimNext = false;
+    if (lines.length > 0) this.chain = this.chain.then(() => this.write(lines, trim));
     return this.chain;
   }
 
-  private async write(lines: string[]): Promise<void> {
+  /** Appends the lines; with `trim` (a new section), first cuts the file when it is past the limit. */
+  private async write(lines: string[], trim: boolean): Promise<void> {
     try {
       await mkdir(dirname(this.path), { recursive: true });
-      await appendFile(this.path, `${lines.join('\n')}\n`, 'utf8');
       const max = this.o.maxBytes ?? MAX_BYTES;
-      if ((await stat(this.path)).size > max) {
+      if (trim && ((await stat(this.path).catch(() => undefined))?.size ?? 0) > max) {
         const cut = trimmed(await readFile(this.path, 'utf8'), max, this.o.keepBytes ?? KEEP_BYTES);
         if (cut !== undefined) await writeFile(this.path, cut, 'utf8');
       }
+      await appendFile(this.path, `${lines.join('\n')}\n`, 'utf8');
     } catch (err) {
       if (!this.failed) this.o.onError?.(err);
       this.failed = true;

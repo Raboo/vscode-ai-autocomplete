@@ -276,6 +276,19 @@ describe('ServerPool', () => {
     expect(other).toEqual([]);
   });
 
+  test('pending log lines are flushed when the router exits and on dispose', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    let flushes = 0;
+    const serverLog = { start: () => undefined, line: () => undefined, flush: () => (flushes++, Promise.resolve()) };
+    const { pool } = setup({ launch, serverLog });
+    await pool.start();
+    launched[0].child.exit();
+    await tick(5);
+    expect(flushes).toBe(1);
+    pool.dispose();
+    expect(flushes).toBe(2);
+  });
+
   test('state changes are announced', async () => {
     const { launch, launched } = fakeLaunch();
     const { pool } = setup({ launch });
@@ -388,9 +401,11 @@ describe('ServerPool', () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const states: Record<number, PortState> = {};
     const WINNER = 900;
-    const { pool, errors, managed, setManaged, terminated } = setup({ launch, probe: portStates(states), alive: (pid) => pid === WINNER });
-    // The winner recorded its router a moment before this window's process passed its health check (against the winner).
-    setManaged(record(8012, WINNER));
+    let setRecord: (rec: ManagedServer) => void = () => undefined;
+    // The winner records its router while this window's process loads (its health check then passes against the winner).
+    const racing: Launch = (o) => (setRecord(record(8012, WINNER)), launch(o));
+    const { pool, errors, managed, setManaged, terminated } = setup({ launch: racing, probe: portStates(states), alive: (pid) => pid === WINNER });
+    setRecord = setManaged;
     await pool.start();
     expect(managed()).toEqual(record(8012, launched[0].child.pid));
     states[8012] = 'ours';
@@ -403,16 +418,53 @@ describe('ServerPool', () => {
     expect(terminated).toEqual([WINNER]);
   });
 
-  test('after a lost start race with no winner record to restore, the dead pid is cleared from the record', async () => {
+  test('after a lost start race with no winner record to restore, the record stays, and the watch takes over when that router goes', async () => {
     const { launch, launched } = fakeLaunch({ autoReady: true });
     const states: Record<number, PortState> = {};
-    const { pool, managed } = setup({ launch, probe: portStates(states) });
+    const { pool, managed, clock, errors } = setup({ launch, probe: portStates(states) });
     await pool.start();
+    const loserPid = launched[0].child.pid;
     states[8012] = 'ours';
     launched[0].child.exit();
     await tick(5);
     expect(pool.state()).toBe('running');
-    expect(managed()).toEqual(record(8012));
+    expect(managed()).toEqual(record(8012, loserPid));
+    // The winner's window closes: its router goes, and this window starts its own (the record does not say Stop Local Models).
+    states[8012] = 'none';
+    await clock.fire();
+    expect(launched).toHaveLength(2);
+    expect(errors()).toEqual([]);
+  });
+
+  test('a stale record from an earlier session (there before this start) is never put back after a lost race', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const states: Record<number, PortState> = {};
+    const OLD = 901;
+    const { pool, managed, setManaged } = setup({ launch, probe: portStates(states), alive: (pid) => pid === OLD });
+    setManaged(record(8012, OLD));
+    // The record names a live pid but nothing of ours answers at the start: this window launches.
+    await pool.start();
+    states[8012] = 'ours';
+    launched[0].child.exit();
+    await tick(5);
+    expect(managed()).toEqual(record(8012, launched[0].child.pid));
+  });
+
+  test('the winner of a start race writes its record again when a loser overwrote it and exited', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const LOSER = 902;
+    let writes = 0;
+    const { pool, managed, setManaged } = setup({
+      launch,
+      writeManaged: (rec) => {
+        // The losing window writes its own record right after this one's first write.
+        setManaged(rec && writes++ === 0 ? { ...rec, pid: LOSER } : rec);
+        return Promise.resolve();
+      },
+    });
+    await pool.start();
+    await tick(5);
+    expect(managed()).toEqual(record(8012, launched[0].child.pid));
   });
 
   test('a restart of a loading router waits for the old child to exit (SIGKILL after the grace period) before choosing the port', async () => {

@@ -61,10 +61,10 @@ describe('local models page render', () => {
 
   test('a workspace override gets one line per use, escaped', () => {
     const html = renderPage(state({ server: { state: 'stopped', modelsInMemory: 1, log: [], swapWarning: false, overrides: [
-      { use: 'completions', value: '<b>codestral</b>', level: 'workspace' }, { use: 'nextEdit', value: 'x', level: 'workspaceFolder' },
+      { use: 'completions', value: '<b>codestral</b>' }, { use: 'nextEdit', value: 'x' },
     ] } }));
     expect(html).toContain('In this workspace, completions use &lt;b&gt;codestral&lt;/b&gt; (set in workspace settings).');
-    expect(html).toContain('In this workspace, Next Edit uses x (set in folder settings).');
+    expect(html).toContain('In this workspace, Next Edit uses x (set in workspace settings).');
   });
 
   test('Open server log shows whenever the shared log file exists, also with no lines', () => {

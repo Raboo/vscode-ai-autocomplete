@@ -213,44 +213,32 @@ export async function selectModel(d: LocalDeps, name: string, uses: BackendUse[]
   if (d.router.state() === 'running') await d.router.warm([name]);
 }
 
-/** The uses whose backend workspace or folder settings select (not `local`): user settings do not apply to them here. */
-export function overridesNow(): WorkspaceOverride[] {
-  return workspaceOverrides((key) => config().inspect(key));
+/** The uses whose backend workspace settings select (not `local`): user settings do not apply to them here. */
+export function overridesNow(backendIds: readonly string[]): WorkspaceOverride[] {
+  return workspaceOverrides((key) => config().inspect(key), backendIds);
 }
 
 const USE_NAME: Record<BackendUse, string> = { completions: 'completions', nextEdit: 'Next Edit' };
 const USE_HERE = 'Use local in this workspace';
 
 /**
- * After Use for… wrote user settings: tells the user about each of these uses that workspace (or folder) settings decide,
- * with a button that writes `local` there. Workspace settings are written only on that click. Not awaited.
+ * After Use for… wrote user settings: tells the user about each of these uses that workspace settings decide, with a
+ * button that writes `local` there. Workspace settings are written only on that click. Not awaited.
  */
-function explainOverrides(d: Pick<LocalDeps, 'log'>, uses: BackendUse[]): void {
-  for (const o of overridesNow().filter((x) => uses.includes(x.use))) {
+function explainOverrides(d: Pick<LocalDeps, 'log' | 'settings'>, uses: BackendUse[]): void {
+  for (const o of overridesNow(d.settings().backends.map((b) => b.id)).filter((x) => uses.includes(x.use))) {
     void vscode.window.showWarningMessage(`This workspace's settings select ${o.value} for ${USE_NAME[o.use]}, so Use for… doesn't apply here.`, USE_HERE)
       .then(async (pick) => {
         if (pick !== USE_HERE) return;
         try {
-          await useLocalHere(o);
+          await config().update(o.key, LOCAL_BACKEND_ID, vscode.ConfigurationTarget.Workspace);
+          if (o.oldKey) await config().update(o.oldKey, undefined, vscode.ConfigurationTarget.Workspace);
         } catch (err) {
-          d.log.error(`local models: selecting local in the ${o.level === 'workspace' ? 'workspace' : 'folder'} settings failed`, err);
+          d.log.error('local models: selecting local in the workspace settings failed', err);
           void vscode.window.showErrorMessage('AI Autocomplete: the workspace settings could not be written; see the log.');
         }
       });
   }
-}
-
-/** Writes `local` for the use where the override lives (workspace or folder settings) and removes the old `fim.*` key there. */
-async function useLocalHere(o: WorkspaceOverride): Promise<void> {
-  if (o.level === 'workspace') {
-    await config().update(o.key, LOCAL_BACKEND_ID, vscode.ConfigurationTarget.Workspace);
-    if (o.oldKey) await config().update(o.oldKey, undefined, vscode.ConfigurationTarget.Workspace);
-    return;
-  }
-  const folder = (vscode.window.activeTextEditor && vscode.workspace.getWorkspaceFolder(vscode.window.activeTextEditor.document.uri)) ?? vscode.workspace.workspaceFolders?.[0];
-  const cfg = vscode.workspace.getConfiguration('aiAutocomplete', folder?.uri);
-  await cfg.update(o.key, LOCAL_BACKEND_ID, vscode.ConfigurationTarget.WorkspaceFolder);
-  if (o.oldKey) await cfg.update(o.oldKey, undefined, vscode.ConfigurationTarget.WorkspaceFolder);
 }
 
 /** Use for… (page): the router starts first when it is not running (its failure shows on the page), then `selectModel`. */

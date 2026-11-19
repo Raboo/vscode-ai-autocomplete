@@ -15,7 +15,7 @@ export interface PageStateInput {
   routerModels: RouterModel[] | undefined;
   settings: Settings;
   server: { state: PoolState; failure?: string; port?: number; log: string[]; binary?: string; version?: string; modelsInMemoryError?: string; logFile?: boolean };
-  /** Uses that workspace or folder settings select another backend for. */
+  /** Uses that workspace settings select another backend for. */
   overrides?: PageOverride[];
   modelsDir: string;
   tokenSet: boolean;
@@ -76,7 +76,7 @@ export function pageState(o: PageStateInput): LocalPageState {
       ...(o.server.modelsInMemoryError !== undefined ? { modelsInMemoryError: o.server.modelsInMemoryError } : {}),
       ...(memoryWarning !== undefined ? { memoryWarning } : {}),
       ...(o.server.logFile ? { logFile: true } : {}),
-      ...(o.overrides && o.overrides.length > 0 ? { overrides: o.overrides.map((x) => ({ use: x.use, value: x.value, level: x.level })) } : {}),
+      ...(o.overrides && o.overrides.length > 0 ? { overrides: o.overrides.map((x) => ({ use: x.use, value: x.value })) } : {}),
     },
     settings: { modelsDir: o.modelsDir, tokenSet: o.tokenSet },
     problems: o.problems,

@@ -143,7 +143,8 @@ export async function applyMigration(
     await io.finish();
     return plan;
   }
-  let list = o.backends;
+  // The writes start from the backends as they are now: a change made since the plan was read is kept.
+  let list = now ?? o.backends;
   if (plan.local) {
     list = upsertLocalEntry(list, plan.local, localEntryPort(list) ?? o.routerPort ?? DEFAULT_PORT);
     await io.writeBackends(list);

@@ -160,11 +160,13 @@ describe('applyMigration', () => {
     expect(t.logs).toEqual([]);
   });
 
-  test('old entries still there when re-read: the migration runs', async () => {
+  test('old entries still there when re-read: the migration runs on the backends as re-read', async () => {
     const backends = [other, sweep];
+    const added = { id: 'added-meanwhile', kind: 'openai', baseUrl: 'http://h' };
     const t = io();
-    await applyMigration({ backends, managed: undefined, settings: settings(backends, { 'completions.backend': sweep.id }) }, { ...t.x, backendsNow: () => backends });
+    await applyMigration({ backends, managed: undefined, settings: settings(backends, { 'completions.backend': sweep.id }) }, { ...t.x, backendsNow: () => [...backends, added] });
     expect(t.calls).toEqual(['backends', 'select completions', 'backends', 'finish']);
+    expect(t.lists[1]).toEqual([other, added, expect.objectContaining({ id: 'local' })]);
   });
 
   test('nothing to migrate writes nothing but still finishes (once)', async () => {

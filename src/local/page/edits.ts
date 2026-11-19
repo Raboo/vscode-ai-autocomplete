@@ -237,16 +237,15 @@ export function addModelEdits(o: {
 }
 
 /** A setting's values per level, as `inspect()` gives them. */
-export interface SettingLevels { globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown }
-/** A use whose backend workspace or folder settings select, so a user-settings selection does not apply in this window. */
+export interface SettingLevels { globalValue?: unknown; workspaceValue?: unknown }
+/** A use whose backend workspace settings select, so a user-settings selection does not apply in this window. */
 export interface WorkspaceOverride {
   use: BackendUse;
-  /** The backend id the workspace selects (any value, as text). */
+  /** The backend id the workspace selects, as text; "<id> (no such backend)" for an id no backend has. */
   value: string;
-  level: 'workspace' | 'workspaceFolder';
-  /** The key to write `local` to at that level. */
+  /** The key to write `local` to in workspace settings. */
   key: string;
-  /** The old name of the key, set at that level: removed when `local` is written. */
+  /** The old name of the key, set in workspace settings: removed when `local` is written. */
   oldKey?: string;
 }
 
@@ -256,23 +255,22 @@ const SELECT_KEYS: readonly { use: BackendUse; key: string; oldKey?: string }[] 
 ];
 
 /**
- * The uses whose selection workspace or folder settings decide (folder over workspace; the new key name over the old one
- * at a level) with a backend other than `local`. Use for… writes user settings, which do not apply to these.
+ * The uses whose selection workspace settings decide (the new key name over the old one) with a backend other than
+ * `local`. Use for… writes user settings, which do not apply to these. Folder values are not read: the settings reader
+ * ignores per-folder backend values. `backendIds`: the configured backends.
  */
-export function workspaceOverrides(inspect: (key: string) => SettingLevels | undefined): WorkspaceOverride[] {
+export function workspaceOverrides(inspect: (key: string) => SettingLevels | undefined, backendIds: readonly string[]): WorkspaceOverride[] {
   const out: WorkspaceOverride[] = [];
   for (const k of SELECT_KEYS) {
-    for (const level of ['workspaceFolder', 'workspace'] as const) {
-      const field = `${level}Value` as const;
-      const n = inspect(k.key)?.[field];
-      const o = k.oldKey !== undefined ? inspect(k.oldKey)?.[field] : undefined;
-      const v = n ?? o;
-      if (v === undefined) continue;
-      if (v !== LOCAL_BACKEND_ID) {
-        out.push({ use: k.use, value: typeof v === 'string' ? v : JSON.stringify(v), level, key: k.key, ...(o !== undefined && k.oldKey ? { oldKey: k.oldKey } : {}) });
-      }
-      break;
-    }
+    const n = inspect(k.key)?.workspaceValue;
+    const o = k.oldKey !== undefined ? inspect(k.oldKey)?.workspaceValue : undefined;
+    const v = n ?? o;
+    if (v === undefined || v === '' || v === LOCAL_BACKEND_ID) continue;
+    const id = typeof v === 'string' ? v : JSON.stringify(v);
+    out.push({
+      use: k.use, value: typeof v === 'string' && backendIds.includes(v) ? id : `${id} (no such backend)`, key: k.key,
+      ...(o !== undefined && k.oldKey ? { oldKey: k.oldKey } : {}),
+    });
   }
   return out;
 }

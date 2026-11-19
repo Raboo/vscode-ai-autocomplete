@@ -142,7 +142,7 @@ export interface ServerPoolDeps {
   recipes?(): readonly Recipe[];
   killGraceMs?: number;
   /** The log file shared by the windows: this window writes the output of the routers it starts. */
-  serverLog?: { start(port: number): void; line(text: string): void };
+  serverLog?: { start(port: number): void; line(text: string): void; flush?(): Promise<void> };
 }
 
 /** A start that a stop, a newer start or shutdown cut short: not a failure worth an error. */
@@ -208,6 +208,8 @@ export class ServerPool {
       const { text, names } = this.presets();
       await this.d.writePresets(text);
       if (slot.cancelled) throw cancelled();
+      // The record as this start found it: one that differs when this start writes its own was written meanwhile (another window).
+      const found = JSON.stringify(this.managed() ?? null);
       const saved = this.managed()?.port ?? this.settingsPort() ?? DEFAULT_PORT;
       // Another window's router (or one left by an earlier session) on the saved port serves this window too.
       if (await this.ours(saved, names, slot)) return this.adopt(slot, saved);
@@ -246,12 +248,19 @@ export class ServerPool {
         throw cancelled();
       }
       slot.proc = proc;
-      void proc.exited.then(() => this.exitedUnasked(slot, proc));
+      void proc.exited.then(() => {
+        void this.d.serverLog?.flush?.();
+        return this.exitedUnasked(slot, proc);
+      });
       this.d.log.debug(`llama-server: router ready on port ${port}`);
       const replaced = this.managed();
-      if (replaced) slot.replaced = replaced;
+      // Only a record written during this start can be another window's router started at the same moment; an older one
+      // (an earlier session's, its pid maybe reused) is never put back.
+      if (replaced && JSON.stringify(replaced) !== found) slot.replaced = replaced;
+      const own: ManagedServer = { port, ...(proc.pid !== undefined ? { pid: proc.pid } : {}), presetsPath: this.d.presetsPath, modelsMax: slot.modelsMax };
       try {
-        await this.d.writeManaged({ port, ...(proc.pid !== undefined ? { pid: proc.pid } : {}), presetsPath: this.d.presetsPath, modelsMax: slot.modelsMax });
+        await this.d.writeManaged(own);
+        void this.repairRecord(slot, own);
       } catch (err) {
         this.d.log.error(`local models: saving the router (port ${port}) failed`, err);
       }
@@ -470,16 +479,35 @@ export class ServerPool {
   }
 
   /**
-   * After a lost start race the record names this window's dead process: the winner's record (the one this start
-   * replaced) is put back when its pid is alive on the same port, else the dead pid is cleared.
+   * After a lost start race the record names this window's dead process: the winner's record (written during this
+   * start, which then replaced it) is put back when its pid is alive on the same port. Otherwise the record stays: a dead
+   * pid still lets a watch take over when the router goes, and Stop Local Models skips dead pids (the winner repairs
+   * the record itself, see `repairRecord`).
    */
   private async forgetDeadPid(ended: Slot, proc: RunningServer): Promise<void> {
     const rec = this.managed();
     if (!rec || proc.pid === undefined || rec.pid !== proc.pid) return;
     const prev = ended.replaced;
-    const winner = prev && prev.port === rec.port && prev.pid !== undefined && prev.pid !== proc.pid && this.d.alive(prev.pid) ? prev : undefined;
+    if (!(prev && prev.port === rec.port && prev.pid !== undefined && prev.pid !== proc.pid && this.d.alive(prev.pid))) return;
     try {
-      await this.d.writeManaged(winner ?? withoutPid(rec));
+      await this.d.writeManaged(prev);
+    } catch (err) {
+      this.d.log.error('local models: saving the router failed', err);
+    }
+  }
+
+  /**
+   * The winner of a start race: a window that lost writes its record after this one and then exits. A moment after
+   * writing, the record is written again when it names this port with a pid that is not alive (and no restart is marked).
+   */
+  private async repairRecord(slot: Slot, own: ManagedServer): Promise<void> {
+    await this.sleep(EXIT_CHECK_MS, slot.abort.signal);
+    if (slot.cancelled || this.disposed || this.slot !== slot) return;
+    const rec = this.managed();
+    if (!rec || rec.restarting || rec.port !== own.port || rec.pid === undefined || rec.pid === own.pid || this.d.alive(rec.pid)) return;
+    try {
+      await this.d.writeManaged(own);
+      this.d.log.debug(`llama-server: the router record named a process that is gone (pid ${rec.pid}); written again`);
     } catch (err) {
       this.d.log.error('local models: saving the router failed', err);
     }
@@ -679,6 +707,7 @@ export class ServerPool {
   dispose(): void {
     this.disposed = true;
     void this.stopHere();
+    void this.d.serverLog?.flush?.();
   }
 
   private changed(): void {

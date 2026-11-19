@@ -63,7 +63,7 @@ describe('local page state', () => {
   });
 
   test('workspace overrides are passed to the page', () => {
-    const overrides = [{ use: 'completions' as const, value: 'codestral', level: 'workspace' as const }];
+    const overrides = [{ use: 'completions' as const, value: 'codestral' }];
     expect(pageState(input({ overrides })).server.overrides).toEqual(overrides);
     expect(pageState(input()).server.overrides).toBeUndefined();
   });

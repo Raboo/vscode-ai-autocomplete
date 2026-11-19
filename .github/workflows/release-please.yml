@@ -25,6 +25,20 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # With RELEASE_PLEASE_TOKEN (a fine-grained PAT) the release PR runs CI like any PR, so it can merge itself once
+      # `check` and `integration` pass: merging it tags the release and the vsix job below attaches the package.
+      - name: Auto-merge the release PR
+        if: steps.release.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.release.outputs.pr && fromJSON(steps.release.outputs.pr).number }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "No RELEASE_PLEASE_TOKEN secret: merge release PR #$PR_NUMBER by hand."
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --auto --squash
 
   vsix:
     needs: release-please

@@ -5,7 +5,6 @@
       "release-type": "node",
       "package-name": "ai-autocomplete",
       "include-component-in-tag": false,
-      "bump-minor-pre-major": true,
       "changelog-path": "CHANGELOG.md",
       "changelog-sections": [
         { "type": "feat", "section": "Features" },

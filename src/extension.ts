@@ -300,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): {
     warnOnce(problems);
   };
   // Old fim.* keys in user settings move to the new names on start and after each settings change; a run that finds
-  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 1.0).
+  // nothing old writes nothing. Workspace settings and backend entries are never rewritten (old names are read until 2.0).
   const migrate = migrationRunner(log);
   sub(
     vscode.workspace.onDidChangeConfiguration((e) => {

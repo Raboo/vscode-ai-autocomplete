@@ -14,7 +14,7 @@ export function userSettingsMigration(log: Log): () => Promise<void> {
     const { writes, moved, workspaceOld } = planRenameMigration(config);
     const named = workspaceOld.map((k) => `aiAutocomplete.${k}`).join(', ');
     if (named !== '' && named !== lastWorkspaceOld) {
-      log.info(`settings: workspace settings still use old names (read until 1.0, not changed by the extension): ${named}`);
+      log.info(`settings: workspace settings still use old names (read until 2.0, not changed by the extension): ${named}`);
     }
     lastWorkspaceOld = named;
     if (writes.length === 0) return;

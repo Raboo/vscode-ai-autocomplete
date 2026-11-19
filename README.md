@@ -69,7 +69,7 @@ If the server is not running yet, the status bar shows an error and the extensio
 
 Backends go in your user settings only; see [Privacy](#privacy) for why.
 
-Renamed settings: `aiAutocomplete.fim.*` is now `aiAutocomplete.completions.*`, and the backend fields `fimModel`, `fimMode` and `fim` are now `model`, `mode` and `completions`. When it starts, the extension moves old `aiAutocomplete.fim.*` keys in your user settings to the new names (for `disableInFiles` set under both names, the two lists are joined). It never changes workspace or folder settings, and never rewrites `aiAutocomplete.backends`: a backend gets the new field names when you save it from the Backends page. Until 1.0 old names keep working everywhere, with a note in the log (old and new `disableInFiles` lists are joined at each level).
+Renamed settings: `aiAutocomplete.fim.*` is now `aiAutocomplete.completions.*`, and the backend fields `fimModel`, `fimMode` and `fim` are now `model`, `mode` and `completions`. When it starts, the extension moves old `aiAutocomplete.fim.*` keys in your user settings to the new names (for `disableInFiles` set under both names, the two lists are joined). It never changes workspace or folder settings, and never rewrites `aiAutocomplete.backends`: a backend gets the new field names when you save it from the Backends page. Until 2.0 old names keep working everywhere, with a note in the log (old and new `disableInFiles` lists are joined at each level).
 
 ### Local models
 

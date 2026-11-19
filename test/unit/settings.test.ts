@@ -364,14 +364,14 @@ describe('writesToWorkspace', () => {
   });
 });
 
-describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
+describe('old names (fim.*, fimModel, fimMode, fim) until 2.0', () => {
   test('an old key set alone is read, with one note', () => {
     const r = parseSettings(src({ backends: { globalValue: [B('a'), B('b')] }, 'fim.backend': { globalValue: 'b' }, 'fim.maxTokens': { workspaceValue: 64 } }));
     expect(r.settings.fim.backendId).toBe('b');
     expect(r.settings.fim.maxTokens).toBe(64);
     expect(r.problems).toEqual([
-      'aiAutocomplete.fim.backend is now aiAutocomplete.completions.backend; the old name still works until 1.0',
-      'aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0',
+      'aiAutocomplete.fim.backend is now aiAutocomplete.completions.backend; the old name still works until 2.0',
+      'aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 2.0',
     ]);
     expect(r.problems.every(isOldNameProblem)).toBe(true);
   });
@@ -381,7 +381,7 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
     expect(same.problems).toEqual([]);
     const closer = parseSettings(src({ 'completions.maxTokens': { defaultValue: 128, globalValue: 32 }, 'fim.maxTokens': { workspaceFolderValue: 16 } }));
     expect(closer.settings.fim.maxTokens).toBe(16);
-    expect(closer.problems).toEqual(['aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 1.0']);
+    expect(closer.problems).toEqual(['aiAutocomplete.fim.maxTokens is now aiAutocomplete.completions.maxTokens; the old name still works until 2.0']);
   });
   test('old folder lists of disableInFiles are added like new ones', () => {
     const r = parseSettings(src({ 'completions.disableInFiles': { defaultValue: ['**/.env'] }, 'fim.disableInFiles': { folderValues: [['**/old/**']] } }));
@@ -394,21 +394,21 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 1.0', () => {
       'fim.disableInFiles': { globalValue: ['**/u-old'], workspaceValue: ['**/w-old'], workspaceFolderValue: ['**/f-old'] },
     }));
     expect(r.settings.fim.disableInFiles).toEqual(['**/u-new', '**/u-old', '**/w-new', '**/w-old', '**/f-old']);
-    expect(r.problems).toEqual(['aiAutocomplete.fim.disableInFiles is now aiAutocomplete.completions.disableInFiles; the old name still works until 1.0']);
+    expect(r.problems).toEqual(['aiAutocomplete.fim.disableInFiles is now aiAutocomplete.completions.disableInFiles; the old name still works until 2.0']);
   });
   test('old backend fields are read, each with a note naming the backend', () => {
     const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } }] } }));
     expect(r.settings.backends[0]).toMatchObject({ fimModel: 'coder', fimMode: 'native', fim: { temperature: 0.1 } });
     expect(r.problems).toEqual([
-      'aiAutocomplete.backends[0] ("lm"): fimModel is now model; the old name still works until 1.0',
-      'aiAutocomplete.backends[0] ("lm"): fimMode is now mode; the old name still works until 1.0',
-      'aiAutocomplete.backends[0] ("lm"): fim is now completions; the old name still works until 1.0',
+      'aiAutocomplete.backends[0] ("lm"): fimModel is now model; the old name still works until 2.0',
+      'aiAutocomplete.backends[0] ("lm"): fimMode is now mode; the old name still works until 2.0',
+      'aiAutocomplete.backends[0] ("lm"): fim is now completions; the old name still works until 2.0',
     ]);
   });
   test('an old backend field next to its new one is ignored, with a note', () => {
     const r = parseSettings(src({ backends: { globalValue: [{ ...B('lm'), model: 'new', fimModel: 'old' }] } }));
     expect(r.settings.backends[0].fimModel).toBe('new');
-    expect(r.problems).toEqual(['aiAutocomplete.backends[0] ("lm"): fimModel is now model (fimModel is ignored, model is set); the old name still works until 1.0']);
+    expect(r.problems).toEqual(['aiAutocomplete.backends[0] ("lm"): fimModel is now model (fimModel is ignored, model is set); the old name still works until 2.0']);
   });
   test('problems inside an old fim object name the old field', () => {
     const problems: string[] = [];

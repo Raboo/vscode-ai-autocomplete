@@ -177,7 +177,7 @@ export function parseBackendEntry(given: unknown, i: number, seen: Set<string>, 
   const fail = (problem: string): undefined => void problems.push(problem);
   const at = `aiAutocomplete.backends[${i}]`;
   if (!isObj(given)) return fail(`${at}: not an object, ignored`);
-  // Old field names (fimModel, fimMode, fim) are read until 1.0, each with a note.
+  // Old field names (fimModel, fimMode, fim) are read until 2.0, each with a note.
   const { entry: raw, renamed } = renameBackendEntry(given);
   const id = raw.id;
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return fail(`${at}: invalid id ${JSON.stringify(id)} (use lowercase letters, digits and dashes), ignored`);

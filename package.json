@@ -391,13 +391,13 @@
           "aiAutocomplete.fim.enabled": {
             "type": "boolean",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.enabled#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.enabled#`; moved automatically on start. The old name still works until 2.0.",
             "order": 101
           },
           "aiAutocomplete.fim.backend": {
             "type": "string",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.backend#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.backend#`; moved automatically on start. The old name still works until 2.0.",
             "order": 102
           },
           "aiAutocomplete.fim.multiline": {
@@ -408,7 +408,7 @@
               "never"
             ],
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.multiline#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.multiline#`; moved automatically on start. The old name still works until 2.0.",
             "order": 103
           },
           "aiAutocomplete.fim.disableInLanguages": {
@@ -417,7 +417,7 @@
               "type": "string"
             },
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInLanguages#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInLanguages#`; moved automatically on start. The old name still works until 2.0.",
             "order": 104
           },
           "aiAutocomplete.fim.disableInFiles": {
@@ -426,19 +426,19 @@
               "type": "string"
             },
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInFiles#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.disableInFiles#`; moved automatically on start. The old name still works until 2.0.",
             "order": 105
           },
           "aiAutocomplete.fim.skipMidWord": {
             "type": "boolean",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.skipMidWord#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.skipMidWord#`; moved automatically on start. The old name still works until 2.0.",
             "order": 106
           },
           "aiAutocomplete.fim.extraContext": {
             "type": "boolean",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.extraContext#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.extraContext#`; moved automatically on start. The old name still works until 2.0.",
             "order": 107
           },
           "aiAutocomplete.fim.debounceMs": {
@@ -447,25 +447,25 @@
               "null"
             ],
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.debounceMs#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.debounceMs#`; moved automatically on start. The old name still works until 2.0.",
             "order": 108
           },
           "aiAutocomplete.fim.maxTokens": {
             "type": "number",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.maxTokens#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.maxTokens#`; moved automatically on start. The old name still works until 2.0.",
             "order": 109
           },
           "aiAutocomplete.fim.prefixLines": {
             "type": "number",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.prefixLines#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.prefixLines#`; moved automatically on start. The old name still works until 2.0.",
             "order": 110
           },
           "aiAutocomplete.fim.suffixLines": {
             "type": "number",
             "scope": "resource",
-            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.suffixLines#`; moved automatically on start. The old name still works until 1.0.",
+            "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.suffixLines#`; moved automatically on start. The old name still works until 2.0.",
             "order": 111
           }
         }

@@ -41,7 +41,8 @@ function shown(chat: ChatState): string {
 function inlineThinking(raw: string): boolean {
   const at = raw.indexOf(COMPLETION_OPEN);
   const pre = at >= 0 ? raw.slice(0, at) : raw;
-  const f = new ReasoningFilter();
+  // Detection only: a bare closer before `<COMPLETION>` is reasoning the model was asked not to do.
+  const f = new ReasoningFilter({ mayThink: true });
   f.push(pre);
   if (at >= 0) f.end();
   return f.thinking && (at >= 0 || startsWithThinkOpener(pre));
@@ -53,19 +54,21 @@ function inlineThinking(raw: string): boolean {
  * Throws the backend's error, except a TimeoutError after at least one complete line: those lines come back with timedOut true.
  * With `failOnThinking`, the first reasoning text (a reasoning event, or a think block with text in the content) aborts `ctl`
  * and throws ThinkingError; an empty think block (the prefill of a thinking-off template) is not reasoning.
+ * `mayThink` (see ReasoningFilterOptions) lets a bare closing tag hide the text before it. The provider and the Backends
+ * page never pass it: they block the chat route for a model that may think (`thinkingBlocked`), so there a bare closer is answer text.
  */
 export async function collectCompletion(
   backend: FimBackend,
   p: PlannedRequest,
   acc: CompletionAccumulator,
   ctl: AbortController,
-  opts: { failOnThinking?: boolean } = {},
+  opts: { failOnThinking?: boolean; mayThink?: boolean } = {},
 ): Promise<Collected> {
   let stopped = false;
   let chat: ChatState | undefined;
   try {
     if (p.route === 'chat') {
-      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix, p.lineSuffix), literal: opts.failOnThinking === true, raw: '' };
+      chat = { filter: new ReasoningFilter({ mayThink: opts.mayThink === true }), answer: new HoleFillerAnswer(p.linePrefix, p.lineSuffix), literal: opts.failOnThinking === true, raw: '' };
       stopped = await collectChat(backend.streamChat(p.req), chat, acc, ctl);
     } else {
       for await (const chunk of backend.streamFim(p.req)) {

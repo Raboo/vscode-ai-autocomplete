@@ -28,9 +28,23 @@ describe('stripThinking', () => {
     expect(stripThinking('<think>\n\n</think>\n\na + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('<|channel>thought\n<channel|>a + b;')).toEqual({ text: 'a + b;', thinking: false });
   });
-  test('a bare closing tag drops everything before it', () => {
-    expect(stripThinking('I should add them.</think>a + b;')).toEqual({ text: 'a + b;', thinking: true });
-    expect(stripThinking('x</think>y</think>z').text).toBe('z');
+  test('a bare closing tag drops everything before it when the model may think', () => {
+    expect(stripThinking('I should add them.</think>a + b;', undefined, { mayThink: true })).toEqual({ text: 'a + b;', thinking: true });
+    expect(stripThinking('x</think>y</think>z', undefined, { mayThink: true }).text).toBe('z');
+  });
+  test('a bare closing tag is answer text when the model may not think', () => {
+    expect(stripThinking('a</think>b')).toEqual({ text: 'a</think>b', thinking: false });
+    expect(stripThinking('a</think>b', undefined, { mayThink: false })).toEqual({ text: 'a</think>b', thinking: false });
+    expect(stripThinking('a[/THINK]b<channel|>c')).toEqual({ text: 'a[/THINK]b<channel|>c', thinking: false });
+  });
+  test.each([false, true])('an opener and closer pair is reasoning either way (mayThink %s)', (mayThink) => {
+    expect(stripThinking('<think>hm</think>a + b;', undefined, { mayThink })).toEqual({ text: 'a + b;', thinking: true });
+    const f = new ReasoningFilter({ mayThink });
+    f.push('<think>hm</th');
+    expect(f.visible).toBe('');
+    f.push('ink>a</think>b');
+    f.end();
+    expect(f.visible).toBe(mayThink ? 'b' : 'a</think>b');
   });
   test('unclosed reasoning at length is discarded', () => {
     expect(stripThinking('a<think>more', 'length').text).toBe('');
@@ -91,8 +105,8 @@ describe('ReasoningFilter', () => {
     f.end();
     expect(f.visible).toBe('a <');
   });
-  test('visible shrinks on a bare closing tag', () => {
-    const f = new ReasoningFilter();
+  test('visible shrinks on a bare closing tag when the model may think', () => {
+    const f = new ReasoningFilter({ mayThink: true });
     f.push('I think');
     expect(f.visible).toBe('I think');
     f.push('</think>a');

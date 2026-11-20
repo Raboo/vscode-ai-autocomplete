@@ -91,8 +91,11 @@ const hasText = (s: string): boolean => /\S/.test(s);
 
 interface Parsed { visible: string; thinking: boolean }
 
-/** Parses the whole content so far. A trailing partial tag is held back unless `ended`. */
-function parse(raw: string, ended: boolean, finishReason?: string): Parsed {
+/**
+ * Parses the whole content so far. A trailing partial tag is held back unless `ended`.
+ * A bare closing tag (no opener seen) ends hidden reasoning only when `mayThink`; otherwise it is answer text.
+ */
+function parse(raw: string, ended: boolean, mayThink: boolean, finishReason?: string): Parsed {
   let out = '';
   let thinking = false;
   let skipWs = false;
@@ -125,6 +128,9 @@ function parse(raw: string, ended: boolean, finishReason?: string): Parsed {
         blockCloser = tag.closer;
         blockStart = i;
         outBeforeBlock = out;
+      } else if (tag.kind === 'close' && !mayThink) {
+        out += tag.text;
+        skipWs = false;
       } else if (tag.kind === 'close') {
         if (hasText(out)) thinking = true;
         out = '';
@@ -146,13 +152,27 @@ function parse(raw: string, ended: boolean, finishReason?: string): Parsed {
   return { visible: out, thinking };
 }
 
-/** Streaming: feed content and reasoning deltas, read `visible` at any time. `visible` can shrink (a bare closing tag). */
+export interface ReasoningFilterOptions {
+  /**
+   * The model may be thinking although it was asked not to: its strategy is `cannotDisable`, or the session learned it
+   * keeps thinking. Only then does a bare closing tag (no opener seen) hide the text before it; otherwise that tag is
+   * answer text, such as code that holds `</think>`. An opener and its closer are reasoning either way. Default false.
+   */
+  mayThink?: boolean;
+}
+
+/** Streaming: feed content and reasoning deltas, read `visible` at any time. With `mayThink`, `visible` can shrink (a bare closing tag). */
 export class ReasoningFilter {
+  private readonly mayThink: boolean;
   private raw = '';
   private ended = false;
   private finish: string | undefined;
   private fieldThinking = false;
   private cache: Parsed | undefined;
+
+  constructor(opts: ReasoningFilterOptions = {}) {
+    this.mayThink = opts.mayThink === true;
+  }
 
   push(content: string): void {
     this.raw += content;
@@ -171,7 +191,7 @@ export class ReasoningFilter {
   }
 
   private parsed(): Parsed {
-    return (this.cache ??= parse(this.raw, this.ended, this.finish));
+    return (this.cache ??= parse(this.raw, this.ended, this.mayThink, this.finish));
   }
 
   get visible(): string { return this.parsed().visible; }
@@ -193,8 +213,8 @@ export function stripLeadingReasoning(text: string): string {
   return end < 0 ? '' : body.slice(end + close.length).trimStart();
 }
 
-export function stripThinking(text: string, finishReason?: string): { text: string; thinking: boolean } {
-  const f = new ReasoningFilter();
+export function stripThinking(text: string, finishReason?: string, opts: ReasoningFilterOptions = {}): { text: string; thinking: boolean } {
+  const f = new ReasoningFilter(opts);
   f.push(text);
   f.end(finishReason);
   return { text: f.visible, thinking: f.thinking };

@@ -111,6 +111,7 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
   });
   o.onPrompt?.(req.messages);
 
+  // The controller never asks a model that may think (`thinkingBlocked`), so a bare closing tag is answer text.
   const filter = new ReasoningFilter();
   let raw = '';
   let finished = false;

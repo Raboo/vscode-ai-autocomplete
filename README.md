@@ -173,12 +173,12 @@ A Next Edit answer rewrites a whole region, so it arrives later than a completio
 
 | Model (llama.cpp, Metal) | Feature | First token, warm | Whole answer, warm | Whole answer, cold |
 | --- | --- | --- | --- | --- |
-| Sweep Next Edit 1.5B Q8_0 | completions | 0.38 s | 0.90 s | 1.2 s |
-| Mellum 4B Q8_0 | completions | 0.97 s | 1.44 s | 2.8 s |
-| Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.33 s | 0.71 s | 3.2 s |
-| Zeta 2.1 Q4_K_M (8B) | Next Edit | 1.79 s | 3.5 s | 9.3 s |
+| Sweep Next Edit 1.5B Q8_0 | completions | 0.38 s | 0.90 s | 1.38 s |
+| Mellum 4B Q8_0 | completions | 0.97 s | 1.44 s | 2.77 s |
+| Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.33 s | 0.71 s | 0.80 s |
+| Zeta 2.1 Q4_K_M (8B) | Next Edit | 1.79 s | 3.5 s | 4.54 s |
 
-These numbers are with speculative decoding on (the default for local models, see below); the cold column was measured before it. On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone: its answers arrive in under a second, and its completions fit about twice the text within the 500 ms cap. Zeta 2.1 is better at edits further from the cursor and is now practical for Next Edit alone at about 3.5 s per answer.
+These numbers are with speculative decoding on (the default for local models, see below). On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone: its answers arrive in under a second, and its completions fit about twice the text within the 500 ms cap. Zeta 2.1 is better at edits further from the cursor and is now practical for Next Edit alone at about 3.5 s per answer.
 
 #### Definitions as context
 

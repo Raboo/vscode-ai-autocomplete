@@ -28,13 +28,13 @@
 
 **Files:** Modify `src/local/router.ts`, `src/local/serverPool.ts`; Test `test/unit/local/router.test.ts`, `test/unit/local/serverPool.test.ts` (or wherever the pool's preset rendering is tested).
 
-- [ ] Tests: `supportsSpeculative` true for help text with `--spec-type ... ngram-cache`, false without either; `renderPresets(..., { speculative: true })` has the line in `[*]` after `cache-reuse = 256`; with `false` it does not; a model with extra args `--spec-type none` gets `spec-type = none` in its section; the pool renders with `speculative` from the help text (a fake help with and without `--spec-type`).
-- [ ] Implement.
-- [ ] `npm run build && npm test && npm run typecheck && npm run lint` pass.
-- [ ] Commit: `feat: local models use n-gram speculative decoding`
+- [x] Tests: `supportsSpeculative` true for help text with `--spec-type ... ngram-cache`, false without either; `renderPresets(..., { speculative: true })` has the line in `[*]` after `cache-reuse = 256`; with `false` it does not; a model with extra args `--spec-type none` gets `spec-type = none` in its section; the pool renders with `speculative` from the help text (a fake help with and without `--spec-type`).
+- [x] Implement.
+- [x] `npm run build && npm test && npm run typecheck && npm run lint` pass.
+- [x] Commit: `feat: local models use n-gram speculative decoding`
 
 ### Task 2: Docs
 
 **Files:** `README.md` (latency table numbers from the spec, "Speculative decoding" note), `docs/ROADMAP.md` (row and manual checks: Local Models server log shows `draft acceptance`; `--spec-type none` in a model's extra arguments removes it).
 
-- [ ] Commit: `docs: speculative decoding for local models`
+- [x] Commit: `docs: speculative decoding for local models`

@@ -201,6 +201,22 @@ export class ReasoningFilter {
 }
 
 /**
+ * Reasoning that leaked without its opener (a template that prefills `<think>`): a bare closing tag that ends its line,
+ * with non-blank text before it and no opener before it. A closer inside a line, such as `'</think>';`, is code.
+ */
+export function leakedReasoning(text: string): boolean {
+  return BARE_CLOSERS.some((c) => {
+    for (let at = text.indexOf(c); at >= 0; at = text.indexOf(c, at + 1)) {
+      const before = text.slice(0, at);
+      if (BLOCKS.some(([o]) => before.includes(o))) return false;
+      if (hasText(before) && /^[ \t]*(\r?\n|$)/.test(text.slice(at + c.length))) return true;
+    }
+    return false;
+  });
+}
+const BARE_CLOSERS: readonly string[] = TAGS.filter((t) => t.kind === 'close').map((t) => t.text);
+
+/**
  * FIM output: removes a reasoning block at the very start (after optional whitespace) and the whitespace after it;
  * an unclosed one leaves nothing. Tags anywhere else stay: there they are code, such as a string holding `</think>`.
  */

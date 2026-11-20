@@ -53,6 +53,19 @@ describe('collectCompletion', () => {
       const chat = [content('I should add them.</think><COMPLETION>a + b;'), finish()];
       await expect(collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail)).rejects.toBeInstanceOf(ThinkingError);
     });
+    test('leaked reasoning before a bare closer, answered unwrapped, fails (prefilled <think>)', async () => {
+      const chat = () => [content('The user wants the sum of a and b.'), content('</think>\n\na + b;'), finish()];
+      for (const multiline of [false, true]) {
+        const ctl = new AbortController();
+        await expect(collectCompletion(backend({ chat: chat() }), chatPlan(), new CompletionAccumulator(opts({ multiline })), ctl, fail)).rejects.toBeInstanceOf(ThinkingError);
+        expect(ctl.signal.aborted).toBe(true);
+      }
+    });
+    test('a closer inside <COMPLETION> stays answer text', async () => {
+      const chat = [content('<COMPLETION>x </think> y</COMPLETION>'), finish()];
+      const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), fail);
+      expect(r.text).toBe('x </think> y');
+    });
     test('an inline think opener with text fails fast', async () => {
       const ctl = new AbortController();
       await expect(collectCompletion(backend({ chat: [content('<think>Let me')] }), chatPlan(), new CompletionAccumulator(opts()), ctl, fail)).rejects.toMatchObject({ name: 'ThinkingError' });
@@ -94,37 +107,18 @@ describe('collectCompletion', () => {
     expect(r).toMatchObject({ text: '', thinking: true });
   });
 
-  test('a bare closing tag resets the answer', async () => {
-    const chat = [content('x<COMPLETION>no'), content('</think><COMPLETION>a + b;'), finish()];
-    const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), { mayThink: true });
-    expect(r.text).toBe('a + b;');
-  });
-
-  test('nothing from before a bare closing tag is exposed', async () => {
-    const acc = new CompletionAccumulator(opts());
-    const seen: string[] = [];
-    const orig = acc.replace.bind(acc);
-    acc.replace = (t: string) => (seen.push(t), orig(t));
-    const chat = [content('I think.'), content('</think><COMPLETION>a + b;</COMPLETION>'), finish()];
-    const r = await collectCompletion(backend({ chat }), chatPlan(), acc, new AbortController(), { mayThink: true });
-    expect(r.text).toBe('a + b;');
-    expect(seen.some((t) => t.includes('I think.'))).toBe(false);
-  });
-
   test('a bare closing tag is answer text when the model may not think', async () => {
     const chat = [content('x = a;</thi'), content('nk> y'), finish()];
-    for (const o of [{}, { mayThink: false }, { failOnThinking: true }]) {
+    for (const o of [{}, { failOnThinking: true }]) {
       const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), o);
       expect(r).toMatchObject({ text: 'x = a;</think> y', visible: 'x = a;</think> y', thinking: false });
     }
   });
 
-  test('an opener and closer pair is reasoning whether or not the model may think', async () => {
+  test('an opener and closer pair is reasoning', async () => {
     const chat = [content('<think>hm</think><COMPLETION>a + b;'), finish()];
-    for (const mayThink of [false, true]) {
-      const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController(), { mayThink });
-      expect(r).toMatchObject({ text: 'a + b;', thinking: true });
-    }
+    const r = await collectCompletion(backend({ chat }), chatPlan(), new CompletionAccumulator(opts()), new AbortController());
+    expect(r).toMatchObject({ text: 'a + b;', thinking: true });
   });
 
   test('chat stops early once the single line is complete', async () => {
@@ -155,18 +149,6 @@ describe('collectCompletion', () => {
     await expect(
       collectCompletion(backend({ fim: ['l1\nl2\n'], fail: new Error('boom') }), fimPlan, new CompletionAccumulator(opts({ multiline: true })), new AbortController()),
     ).rejects.toThrow('boom');
-  });
-
-  test('chat never feeds acc an answer that is not an extension of the last one mid-stream', async () => {
-    const acc = new CompletionAccumulator(opts());
-    const seen: string[] = [];
-    const orig = acc.replace.bind(acc);
-    acc.replace = (t: string) => (seen.push(t), orig(t));
-    const chat = [content('x<COMPLETION>no'), content('</think><COMPLETION>a + b;'), finish()];
-    const r = await collectCompletion(backend({ chat }), chatPlan(), acc, new AbortController(), { mayThink: true });
-    expect(r.text).toBe('a + b;');
-    // The shorter, different answer only arrives with the final settle.
-    expect(seen.indexOf('a + b;')).toBe(seen.length - 1);
   });
 
   test('a chat timeout keeps the thinking flag and the complete lines', async () => {
@@ -213,15 +195,5 @@ describe('collectCompletion', () => {
     await expect(
       collectCompletion(backend({ chat, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts()), new AbortController()),
     ).rejects.toMatchObject({ name: 'TimeoutError', message: 't' });
-  });
-
-  test('a multi-line timeout after a bare closer does not return pre-closer lines', async () => {
-    const chat = [content('<COMPLETION>l1\nl2\n'), content('</think><COMPLETION>x')];
-    await expect(
-      collectCompletion(backend({ chat, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts({ multiline: true })), new AbortController(), { mayThink: true }),
-    ).rejects.toMatchObject({ name: 'TimeoutError' });
-    const after = [content('<COMPLETION>l1\nl2\n'), content('</think><COMPLETION>a\nb')];
-    const r = await collectCompletion(backend({ chat: after, fail: new TimeoutError('t') }), chatPlan(), new CompletionAccumulator(opts({ multiline: true })), new AbortController(), { mayThink: true });
-    expect(r).toMatchObject({ text: 'a', timedOut: true, thinking: true });
   });
 });

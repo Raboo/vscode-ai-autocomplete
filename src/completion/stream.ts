@@ -1,5 +1,5 @@
 import type { ChatEvent, ChatRequest, FimBackend, FimRequest } from '../backends/types';
-import { ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
+import { leakedReasoning, ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
 import type { CompletionAccumulator } from './filters';
 import { COMPLETION_OPEN, HoleFillerAnswer } from './holeFiller';
 
@@ -54,21 +54,22 @@ function inlineThinking(raw: string): boolean {
  * Throws the backend's error, except a TimeoutError after at least one complete line: those lines come back with timedOut true.
  * With `failOnThinking`, the first reasoning text (a reasoning event, or a think block with text in the content) aborts `ctl`
  * and throws ThinkingError; an empty think block (the prefill of a thinking-off template) is not reasoning.
- * `mayThink` (see ReasoningFilterOptions) lets a bare closing tag hide the text before it. The provider and the Backends
- * page never pass it: they block the chat route for a model that may think (`thinkingBlocked`), so there a bare closer is answer text.
+ * Once the answer is final (an early stop or the stream's end) with no `<COMPLETION>`, a bare closer that ends its line after
+ * text counts as reasoning too (`leakedReasoning`: a template that prefills `<think>`).
+ * The display filter treats a bare closing tag as answer text: callers block the chat route for a model that may think (`thinkingBlocked`).
  */
 export async function collectCompletion(
   backend: FimBackend,
   p: PlannedRequest,
   acc: CompletionAccumulator,
   ctl: AbortController,
-  opts: { failOnThinking?: boolean; mayThink?: boolean } = {},
+  opts: { failOnThinking?: boolean } = {},
 ): Promise<Collected> {
   let stopped = false;
   let chat: ChatState | undefined;
   try {
     if (p.route === 'chat') {
-      chat = { filter: new ReasoningFilter({ mayThink: opts.mayThink === true }), answer: new HoleFillerAnswer(p.linePrefix, p.lineSuffix), literal: opts.failOnThinking === true, raw: '' };
+      chat = { filter: new ReasoningFilter(), answer: new HoleFillerAnswer(p.linePrefix, p.lineSuffix), literal: opts.failOnThinking === true, raw: '' };
       stopped = await collectChat(backend.streamChat(p.req), chat, acc, ctl);
     } else {
       for await (const chunk of backend.streamFim(p.req)) {
@@ -81,7 +82,7 @@ export async function collectCompletion(
     }
   } catch (err) {
     if (!isTimeout(err)) throw err;
-    // `acc` may still hold an answer fed before a bare closing tag: settle from what the filter shows now.
+    // `acc` may lag behind what the filter shows (an answer that shrank waits for the end): settle from it now.
     if (chat) acc.replace(chat.answer.update(shown(chat), false));
     const text = acc.text;
     const nl = text.lastIndexOf('\n');
@@ -97,7 +98,7 @@ function seen(chat: ChatState | undefined): { thinking: boolean; visible?: strin
 
 async function collectChat(events: AsyncIterable<ChatEvent>, chat: ChatState, acc: CompletionAccumulator, ctl: AbortController): Promise<boolean> {
   const { filter, answer, literal } = chat;
-  // Only answers that extend the previous one reach `acc`: a shorter one (visible shrank on a bare closing tag) waits for the end.
+  // Only answers that extend the previous one reach `acc`: a shorter one (the answer extraction changed its mind) waits for the end.
   let fed = '';
   let finished = false;
   for await (const ev of events) {
@@ -118,13 +119,18 @@ async function collectChat(events: AsyncIterable<ChatEvent>, chat: ChatState, ac
     if (!next.startsWith(fed)) continue;
     fed = next;
     if (acc.replace(next)) {
+      if (literal && leaked(chat.raw)) return thinkingFound(ctl);
       ctl.abort();
       return true;
     }
   }
   if (!finished) filter.end();
+  if (literal && leaked(chat.raw)) return thinkingFound(ctl);
   return acc.replace(answer.update(shown(chat), true));
 }
+
+/** The final answer has no `<COMPLETION>` and reasoning leaked before a bare closer. */
+const leaked = (raw: string): boolean => !raw.includes(COMPLETION_OPEN) && leakedReasoning(raw);
 
 function thinkingFound(ctl: AbortController): never {
   ctl.abort();

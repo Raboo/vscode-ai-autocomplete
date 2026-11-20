@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { HOST_FLAVORS, THINKING_STRATEGIES } from '../../src/config/settings';
-import { ReasoningFilter, stripLeadingReasoning, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
+import { leakedReasoning, ReasoningFilter, stripLeadingReasoning, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
 import fixture from './fixtures/thinking-fields.json';
 
 const golden = fixture as Record<string, Record<string, ThinkingFields>>;
@@ -69,6 +69,20 @@ describe('stripThinking', () => {
   test('plain text passes through', () => {
     expect(stripThinking('a + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('if (a < b) {}')).toEqual({ text: 'if (a < b) {}', thinking: false });
+  });
+});
+
+describe('leakedReasoning', () => {
+  test('text before a bare closer that ends its line is leaked reasoning', () => {
+    expect(leakedReasoning('The user wants the sum.</think>\n\na + b;')).toBe(true);
+    expect(leakedReasoning('hm [/THINK]  \r\nx')).toBe(true);
+    expect(leakedReasoning('hm</think>')).toBe(true);
+  });
+  test('a closer inside a line, after an opener or with nothing before it is not', () => {
+    expect(leakedReasoning("const CLOSE = '</think>';")).toBe(false);
+    expect(leakedReasoning('<think>hm</think>\na')).toBe(false);
+    expect(leakedReasoning('  \n</think>\na')).toBe(false);
+    expect(leakedReasoning('a + b;<|end|>')).toBe(false);
   });
 });
 

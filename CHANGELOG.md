@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.2.0...v1.3.0) (2026-11-20)
+
+
+### Features
+
+* n-gram speculative decoding for local models ([0787246](https://github.com/Raboo/vscode-ai-autocomplete/commit/078724621318ec78e469673ca5f76db701f74d83))
+
 ## [1.2.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.1.0...v1.2.0) (2026-11-19)
 
 

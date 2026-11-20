@@ -4,7 +4,7 @@ import { DEFAULT_PORT, LOCAL_BACKEND_ID, parseManaged, portFor, routerWanted, se
 import { LlamaServerProcess, LocalRuntimeError, defaultSpawn, formatTail, type ChildLike, type SpawnLike } from './llamaServer';
 import { mergeModels, type LocalModel } from './modelList';
 import { RECIPES, type Recipe } from './recipes';
-import { renderPresets, routerArgs, supportsRouter, type PortState } from './router';
+import { renderPresets, routerArgs, supportsRouter, supportsSpeculative, type PortState } from './router';
 import { INSTALL_HINT } from './runtimes';
 
 const KILL_GRACE_MS = 5000;
@@ -171,6 +171,9 @@ interface Slot {
  * The llama-server router of the `local` backend: at most one per window, stoppable while it is still loading. A router
  * already running on the saved port with the preset models (another window's) is adopted instead of started.
  */
+/** How long a binary that failed the router check is not checked again. */
+const REJECTED_MS = 30_000;
+
 export class ServerPool {
   private slot: Slot | undefined;
   private disposed = false;
@@ -178,8 +181,10 @@ export class ServerPool {
   private readonly output: string[] = [];
   private readonly listeners = new Set<() => void>();
   private announced = '';
-  /** Binaries whose help lists `--models-preset`; a too-old one is checked again on the next start (it may be updated). */
-  private readonly routerBinaries = new Set<string>();
+  /** Binaries whose help lists `--models-preset`, with whether each supports speculative decoding; a too-old one is checked again on the next start (it may be updated). */
+  private readonly routerBinaries = new Map<string, boolean>();
+  /** Binaries that failed the router check, with when and why: not read again for 30 s, so repeated settings changes do not spawn `--help` each time. */
+  private readonly rejectedBinaries = new Map<string, { at: number; error: string }>();
 
   constructor(private readonly d: ServerPoolDeps) {}
 
@@ -205,6 +210,7 @@ export class ServerPool {
     try {
       if (previous) await this.halt(previous);
       if (slot.cancelled) throw cancelled();
+      await this.knowSpeculative();
       const { text, names } = this.presets();
       await this.d.writePresets(text);
       if (slot.cancelled) throw cancelled();
@@ -290,11 +296,26 @@ export class ServerPool {
       paths.set(m.name, path);
     }
     try {
-      return { text: renderPresets(served, (m) => paths.get(m.name) as string), names: served.map((m) => m.name) };
+      return { text: renderPresets(served, (m) => paths.get(m.name) as string, { speculative: this.speculative() }), names: served.map((m) => m.name) };
     } catch (err) {
       this.d.log.error('local models: writing the presets file failed', err);
       throw new LocalRuntimeError(PRESETS_FAILED);
     }
+  }
+
+  /** Reads the help text (cached) so presets know about speculation; an adopting window has no need for a local binary, so errors are ignored (the flag is then false). */
+  private async knowSpeculative(): Promise<void> {
+    try {
+      await this.routerBinary();
+    } catch {
+      // no usable local binary: presets are rendered without speculation
+    }
+  }
+
+  /** Whether the configured llama-server supports speculative decoding (known once it was checked for router mode). */
+  private speculative(): boolean {
+    const binary = this.d.binary();
+    return binary !== undefined && this.routerBinaries.get(binary) === true;
   }
 
   /** Why no router can be started with the configured llama-server (missing, or too old), or undefined. Setup asks before it downloads. */
@@ -329,14 +350,21 @@ export class ServerPool {
     const binary = this.d.binary();
     if (!binary) throw new LocalRuntimeError(`llama-server was not found. ${INSTALL_HINT.llamaServer}`);
     if (this.routerBinaries.has(binary)) return binary;
+    const rejected = this.rejectedBinaries.get(binary);
+    if (rejected && Date.now() - rejected.at < REJECTED_MS) throw new LocalRuntimeError(rejected.error);
     let help = '';
     try {
       help = await this.d.helpText(binary);
     } catch (err) {
       this.d.log.debug(`llama-server --help failed: ${message(err)}`);
     }
-    if (!supportsRouter(help)) throw new LocalRuntimeError(`${TOO_OLD} ${INSTALL_HINT.llamaServer}`);
-    this.routerBinaries.add(binary);
+    if (!supportsRouter(help)) {
+      const error = `${TOO_OLD} ${INSTALL_HINT.llamaServer}`;
+      this.rejectedBinaries.set(binary, { at: Date.now(), error });
+      throw new LocalRuntimeError(error);
+    }
+    this.rejectedBinaries.delete(binary);
+    this.routerBinaries.set(binary, supportsSpeculative(help));
     return binary;
   }
 
@@ -575,6 +603,7 @@ export class ServerPool {
   async syncPresets(): Promise<void> {
     let text: string;
     try {
+      await this.knowSpeculative();
       text = this.presets().text;
       await this.d.writePresets(text);
     } catch (err) {

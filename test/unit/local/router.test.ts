@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LocalModel } from '../../../src/local/modelList';
-import { probeRouter, renderPresets, RouterClient, routerArgs, supportsRouter } from '../../../src/local/router';
+import { probeRouter, renderPresets, RouterClient, routerArgs, supportsRouter, supportsSpeculative } from '../../../src/local/router';
 
 function model(over: Partial<LocalModel>): LocalModel {
   return {
@@ -16,9 +16,19 @@ const mellum = model({ name: 'mellum-4b-base' });
 const base = '/Users/x/Library/Application Support/m';
 const pathOf = (m: LocalModel) => `${base}/${m.name === sweep.name ? 'sweep' : 'mellum'}.gguf`;
 
+const off = { speculative: false };
+
 describe('renderPresets', () => {
+  it('adds the n-gram speculation line after cache-reuse only when speculative', () => {
+    expect(renderPresets([mellum], pathOf, { speculative: true })).toContain('cache-reuse = 256\nspec-type = ngram-cache,ngram-simple\n');
+    expect(renderPresets([mellum], pathOf, off)).not.toContain('spec-type');
+  });
+  it('keeps a model\'s own spec-type in its section', () => {
+    const text = renderPresets([model({ extraArgs: ['--spec-type', 'none'] })], pathOf, { speculative: true });
+    expect(text).toContain('np = 1\nspec-type = none\n');
+  });
   it('renders the sections', () => {
-    expect(renderPresets([sweep, mellum], pathOf)).toBe(`version = 1
+    expect(renderPresets([sweep, mellum], pathOf, off)).toBe(`version = 1
 
 [*]
 ngl = 99
@@ -39,18 +49,27 @@ np = 1
   });
   it('refuses line breaks in paths and values', () => {
     for (const bad of ['\n', '\r', '\u0085', '\u2028', '\u2029']) {
-      expect(() => renderPresets([mellum], () => `/a${bad}b`)).toThrow();
-      expect(() => renderPresets([model({ extraArgs: ['--x', `a${bad}b`] })], pathOf)).toThrow();
+      expect(() => renderPresets([mellum], () => `/a${bad}b`, off)).toThrow();
+      expect(() => renderPresets([model({ extraArgs: ['--x', `a${bad}b`] })], pathOf, off)).toThrow();
     }
   });
   it('refuses unsafe keys, values, context and paths', () => {
     for (const extraArgs of [['--a=b'], ['--[x]'], ['--;x'], ['--x', '[sec]'], ['--x', ';c']])
-      expect(() => renderPresets([model({ extraArgs })], pathOf)).toThrow();
-    for (const contextTokens of [0, -1, 1.5, NaN]) expect(() => renderPresets([model({ contextTokens })], pathOf)).toThrow();
-    expect(() => renderPresets([mellum], () => 'rel/m.gguf')).toThrow();
+      expect(() => renderPresets([model({ extraArgs })], pathOf, off)).toThrow();
+    for (const contextTokens of [0, -1, 1.5, NaN]) expect(() => renderPresets([model({ contextTokens })], pathOf, off)).toThrow();
+    expect(() => renderPresets([mellum], () => 'rel/m.gguf', off)).toThrow();
   });
   it('refuses unsafe section names', () => {
-    for (const name of ['a]b', '[a', 'a\nb']) expect(() => renderPresets([model({ name })], pathOf)).toThrow();
+    for (const name of ['a]b', '[a', 'a\nb']) expect(() => renderPresets([model({ name })], pathOf, off)).toThrow();
+  });
+});
+
+describe('supportsSpeculative', () => {
+  it('needs --spec-type and ngram-cache in the help', () => {
+    expect(supportsSpeculative('--spec-type [none|ngram-cache|ngram-simple]')).toBe(true);
+    expect(supportsSpeculative('--spec-type [none]')).toBe(false);
+    expect(supportsSpeculative('ngram-cache')).toBe(false);
+    expect(supportsSpeculative('--models-preset PATH')).toBe(false);
   });
 });
 

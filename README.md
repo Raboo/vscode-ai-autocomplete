@@ -1,5 +1,6 @@
 # AI Autocomplete
 
+[![Open VSX](https://img.shields.io/open-vsx/v/raboo/ai-autocomplete)](https://open-vsx.org/extension/raboo/ai-autocomplete)
 [![CI](https://github.com/Raboo/vscode-ai-autocomplete/actions/workflows/ci.yml/badge.svg)](https://github.com/Raboo/vscode-ai-autocomplete/actions/workflows/ci.yml)
 
 Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no agents and no telemetry. It is self-hosted first, working with llama.cpp, LM Studio and vLLM, and it also supports Mistral Codestral, Strata and OpenRouter.
@@ -9,6 +10,11 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 - **Local models in one step:** Manage Local Models downloads small models and runs them with llama.cpp.
 - **Your own server or a hosted API:** llama.cpp, LM Studio, Ollama, vLLM, Mistral Codestral, OpenRouter and other OpenAI-compatible servers.
 - **Private by design:** no telemetry, credential files excluded by default, and a local-only switch.
+
+## Install
+
+- **Open VSX** (VSCodium, Cursor, Windsurf and other VS Code builds): search for "AI Autocomplete" in the Extensions view, or open [open-vsx.org/extension/raboo/ai-autocomplete](https://open-vsx.org/extension/raboo/ai-autocomplete).
+- **GitHub `.vsix`** (also for stock VS Code, because the VS Code Marketplace is not available yet): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette.
 
 ## Quick start
 

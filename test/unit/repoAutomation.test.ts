@@ -54,6 +54,33 @@ describe('repo automation', () => {
     expect(JSON.parse(readFileSync('.release-please-manifest.json', 'utf8'))['.']).toBe(pkg.version);
   });
 
+  test('the vsix job publishes to Open VSX with the token only in the environment', () => {
+    const rp = readFileSync(`${wfDir}/release-please.yml`, 'utf8');
+    const vsix = rp.slice(rp.search(/^ {2}open-vsx:/m));
+    expect(vsix).toContain('npx --no-install ovsx publish');
+    expect(vsix).toContain('npx --no-install ovsx create-namespace raboo');
+    expect(vsix).not.toMatch(/npx (?!--no-install)/);
+    expect(vsix).toMatch(/ref: \$\{\{ github\.sha \}\}/);
+    expect(vsix).toMatch(/permissions:\n\s+contents: read/);
+    expect(vsix).toMatch(/OVSX_PAT: \$\{\{ secrets\.OPEN_VSX_TOKEN \}\}/);
+    expect(vsix).toMatch(/if \[ -z "\$OVSX_PAT" \]/);
+    for (const line of vsix.split('\n').filter((l) => !/^\s*(OVSX_PAT:|#)/.test(l))) {
+      expect(line, line).not.toMatch(/OPEN_VSX_TOKEN|ovsx .*(--pat|-p )|\$OVSX_PAT.*ovsx/);
+    }
+  });
+
+  test('release-please has a manual workflow_dispatch with a tag input, validated before use', () => {
+    const rp = readFileSync(`${wfDir}/release-please.yml`, 'utf8');
+    expect(rp).toMatch(/workflow_dispatch:\n\s+inputs:\n\s+tag:\n[\s\S]*?required: true/);
+    expect(rp).toContain("github.event_name != 'workflow_dispatch'");
+    expect(rp).toContain('[[ "$tag" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]');
+    expect(rp).not.toContain('grep -Eq');
+    expect(rp).toMatch(/!cancelled\(\) && \(github\.event_name == 'workflow_dispatch' \|\| needs\.release-please\.outputs\.release_created == 'true'\)/);
+    const runBlocks = [...rp.matchAll(/^ +run: \|\n((?: {10,}.*\n|\n)+)/gm)].map((m) => m[1]);
+    expect(runBlocks.length).toBeGreaterThan(1);
+    for (const b of runBlocks) expect(b).not.toContain('${{');
+  });
+
   test('dependabot covers npm and github-actions and holds back pinned packages', () => {
     const d = readFileSync('.github/dependabot.yml', 'utf8');
     expect(d).toMatch(/package-ecosystem: "?npm"?/);

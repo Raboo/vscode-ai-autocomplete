@@ -25,6 +25,7 @@ export interface Snippet {
 
 /** Diff budget: a larger change (a reformat, a generated file) is not worth blocking the extension host for. */
 const MAX_EDIT_LENGTH = 500;
+/** Default time limit of one diff; `EditHistory` takes another through `diffTimeoutMs` (tests that must not depend on speed). */
 const DIFF_TIMEOUT_MS = 50;
 
 // A missing final newline would add "\ No newline at end of file" lines and make a bare final-newline change an edit.
@@ -35,13 +36,13 @@ function norm(s: string): string {
 }
 
 /** Zero-context hunks, or `undefined` when the change exceeds the diff budget. */
-function hunksOf(path: string, before: string, after: string): StructuredPatchHunk[] | undefined {
-  return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+function hunksOf(path: string, before: string, after: string, timeout = DIFF_TIMEOUT_MS): StructuredPatchHunk[] | undefined {
+  return structuredPatch(path, path, norm(before), norm(after), '', '', { context: 0, maxEditLength: MAX_EDIT_LENGTH, timeout })?.hunks;
 }
 
 /** The 3-context hunk text for the base-to-after change; the zero-context text (minus its file headers) when the diff exceeds the budget. */
-export function contextTextOf(path: string, before: string, after: string, zeroText: string): string {
-  const hunks = structuredPatch(path, path, norm(before), norm(after), '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH, timeout: DIFF_TIMEOUT_MS })?.hunks;
+export function contextTextOf(path: string, before: string, after: string, zeroText: string, timeout = DIFF_TIMEOUT_MS): string {
+  const hunks = structuredPatch(path, path, norm(before), norm(after), '', '', { context: 3, maxEditLength: MAX_EDIT_LENGTH, timeout })?.hunks;
   return withoutFileHeader(hunks === undefined || hunks.length === 0 ? zeroText : render(path, hunks));
 }
 
@@ -145,9 +146,11 @@ export class EditHistory {
   /** Paths whose latest commit recorded no entry, so their newest entry no longer describes the current text. */
   private stale = new Set<string>();
   maxEntries: number;
+  private diffTimeoutMs: number;
 
-  constructor(o: { maxEntries?: number } = {}) {
+  constructor(o: { maxEntries?: number; diffTimeoutMs?: number } = {}) {
     this.maxEntries = o.maxEntries ?? 5;
+    this.diffTimeoutMs = o.diffTimeoutMs ?? DIFF_TIMEOUT_MS;
   }
 
   open(path: string, text: string): void {
@@ -166,7 +169,7 @@ export class EditHistory {
       this.stale.add(path);
       return;
     }
-    const hunks = hunksOf(path, before, text);
+    const hunks = hunksOf(path, before, text, this.diffTimeoutMs);
     // Too large to diff within the budget: no entry, and the next edit is diffed against the new text.
     if (hunks === undefined) {
       this.stale.add(path);
@@ -175,7 +178,7 @@ export class EditHistory {
     if (hunks.length === 0) return;
     const last = this.list[this.list.length - 1];
     if (last && last.path === path && last.firstOldStart === hunks[0].oldStart) {
-      const merged = hunksOf(path, last.base, text);
+      const merged = hunksOf(path, last.base, text, this.diffTimeoutMs);
       // A merged diff over the budget leaves the older entry and adds this edit as its own.
       if (merged !== undefined) {
         this.list.pop();
@@ -184,13 +187,13 @@ export class EditHistory {
           return;
         }
         const mergedText = render(path, merged);
-        this.list.push({ ...last, text: mergedText, contextText: contextTextOf(path, last.base, text, mergedText), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
+        this.list.push({ ...last, text: mergedText, contextText: contextTextOf(path, last.base, text, mergedText, this.diffTimeoutMs), hunks: toDiffHunks(merged), firstOldStart: merged[0].oldStart });
         this.stale.delete(path);
         return;
       }
     }
     const rendered = render(path, hunks);
-    this.list.push({ path, text: rendered, contextText: contextTextOf(path, before, text, rendered), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
+    this.list.push({ path, text: rendered, contextText: contextTextOf(path, before, text, rendered, this.diffTimeoutMs), hunks: toDiffHunks(hunks), base: before, firstOldStart: hunks[0].oldStart });
     this.stale.delete(path);
   }
 

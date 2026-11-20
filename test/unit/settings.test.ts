@@ -421,3 +421,34 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 2.0', () => {
     expect(isOldNameProblem(problems[0])).toBe(false);
   });
 });
+
+describe('completion number limits', () => {
+  const read = (key: string, v: unknown) => parseSettings(src({ [key]: { globalValue: v } }));
+  test('prefixLines -50 becomes 0 with one problem', () => {
+    const r = read('completions.prefixLines', -50);
+    expect(r.settings.fim.prefixLines).toBe(0);
+    expect(r.problems).toEqual(['aiAutocomplete.completions.prefixLines -50 is out of range, using 0']);
+  });
+  test('maxTokens is clamped to 1..1024', () => {
+    expect(read('completions.maxTokens', 0).settings.fim.maxTokens).toBe(1);
+    const r = read('completions.maxTokens', 2000);
+    expect(r.settings.fim.maxTokens).toBe(1024);
+    expect(r.problems).toHaveLength(1);
+  });
+  test('fractions are rounded, in range ones are quiet', () => {
+    const r = read('completions.debounceMs', 10.4);
+    expect(r.settings.fim.debounceMs).toBe(10);
+    expect(read('completions.debounceMs', 5000).settings.fim.debounceMs).toBe(2000);
+    expect(read('completions.suffixLines', 12.6).settings.fim.suffixLines).toBe(13);
+    expect(read('completions.maxTokens', 128).problems).toEqual([]);
+  });
+  test('null debounce stays automatic, defaults are untouched', () => {
+    const r = read('completions.debounceMs', null);
+    expect(r.settings.fim.debounceMs).toBeNull();
+    expect(r.problems).toEqual([]);
+    expect(parseSettings(src({})).settings.fim).toMatchObject({ maxTokens: 128, prefixLines: 200, suffixLines: 60, debounceMs: null });
+  });
+  test('the old fim.* names get the same limits', () => {
+    expect(read('fim.maxTokens', 99999).settings.fim.maxTokens).toBe(1024);
+  });
+});

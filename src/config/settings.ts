@@ -378,15 +378,22 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
   };
 
   const multiline = resource<string>('completions.multiline', 'auto');
-  const num = (key: string, d: number): number => {
-    const v = resource<unknown>(key, d);
-    return typeof v === 'number' && Number.isFinite(v) ? v : d;
+  /** Rounds and clamps a number setting to its limits; a changed value adds one problem. Not a number: the default. */
+  const num = (key: 'maxTokens' | 'prefixLines' | 'suffixLines' | 'debounceMs', d: number): number => {
+    const v = resource<unknown>(`completions.${key}`, d);
+    if (typeof v !== 'number' || !Number.isFinite(v)) return d;
+    const l = FIM_LIMITS[key];
+    const max = key === 'maxTokens' ? 1024 : key === 'debounceMs' ? 2000 : Infinity;
+    const out = Math.min(max, Math.max(l.min, Math.round(v)));
+    if (out !== v) problems.push(`aiAutocomplete.completions.${key} ${v} is out of range, using ${out}`);
+    return out;
   };
   const strs = (key: string, d: string[]): string[] => {
     const v = resource<unknown>(key, d);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : d;
   };
   const debounce = resource<unknown>('completions.debounceMs', null);
+  const debounceMs = typeof debounce === 'number' && Number.isFinite(debounce) ? num('debounceMs', 0) : null;
 
   const settings: Settings = {
     enabled: resource('enabled', true),
@@ -394,11 +401,11 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     fim: {
       enabled: resource('completions.enabled', true),
       backendId,
-      debounceMs: typeof debounce === 'number' && Number.isFinite(debounce) ? debounce : null,
+      debounceMs,
       multiline: (MULTILINE as readonly string[]).includes(multiline) ? (multiline as Multiline) : 'auto',
-      maxTokens: num('completions.maxTokens', 128),
-      prefixLines: num('completions.prefixLines', 200),
-      suffixLines: num('completions.suffixLines', 60),
+      maxTokens: num('maxTokens', 128),
+      prefixLines: num('prefixLines', 200),
+      suffixLines: num('suffixLines', 60),
       extraContext: resource('completions.extraContext', true),
       disableInLanguages: strs('completions.disableInLanguages', ['plaintext']),
       disableInFiles: unionStrs('completions.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),

@@ -359,31 +359,37 @@
           },
           "aiAutocomplete.completions.debounceMs": {
             "type": [
-              "number",
+              "integer",
               "null"
             ],
             "default": null,
+            "minimum": 0,
+            "maximum": 2000,
             "scope": "resource",
             "markdownDescription": "Delay in milliseconds before requesting a completion after typing. `null` picks a default based on whether the backend is local.",
             "order": 8
           },
           "aiAutocomplete.completions.maxTokens": {
-            "type": "number",
+            "type": "integer",
             "default": 128,
+            "minimum": 1,
+            "maximum": 1024,
             "scope": "resource",
             "markdownDescription": "Maximum number of tokens to generate per completion. A `sampling.maxTokens` in `#aiAutocomplete.modelOverrides#` replaces it for matching models.",
             "order": 9
           },
           "aiAutocomplete.completions.prefixLines": {
-            "type": "number",
+            "type": "integer",
             "default": 200,
+            "minimum": 0,
             "scope": "resource",
             "markdownDescription": "Lines of code before the cursor. The window start moves in steps of a quarter of this, so up to about 1.25× this many lines are sent.",
             "order": 10
           },
           "aiAutocomplete.completions.suffixLines": {
-            "type": "number",
+            "type": "integer",
             "default": 60,
+            "minimum": 0,
             "scope": "resource",
             "markdownDescription": "Number of lines after the cursor sent as context.",
             "order": 11
@@ -443,27 +449,33 @@
           },
           "aiAutocomplete.fim.debounceMs": {
             "type": [
-              "number",
+              "integer",
               "null"
             ],
+            "minimum": 0,
+            "maximum": 2000,
             "scope": "resource",
             "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.debounceMs#`; moved automatically on start. The old name still works until 2.0.",
             "order": 108
           },
           "aiAutocomplete.fim.maxTokens": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024,
             "scope": "resource",
             "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.maxTokens#`; moved automatically on start. The old name still works until 2.0.",
             "order": 109
           },
           "aiAutocomplete.fim.prefixLines": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 0,
             "scope": "resource",
             "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.prefixLines#`; moved automatically on start. The old name still works until 2.0.",
             "order": 110
           },
           "aiAutocomplete.fim.suffixLines": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 0,
             "scope": "resource",
             "markdownDeprecationMessage": "Renamed to `#aiAutocomplete.completions.suffixLines#`; moved automatically on start. The old name still works until 2.0.",
             "order": 111

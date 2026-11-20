@@ -7,7 +7,9 @@ import { defineConfig } from '@vscode/test-cli';
 // user's ~/.vscode, so a user's own "enable-proposed-api" entry cannot leak into the `main` launch. The folder holds no
 // argv.json of its own. Portable mode also moves the user data to `<portable>/user-data`, so that is the folder named here
 // (and the one test/integration/local.test.ts reads the extension's global storage from).
-const portableDir = join(dirname(fileURLToPath(import.meta.url)), '.vscode-test', 'portable');
+// The portable folder name is short on purpose: VS Code puts a Unix socket (`<user data>/1.14-main.sock`) in the user
+// data folder, and Linux limits a socket path to 107 bytes; a longer path fails with `listen EINVAL` (CI: about 103).
+const portableDir = join(dirname(fileURLToPath(import.meta.url)), '.vscode-test', 'p');
 const userDataDir = join(portableDir, 'user-data');
 
 // Every run starts from these user settings; tests write their own settings and reset them in teardown.

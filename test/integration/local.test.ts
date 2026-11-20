@@ -21,7 +21,7 @@ type PageState = import('../../src/local/page/protocol').LocalPageState;
 const ROOT = join(__dirname, '..', '..', '..');
 const FIXTURE = join(ROOT, 'test', 'integration', 'fixtures', 'fake-llama-server.mjs');
 /** `.vscode-test.mjs` runs VS Code in portable mode, which pins the user data folder; the extension's global storage is in it. */
-const STORAGE = join(ROOT, '.vscode-test', 'portable', 'user-data', 'User', 'globalStorage', 'raboo.ai-autocomplete');
+const STORAGE = join(ROOT, '.vscode-test', 'p', 'user-data', 'User', 'globalStorage', 'raboo.ai-autocomplete');
 const MODELS = join(STORAGE, 'models');
 const PRESETS = join(STORAGE, 'presets.ini');
 const FILE_PATH = '/files/test-model.gguf';

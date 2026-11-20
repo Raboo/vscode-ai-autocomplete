@@ -536,9 +536,14 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   /** Model id from settings, else detected once per backend instance; a detection that found nothing is not repeated for 30 s. */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     if (backend.config.fimModel) return backend.config.fimModel;
+    return this.detect(backend, signal);
+  }
+
+  /** Detected model for the backend (also used by Next Edit): none while the backend's backoff is active or after a recent miss. */
+  async detect(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     const known = this.models.get(backend);
     if (known !== undefined) return known;
-    if (!this.models.shouldDetect(backend)) return undefined;
+    if (!this.models.shouldDetect(backend, this.d.backoff(backend.config.id))) return undefined;
     const detected = await backend.detectModel(signal);
     if (signal.aborted) return detected;
     if (detected !== undefined) {

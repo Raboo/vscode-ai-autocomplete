@@ -127,7 +127,7 @@ export function activate(context: vscode.ExtensionContext): {
     snippets,
     isExcluded: offLimits,
     // FIM's detected model first, so the same server is not asked twice.
-    detectedModel: (b, signal) => Promise.resolve(provider.detectedModel(b.config.id) ?? b.detectModel(signal)),
+    detectedModel: (b, signal) => provider.detect(b, signal),
   });
   sub(nextEdit);
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { ErrorBackoff } from '../../src/backends/backoff';
 import { DetectedModels, MISSED_DETECTION_MS } from '../../src/completion/detectedModels';
 
 describe('DetectedModels', () => {
@@ -43,5 +44,21 @@ describe('DetectedModels', () => {
     m.set(backend, 'qwen');
     m.delete(backend);
     expect(m.shouldDetect(backend)).toBe(true);
+  });
+
+  test('no detection while the backend is in backoff, one try after it', () => {
+    let now = 1000;
+    const backend = {};
+    const backoff = new ErrorBackoff(() => now);
+    const m = new DetectedModels<object>(() => now);
+    expect(m.shouldDetect(backend, backoff)).toBe(true);
+    backoff.recordFailure({ kind: 'network' });
+    expect(m.shouldDetect(backend, backoff)).toBe(false);
+    now += 1999;
+    expect(m.shouldDetect(backend, backoff)).toBe(false);
+    now += 1;
+    expect(m.shouldDetect(backend, backoff)).toBe(true);
+    m.missed(backend);
+    expect(m.shouldDetect(backend, backoff)).toBe(false);
   });
 });

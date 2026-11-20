@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.3.0...v1.4.0) (2026-11-20)
+
+
+### Features
+
+* hardening before publishing ([6116fff](https://github.com/Raboo/vscode-ai-autocomplete/commit/6116fff83adf1de35d8a5d31414152f5d6d2702c))
+
 ## [1.3.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.2.0...v1.3.0) (2026-11-20)
 
 

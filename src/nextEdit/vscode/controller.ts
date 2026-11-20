@@ -53,7 +53,7 @@ type Timer = ReturnType<typeof setTimeout>;
 const RECENT_EDIT_HUNKS = 3;
 
 /** A result with the document text it applies to, so it can be rebased while the user types it. */
-type Held = NextEditResult & { text: string };
+export type Held = NextEditResult & { text: string };
 
 /** Where the cursor is after a content change that typed `text` over `range` (before VS Code reports the selection). */
 function cursorAfter(change: vscode.TextDocumentContentChangeEvent): Pos {
@@ -126,7 +126,7 @@ export class NextEditController implements vscode.Disposable {
   }
 
   /** The result to show at `pos`: a ghost text only at the cursor it was computed for, an inline edit only with the native UI; nothing while snoozed. */
-  itemFor(doc: vscode.TextDocument, pos: vscode.Position): NextEditResult | undefined {
+  itemFor(doc: vscode.TextDocument, pos: vscode.Position): Held | undefined {
     const r = this.result;
     if (!r || r.uri !== doc.uri.toString() || r.version !== doc.version || this.d.snoozedUntil() > Date.now()) return undefined;
     if (r.show.kind === 'ghost') return samePos(pos, r.cursor) ? r : undefined;
@@ -171,7 +171,8 @@ export class NextEditController implements vscode.Disposable {
     );
   }
 
-  rejected(held: Held | undefined = this.pending ?? this.lastItem ?? this.result): void {
+  /** The user rejected `held` (Esc on decorations, or VS Code's rejection of the item it was shown as). */
+  rejected(held: Held | undefined): void {
     if (held) this.rejectedEdits.remember(held.uri, held.edit, held.text.split(/\r?\n/));
     this.policy.rejected(Date.now());
     this.result = undefined;
@@ -352,7 +353,7 @@ export class NextEditController implements vscode.Disposable {
     const uri = doc.uri.toString();
     // Definitions quoting this file are looked up again.
     this.definitions.forget(this.path(doc));
-    this.rejectedEdits.prune(uri, doc.getText().split(/\r?\n/));
+    if (this.rejectedEdits.has(uri)) this.rejectedEdits.prune(uri, doc.getText().split(/\r?\n/));
     const active = this.tracking() && this.eligible(doc);
     // The user typing a pending edit or a held result keeps the rest of it; any other change to its document, an undo
     // included, leaves it pointing at shifted lines.

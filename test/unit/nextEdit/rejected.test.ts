@@ -28,7 +28,7 @@ test('after the text near the range changes it can show, and prune forgets it', 
   expect(r.isRejected('u', edit, doc)).toBe(false);
 });
 
-test('a change far from the range keeps it; a cursor move (no call) keeps it', () => {
+test('a change far from the range keeps it', () => {
   const r = new RejectedEdits();
   r.remember('u', edit, doc);
   const far = [...doc, 'h'];
@@ -42,4 +42,21 @@ test('keeps at most 5 entries per document', () => {
   for (let i = 0; i < 7; i++) r.remember('u', { startLine: 3, endLine: 4, newLines: [`n${i}`] }, doc);
   expect(r.isRejected('u', { startLine: 3, endLine: 4, newLines: ['n0'] }, doc)).toBe(false);
   expect(r.isRejected('u', { startLine: 3, endLine: 4, newLines: ['n6'] }, doc)).toBe(true);
+});
+
+test('a line inserted above the range: the identical, shifted edit is still rejected and prune keeps it', () => {
+  const r = new RejectedEdits();
+  r.remember('u', edit, doc);
+  const shifted = ['new', ...doc];
+  const shiftedEdit = { startLine: 4, endLine: 5, newLines: ['D'] };
+  r.prune('u', shifted);
+  expect(r.isRejected('u', shiftedEdit, shifted)).toBe(true);
+});
+
+test('a line inside the context changed: the edit can show', () => {
+  const r = new RejectedEdits();
+  r.remember('u', edit, doc);
+  const changed = [...doc];
+  changed[4] = 'E!';
+  expect(r.isRejected('u', edit, changed)).toBe(false);
 });

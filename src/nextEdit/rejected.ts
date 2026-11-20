@@ -2,52 +2,71 @@
 // Pure: no `vscode` import.
 import type { LineEdit } from './diff';
 
-/** Lines of old text kept above and below the edit's range. */
+/** Lines of old text kept above and below the edit's range (fewer near the file's start or end). */
 const CONTEXT_LINES = 2;
 /** Entries kept per document. */
 const MAX_PER_DOCUMENT = 5;
 
 interface Entry {
-  edit: LineEdit;
-  /** The document's lines from `from` on: the edit's old lines and CONTEXT_LINES around them. */
-  from: number;
+  /** Up to CONTEXT_LINES lines above the range, the range's old lines, up to CONTEXT_LINES below, and the new lines. */
+  before: string[];
   old: string[];
+  after: string[];
+  newLines: string[];
 }
 
+const same = (a: string[], b: string[]): boolean => a.length === b.length && a.every((l, i) => l === b[i]);
+
+/** The content an edit is matched by: not its line numbers, so lines inserted above it do not matter. */
 function snapshot(edit: LineEdit, docLines: string[]): Entry {
-  const from = Math.max(0, edit.startLine - CONTEXT_LINES);
-  return { edit, from, old: docLines.slice(from, edit.endLine + CONTEXT_LINES) };
+  return {
+    before: docLines.slice(Math.max(0, edit.startLine - CONTEXT_LINES), edit.startLine),
+    old: docLines.slice(edit.startLine, edit.endLine),
+    after: docLines.slice(edit.endLine, edit.endLine + CONTEXT_LINES),
+    newLines: edit.newLines,
+  };
 }
 
-function unchanged(e: Entry, docLines: string[]): boolean {
-  const now = docLines.slice(e.from, e.from + e.old.length);
-  return now.length === e.old.length && now.every((l, i) => l === e.old[i]);
+function sameContent(a: Entry, b: Entry): boolean {
+  return same(a.newLines, b.newLines) && same(a.old, b.old) && same(a.before, b.before) && same(a.after, b.after);
 }
 
-function sameEdit(a: LineEdit, b: LineEdit): boolean {
-  return a.startLine === b.startLine && a.endLine === b.endLine && a.newLines.length === b.newLines.length && a.newLines.every((l, i) => l === b.newLines[i]);
+/** Whether the entry's context (before, old, after) appears anywhere in the document. */
+function appears(e: Entry, docLines: string[]): boolean {
+  const block = [...e.before, ...e.old, ...e.after];
+  if (block.length === 0) return true;
+  for (let i = 0; i + block.length <= docLines.length; i++) {
+    if (block.every((l, k) => docLines[i + k] === l)) return true;
+  }
+  return false;
 }
 
 export class RejectedEdits {
   private readonly byUri = new Map<string, Entry[]>();
 
+  has(uri: string): boolean {
+    return this.byUri.has(uri);
+  }
+
   /** `docLines` are the document's lines the edit was computed on. */
   remember(uri: string, edit: LineEdit, docLines: string[]): void {
-    const entries = (this.byUri.get(uri) ?? []).filter((e) => !sameEdit(e.edit, edit));
-    entries.push(snapshot(edit, docLines));
+    const e = snapshot(edit, docLines);
+    const entries = (this.byUri.get(uri) ?? []).filter((x) => !sameContent(x, e));
+    entries.push(e);
     this.byUri.set(uri, entries.slice(-MAX_PER_DOCUMENT));
   }
 
-  /** True when this identical edit was rejected and the text around its range is unchanged. */
+  /** True when this identical edit (same old context, same new text, wherever it now sits) was rejected. */
   isRejected(uri: string, edit: LineEdit, docLines: string[]): boolean {
-    return (this.byUri.get(uri) ?? []).some((e) => sameEdit(e.edit, edit) && unchanged(e, docLines));
+    const e = snapshot(edit, docLines);
+    return (this.byUri.get(uri) ?? []).some((x) => sameContent(x, e));
   }
 
-  /** Forgets the entries whose surrounding text changed. A cursor move does not call this. */
+  /** Forgets the entries whose context no longer appears in the document. A cursor move does not call this. */
   prune(uri: string, docLines: string[]): void {
     const entries = this.byUri.get(uri);
     if (!entries) return;
-    const kept = entries.filter((e) => unchanged(e, docLines));
+    const kept = entries.filter((e) => appears(e, docLines));
     if (kept.length === 0) this.byUri.delete(uri);
     else this.byUri.set(uri, kept);
   }

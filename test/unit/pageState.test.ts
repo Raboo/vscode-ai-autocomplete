@@ -143,6 +143,15 @@ describe('page state', () => {
     expect(t.edit!.errors).toEqual([{ field: 'id', message: 'another backend already uses this name' }]);
   });
 
+  test('warns when an Authorization header hides the stored key', () => {
+    const text = 'API key not sent: an Authorization header is set';
+    const f = form({ originalId: 'lm', changed: { headers: 'authorization: Bearer x' } });
+    expect(buildPageState(inputs({ keysStored: new Set(['lm']), edit: { cardId: 'lm', form: f, testing: false } })).edit!.warnings).toContain(text);
+    expect(buildPageState(inputs({ edit: { cardId: 'lm', form: f, testing: false } })).edit!.warnings).not.toContain(text);
+    const card = buildPageState(inputs({ keysStored: new Set(['lm']), rawBackends: [{ ...lm, headers: { Authorization: 'x' } }, cpp] })).cards.find((c) => c.id === 'lm')!;
+    expect(card.warning).toContain(text);
+  });
+
   test('page state never carries an API key', () => {
     const leaky = { ...form({ originalId: 'lm' }), apiKey: 'sk-secret' } as BackendForm;
     const json = JSON.stringify(buildPageState(inputs({ keysStored: new Set(['lm']), edit: { cardId: 'lm', form: leaky, testing: false } })));

@@ -27,8 +27,9 @@ export class DetectedModels<B extends object> {
     this.misses.set(backend, this.now());
   }
 
-  /** Whether to ask the server: not within MISSED_DETECTION_MS of a detection that found nothing. */
-  shouldDetect(backend: B): boolean {
+  /** Whether to ask the server: not while its backoff is active, and not within MISSED_DETECTION_MS of a detection that found nothing. */
+  shouldDetect(backend: B, backoff?: { canRequest(): boolean }): boolean {
+    if (backoff !== undefined && !backoff.canRequest()) return false;
     const at = this.misses.get(backend);
     return at === undefined || this.now() - at >= MISSED_DETECTION_MS;
   }

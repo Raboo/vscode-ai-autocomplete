@@ -9,8 +9,8 @@ import type { Settings } from '../config/settings';
 import type { Log } from '../log';
 import { THINKING_LABELS } from '../models/thinking';
 import { isRouteMissing, usableRoutes, type Capabilities } from '../models/capabilities';
-import { toItemText, type NextEditShow } from '../nextEdit/diff';
-import type { NextEditController } from '../nextEdit/vscode/controller';
+import { toItemText } from '../nextEdit/diff';
+import type { Held, NextEditController } from '../nextEdit/vscode/controller';
 import type { SuggestionCache } from './cache';
 import { buildExtraContext, buildFimWindowIn, cursorQuery, type ExtraContextRing, type LineSource } from './context';
 import { docPath } from './contextTracker';
@@ -108,7 +108,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   private readonly failing = new Map<string, string>();
   private readonly requests: RequestStatus;
   /** The Next Edit items returned, so only their rejection reaches Next Edit. */
-  private readonly nextEditItems = new WeakSet<vscode.InlineCompletionItem>();
+  private readonly nextEditItems = new WeakMap<vscode.InlineCompletionItem, Held>();
   private readonly warmed = new WarmLimiter();
   /** A warm-up or prefetch is running (at most one at a time). */
   private speculating = false;
@@ -174,7 +174,10 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
    * Kind 1 is InlineCompletionEndOfLifeReasonKind.Rejected, compared as a number because the enum is proposed too.
    */
   handleEndOfLifetime(item: vscode.InlineCompletionItem, reason: vscode.InlineCompletionEndOfLifeReason): void {
-    if ((reason.kind as number) === 1 && this.nextEditItems.has(item)) this.d.nextEdit?.rejected();
+    if ((reason.kind as number) === 1) {
+      const held = this.nextEditItems.get(item);
+      if (held) this.d.nextEdit?.rejected(held);
+    }
   }
 
   /**
@@ -236,7 +239,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
     const next = show ? this.d.nextEdit?.itemFor(doc, pos) : undefined;
     if (next) {
       call.reported = true;
-      return [this.nextEditItem(next.show, doc, pos)];
+      return [this.nextEditItem(next, doc, pos)];
     }
     const s = this.d.getSettings();
     const line = doc.lineAt(pos.line).text;
@@ -536,9 +539,14 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   /** Model id from settings, else detected once per backend instance; a detection that found nothing is not repeated for 30 s. */
   private async model(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     if (backend.config.fimModel) return backend.config.fimModel;
+    return this.detect(backend, signal);
+  }
+
+  /** Detected model for the backend (also used by Next Edit): none while the backend's backoff is active or after a recent miss. */
+  async detect(backend: FimBackend, signal: AbortSignal): Promise<string | undefined> {
     const known = this.models.get(backend);
     if (known !== undefined) return known;
-    if (!this.models.shouldDetect(backend)) return undefined;
+    if (!this.models.shouldDetect(backend, this.d.backoff(backend.config.id))) return undefined;
     const detected = await backend.detectModel(signal);
     if (signal.aborted) return detected;
     if (detected !== undefined) {
@@ -582,7 +590,8 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
   }
 
   /** Ghost text at the cursor, or an inline edit of the range (shown only by VS Code's inline-edit UI). */
-  private nextEditItem(show: NextEditShow, doc: vscode.TextDocument, pos: vscode.Position): vscode.InlineCompletionItem {
+  private nextEditItem(held: Held, doc: vscode.TextDocument, pos: vscode.Position): vscode.InlineCompletionItem {
+    const show = held.show;
     const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
     const command: vscode.Command = { command: 'aiAutocomplete.nextEditAccepted', title: '' };
     let item: vscode.InlineCompletionItem;
@@ -593,7 +602,7 @@ export class FimProvider implements vscode.InlineCompletionItemProvider {
       item = new vscode.InlineCompletionItem(toItemText(show.text, eol), range, command);
       item.isInlineEdit = true;
     }
-    this.nextEditItems.add(item);
+    this.nextEditItems.set(item, held);
     return item;
   }
 

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { writeFileAtomic } from '../nextEdit/atomicWrite';
 import { homedir } from 'node:os';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
@@ -255,7 +256,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
           void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI is already enabled. If Next Edit still shows only ghost text, quit and reopen VS Code.');
           return;
         }
-        await writeFile(path, next, 'utf8');
+        await writeFileAtomic(path, next);
         void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI enabled. Quit and reopen VS Code to finish.');
       } catch (err) {
         d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);

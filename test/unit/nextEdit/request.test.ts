@@ -166,6 +166,29 @@ describe('runNextEdit', () => {
     await expect(run([content('<think>\n\n</think>\n\nNO_CHANGE')]).result).resolves.toBeUndefined();
   });
 
+  test('leaked reasoning before a bare closer and the fence fails with ThinkingError', async () => {
+    const snap = snapshot();
+    const leaked = 'The user renamed r, so\n</think>\n' + regionOf(snap, renamed);
+    const r = run([content(leaked), { type: 'finish', reason: 'stop' }], { snap });
+    await expect(r.result).rejects.toBeInstanceOf(ThinkingError);
+    await expect(run([content('hm, nothing to do\n</think>\nNO_CHANGE')]).result).rejects.toBeInstanceOf(ThinkingError);
+  });
+
+  test('a normal fenced answer still parses', async () => {
+    const snap = snapshot();
+    const r = run([content(regionOf(snap, renamed)), { type: 'finish', reason: 'stop' }], { snap });
+    expect((await r.result)?.edit).toMatchObject({ startLine: 7, endLine: 9 });
+  });
+
+  test('a closing think tag inside the answer is answer text', async () => {
+    const snap = snapshot();
+    const answer = renamed.map((l, i) => (i === 8 ? "    return '</think>'" : l));
+    const r = run([content(regionOf(snap, answer)), { type: 'finish', reason: 'stop' }], { snap });
+    const got = await r.result;
+    expect(got?.edit).toMatchObject({ startLine: 7 });
+    expect(JSON.stringify(got)).toContain('</think>');
+  });
+
   test('a stream that ends inside the fence is dropped (truncated)', async () => {
     await expect(run([content('```\nimport math\nx')]).result).resolves.toBeUndefined();
   });

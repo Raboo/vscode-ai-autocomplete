@@ -98,6 +98,14 @@ export const FIM_LIMITS: Record<'temperature' | 'topP' | 'topK' | 'maxTokens' | 
   timeoutMs: { min: 500, max: 60000, integer: true },
 };
 
+/** Allowed range of the global completion number settings (`aiAutocomplete.completions.*`); package.json uses the same values. */
+export const COMPLETION_LIMITS = {
+  maxTokens: { min: 1, max: 1024 },
+  prefixLines: { min: 0, max: Infinity },
+  suffixLines: { min: 0, max: Infinity },
+  debounceMs: { min: 0, max: 2000 },
+} as const;
+
 /** Allowed range and default of the numeric Next Edit settings; package.json uses the same values. */
 export const NEXT_EDIT_LIMITS = {
   regionLinesAbove: { min: 0, max: 20, integer: true, default: 5 },
@@ -249,8 +257,10 @@ function parseOverride(pattern: string, body: Record<string, unknown>, problems:
   return out;
 }
 
-export function parseSettings(given: RawSettingsSource): { settings: Settings; problems: string[] } {
+export function parseSettings(given: RawSettingsSource): { settings: Settings; problems: string[]; notes: string[] } {
   const problems: string[] = [];
+  /** Log-only messages (clamped values). */
+  const notes: string[] = [];
   // completions.* falls back to the old fim.* name at each level, with a note per old key read.
   const renamedKeys = new Map<string, CompletionsKey>(COMPLETIONS_KEYS.map((k) => [`completions.${k}`, k]));
   const noted = new Set<CompletionsKey>();
@@ -378,15 +388,21 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
   };
 
   const multiline = resource<string>('completions.multiline', 'auto');
-  const num = (key: string, d: number): number => {
-    const v = resource<unknown>(key, d);
-    return typeof v === 'number' && Number.isFinite(v) ? v : d;
+  /** Rounds and clamps a number setting to its limits; a value clamped to a bound adds a note (rounding alone is silent). Not a number: the default. */
+  const num = (key: keyof typeof COMPLETION_LIMITS, d: number): number => {
+    const v = resource<unknown>(`completions.${key}`, d);
+    if (typeof v !== 'number' || !Number.isFinite(v)) return d;
+    const { min, max } = COMPLETION_LIMITS[key];
+    const out = Math.min(max, Math.max(min, Math.round(v)));
+    if (out !== Math.round(v)) notes.push(`${noted.has(key as CompletionsKey) ? 'fim' : 'completions'}.${key} ${v} is out of range, using ${out}`);
+    return out;
   };
   const strs = (key: string, d: string[]): string[] => {
     const v = resource<unknown>(key, d);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : d;
   };
   const debounce = resource<unknown>('completions.debounceMs', null);
+  const debounceMs = typeof debounce === 'number' && Number.isFinite(debounce) ? num('debounceMs', 0) : null;
 
   const settings: Settings = {
     enabled: resource('enabled', true),
@@ -394,11 +410,11 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
     fim: {
       enabled: resource('completions.enabled', true),
       backendId,
-      debounceMs: typeof debounce === 'number' && Number.isFinite(debounce) ? debounce : null,
+      debounceMs,
       multiline: (MULTILINE as readonly string[]).includes(multiline) ? (multiline as Multiline) : 'auto',
-      maxTokens: num('completions.maxTokens', 128),
-      prefixLines: num('completions.prefixLines', 200),
-      suffixLines: num('completions.suffixLines', 60),
+      maxTokens: num('maxTokens', 128),
+      prefixLines: num('prefixLines', 200),
+      suffixLines: num('suffixLines', 60),
       extraContext: resource('completions.extraContext', true),
       disableInLanguages: strs('completions.disableInLanguages', ['plaintext']),
       disableInFiles: unionStrs('completions.disableInFiles', [...DEFAULT_DISABLE_IN_FILES]),
@@ -426,5 +442,5 @@ export function parseSettings(given: RawSettingsSource): { settings: Settings; p
       models: localModels.entries,
     },
   };
-  return { settings, problems };
+  return { settings, problems, notes };
 }

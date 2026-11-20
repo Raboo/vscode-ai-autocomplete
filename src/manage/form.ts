@@ -1,4 +1,5 @@
 import { createBackend } from '../backends';
+import { hasAuthorizationHeader } from '../backends/http';
 import { inferHostFlavor, isHostedFlavor } from '../backends/hostFlavor';
 import { resolveFim, templateMismatch, type ValueSource } from '../completion/effective';
 import { chatStops, planRoute } from '../completion/route';
@@ -326,6 +327,13 @@ export function formWarnings(f: BackendForm, model: string | undefined, s: Setti
   }
   if (route === 'chat' && model !== undefined && values.thinking === 'cannotDisable') out.push(`${model} cannot turn thinking off; completions are disabled`);
   return out;
+}
+
+export const KEY_NOT_SENT_WARNING = 'API key not sent: an Authorization header is set';
+
+/** The warning for a backend whose own Authorization header hides its stored key; undefined otherwise. */
+export function keyNotSentWarning(headers: Record<string, string> | undefined, keyStored: boolean): string | undefined {
+  return keyStored && hasAuthorizationHeader(headers) ? KEY_NOT_SENT_WARNING : undefined;
 }
 
 const idOf = (v: unknown): unknown => (isObj(v) ? v.id : undefined);

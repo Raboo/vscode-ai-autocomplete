@@ -311,6 +311,12 @@ suite('Next Edit', () => {
       assert.equal(nextEdits(m).length, asked, `mock saw ${seen(m)}`);
       // The rest of the cooldown, which would keep the next tests' requests from being sent.
       await sleep(Math.max(0, dismissedAt + REJECTION_COOLDOWN_WAIT_MS - Date.now()));
+      // After the cooldown the same answer comes again (a cursor move asks) and is dropped: the edit was rejected.
+      // Two lines down: a move back to the line already asked about, in the same version, would not ask.
+      await vscode.commands.executeCommand('cursorMove', { to: 'down', by: 'line', value: 2 });
+      assert.ok(await waitFor(() => nextEdits(m).length > asked, REQUEST_WAIT_MS), `mock saw ${seen(m)}`);
+      await sleep(NO_REQUEST_WAIT_MS);
+      assert.equal(api.nextEditPending(), undefined, 'the rejected edit came back');
     });
   });
 

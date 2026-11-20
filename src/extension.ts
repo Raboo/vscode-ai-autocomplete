@@ -25,6 +25,7 @@ import { LEGACY_MANAGED_KEY, MIGRATED_KEY } from './local/migrate';
 import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
 import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
+import { watchConflicts } from './ui/conflicts';
 import { StatusBar } from './ui/statusBar';
 import { activity, menuInputs } from './ui/statusModel';
 
@@ -84,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): {
     }
   };
 
+  const loggedNotes = new Set<string>();
   const rebuild = (): string[] => {
     const r = readSettings();
     settings = r.settings;
@@ -92,6 +94,7 @@ export function activate(context: vscode.ExtensionContext): {
     debouncers.clear();
     isLocal.clear();
     capabilities.clear();
+    for (const n of r.notes) if (!loggedNotes.has(n)) { loggedNotes.add(n); log.warn(`settings: ${n}`); }
     return r.problems;
   };
 
@@ -127,7 +130,7 @@ export function activate(context: vscode.ExtensionContext): {
     snippets,
     isExcluded: offLimits,
     // FIM's detected model first, so the same server is not asked twice.
-    detectedModel: (b, signal) => Promise.resolve(provider.detectedModel(b.config.id) ?? b.detectModel(signal)),
+    detectedModel: (b, signal) => provider.detect(b, signal),
   });
   sub(nextEdit);
 
@@ -324,6 +327,8 @@ export function activate(context: vscode.ExtensionContext): {
   // Not awaited: old local backends move to `local`, then the router starts (a model can take a minute to load).
   void servers.activate();
   warmSoon(vscode.window.activeTextEditor);
+  watchConflicts(context);
+
   return {
     status,
     secrets,

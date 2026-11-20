@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { HOST_FLAVORS, THINKING_STRATEGIES } from '../../src/config/settings';
-import { ReasoningFilter, stripLeadingReasoning, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
+import { leakedReasoning, ReasoningFilter, stripLeadingReasoning, stripThinking, thinkingFields, type ThinkingFields } from '../../src/models/thinking';
 import fixture from './fixtures/thinking-fields.json';
 
 const golden = fixture as Record<string, Record<string, ThinkingFields>>;
@@ -28,9 +28,23 @@ describe('stripThinking', () => {
     expect(stripThinking('<think>\n\n</think>\n\na + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('<|channel>thought\n<channel|>a + b;')).toEqual({ text: 'a + b;', thinking: false });
   });
-  test('a bare closing tag drops everything before it', () => {
-    expect(stripThinking('I should add them.</think>a + b;')).toEqual({ text: 'a + b;', thinking: true });
-    expect(stripThinking('x</think>y</think>z').text).toBe('z');
+  test('a bare closing tag drops everything before it when the model may think', () => {
+    expect(stripThinking('I should add them.</think>a + b;', undefined, { mayThink: true })).toEqual({ text: 'a + b;', thinking: true });
+    expect(stripThinking('x</think>y</think>z', undefined, { mayThink: true }).text).toBe('z');
+  });
+  test('a bare closing tag is answer text when the model may not think', () => {
+    expect(stripThinking('a</think>b')).toEqual({ text: 'a</think>b', thinking: false });
+    expect(stripThinking('a</think>b', undefined, { mayThink: false })).toEqual({ text: 'a</think>b', thinking: false });
+    expect(stripThinking('a[/THINK]b<channel|>c')).toEqual({ text: 'a[/THINK]b<channel|>c', thinking: false });
+  });
+  test.each([false, true])('an opener and closer pair is reasoning either way (mayThink %s)', (mayThink) => {
+    expect(stripThinking('<think>hm</think>a + b;', undefined, { mayThink })).toEqual({ text: 'a + b;', thinking: true });
+    const f = new ReasoningFilter({ mayThink });
+    f.push('<think>hm</th');
+    expect(f.visible).toBe('');
+    f.push('ink>a</think>b');
+    f.end();
+    expect(f.visible).toBe(mayThink ? 'b' : 'a</think>b');
   });
   test('unclosed reasoning at length is discarded', () => {
     expect(stripThinking('a<think>more', 'length').text).toBe('');
@@ -55,6 +69,20 @@ describe('stripThinking', () => {
   test('plain text passes through', () => {
     expect(stripThinking('a + b;')).toEqual({ text: 'a + b;', thinking: false });
     expect(stripThinking('if (a < b) {}')).toEqual({ text: 'if (a < b) {}', thinking: false });
+  });
+});
+
+describe('leakedReasoning', () => {
+  test('text before a bare closer that ends its line is leaked reasoning', () => {
+    expect(leakedReasoning('The user wants the sum.</think>\n\na + b;')).toBe(true);
+    expect(leakedReasoning('hm [/THINK]  \r\nx')).toBe(true);
+    expect(leakedReasoning('hm</think>')).toBe(true);
+  });
+  test('a closer inside a line, after an opener or with nothing before it is not', () => {
+    expect(leakedReasoning("const CLOSE = '</think>';")).toBe(false);
+    expect(leakedReasoning('<think>hm</think>\na')).toBe(false);
+    expect(leakedReasoning('  \n</think>\na')).toBe(false);
+    expect(leakedReasoning('a + b;<|end|>')).toBe(false);
   });
 });
 
@@ -91,8 +119,8 @@ describe('ReasoningFilter', () => {
     f.end();
     expect(f.visible).toBe('a <');
   });
-  test('visible shrinks on a bare closing tag', () => {
-    const f = new ReasoningFilter();
+  test('visible shrinks on a bare closing tag when the model may think', () => {
+    const f = new ReasoningFilter({ mayThink: true });
     f.push('I think');
     expect(f.visible).toBe('I think');
     f.push('</think>a');

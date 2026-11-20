@@ -421,3 +421,44 @@ describe('old names (fim.*, fimModel, fimMode, fim) until 2.0', () => {
     expect(isOldNameProblem(problems[0])).toBe(false);
   });
 });
+
+describe('completion number limits', () => {
+  const read = (key: string, v: unknown) => parseSettings(src({ [key]: { globalValue: v } }));
+  test('prefixLines -50 becomes 0 with one note, no problem', () => {
+    const r = read('completions.prefixLines', -50);
+    expect(r.settings.fim.prefixLines).toBe(0);
+    expect(r.notes).toEqual(['completions.prefixLines -50 is out of range, using 0']);
+    expect(r.problems).toEqual([]);
+  });
+  test('maxTokens is clamped to 1..1024', () => {
+    expect(read('completions.maxTokens', 0).settings.fim.maxTokens).toBe(1);
+    const r = read('completions.maxTokens', 2000);
+    expect(r.settings.fim.maxTokens).toBe(1024);
+    expect(r.notes).toEqual(['completions.maxTokens 2000 is out of range, using 1024']);
+  });
+  test('fractions are rounded silently', () => {
+    const r = read('completions.debounceMs', 10.4);
+    expect(r.settings.fim.debounceMs).toBe(10);
+    expect(r.notes).toEqual([]);
+    expect(read('completions.suffixLines', 12.6).settings.fim.suffixLines).toBe(13);
+    expect(read('completions.debounceMs', 5000).settings.fim.debounceMs).toBe(2000);
+    expect(read('completions.maxTokens', 128).notes).toEqual([]);
+  });
+  test('null debounce stays automatic, defaults are untouched', () => {
+    const r = read('completions.debounceMs', null);
+    expect(r.settings.fim.debounceMs).toBeNull();
+    expect(r.notes).toEqual([]);
+    expect(parseSettings(src({})).settings.fim).toMatchObject({ maxTokens: 128, prefixLines: 200, suffixLines: 60, debounceMs: null });
+  });
+  test('the old fim.* names get the same limits and are named in the note', () => {
+    const a = read('fim.maxTokens', 99999);
+    expect(a.settings.fim.maxTokens).toBe(1024);
+    expect(a.notes).toEqual(['fim.maxTokens 99999 is out of range, using 1024']);
+    const b = read('fim.prefixLines', -5);
+    expect(b.settings.fim.prefixLines).toBe(0);
+    expect(b.notes).toEqual(['fim.prefixLines -5 is out of range, using 0']);
+    const c = read('fim.debounceMs', 9000);
+    expect(c.settings.fim.debounceMs).toBe(2000);
+    expect(c.notes).toEqual(['fim.debounceMs 9000 is out of range, using 2000']);
+  });
+});

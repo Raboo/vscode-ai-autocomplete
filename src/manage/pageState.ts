@@ -4,7 +4,7 @@ import { noRouteFix, noRouteText, planRoute, whyNoRoute, type FimRoute, type NoR
 import { parseBackendEntry, type Settings } from '../config/settings';
 import { nextEditFormatLabel, nextEditOnlyNote } from '../nextEdit/formats';
 import type { BackendConfig } from '../types';
-import { fieldViews, formWarnings, knownChanged, useFromUnknown, validateForm } from './form';
+import { fieldViews, formToConfig, formWarnings, keyNotSentWarning, knownChanged, useFromUnknown, validateForm } from './form';
 import type { BackendForm, CardView, Dot, EditView, PageState, TestStep } from './protocol';
 import { SERVER_TYPES, serverTypeOf } from './serverTypes';
 
@@ -97,6 +97,7 @@ export function buildPageState(i: PageInputs): PageState {
     const model = cfg.use.completions ? cfg.fimModel ?? detected : undefined;
     const nextEditModel = cfg.use.nextEdit ? effectiveNextEditModel(cfg, detected) : undefined;
     const warning = locked ? 'not used here (local only)' : cfg.use.completions ? routeWarning(cfg, model, settings) : undefined;
+    const keyWarn = keyNotSentWarning(cfg.headers, i.keysStored.has(cfg.id));
     const test = i.tests.get(cfg.id);
     return {
       id: cfg.id, typeLabel: typeLabel(serverTypeOf(cfg)), baseUrl: cfg.baseUrl,
@@ -104,7 +105,7 @@ export function buildPageState(i: PageInputs): PageState {
       ...(nextEditModel !== undefined ? { nextEditModel } : {}), uses: { ...cfg.use },
       // A feature turned off keeps its backend in the settings, but nothing is in use, so the card offers its Use for button again.
       inUse: i.settings.fim.enabled && cfg.id === i.inUseId, nextEditInUse: i.settings.nextEdit.enabled && cfg.id === i.nextEditInUseId, keyStored: i.keysStored.has(cfg.id),
-      ...(warning ? { warning } : {}), dot: dotFor(test, warning !== undefined, locked), ...(test ? { test } : {}),
+      ...(warning || keyWarn ? { warning: [warning, keyWarn].filter(Boolean).join('; ') } : {}), dot: dotFor(test, warning !== undefined, locked), ...(test ? { test } : {}),
     };
   });
 
@@ -124,8 +125,10 @@ export function buildPageState(i: PageInputs): PageState {
     const neModel = form.nextEditModel !== '' ? form.nextEditModel : form.use.completions ? model : found;
     const errors = validateForm(form, ids.filter((id) => id !== own));
     const warnings = formWarnings(form, model, settings);
-    if (form.use.completions && model === undefined) warnings.push('model not detected yet: Test or reload the list to detect it');
     const keyId = own ?? d.cardId ?? undefined;
+    const keyWarn = keyNotSentWarning(formToConfig({ ...d.form, ...form })?.headers, keyId !== undefined && i.keysStored.has(keyId));
+    if (keyWarn) warnings.push(keyWarn);
+    if (form.use.completions && model === undefined) warnings.push('model not detected yet: Test or reload the list to detect it');
     edit = {
       cardId: d.cardId, form, keyMode: SERVER_TYPES.find((t) => t.id === form.type)?.key ?? 'optional',
       keyStored: keyId !== undefined && i.keysStored.has(keyId), fields: fieldViews(form, model, settings, errors),

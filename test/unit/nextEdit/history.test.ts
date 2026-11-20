@@ -209,8 +209,9 @@ test('a merge keeps the count, and the next new entry drops the oldest', () => {
   expect(e[4].text).toContain('-l6\n+L6');
 });
 
+// The time limit is raised so only the edit-length bound decides, whatever the machine's speed.
 test('when the merged diff is too large, the edit becomes its own entry', () => {
-  const h = new EditHistory();
+  const h = new EditHistory({ diffTimeoutMs: 600_000 });
   const lines = Array.from({ length: 1000 }, (_, i) => `x${i}`);
   const text = () => lines.join('\n') + '\n';
   h.open('f', text());

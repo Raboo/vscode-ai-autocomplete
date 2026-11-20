@@ -17,6 +17,7 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 4d. Next Edit without completions | Shorter Next Edit pause and llama.cpp warm-up with completions off, Next Edit in Why No Suggestion and the stats, Zeta 2.1 recipe, latency benchmark | [plan](superpowers/plans/2026-11-19-next-edit-only.md), [design](superpowers/specs/2026-11-19-next-edit-only-design.md) | released in [v1.1.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.1.0) |
 | 4e. Full Zeta 2.1 coverage | Zeta region by length (1225 chars, up to 40 lines), 16-line marker blocks, Zeta budgets, three-line history context, definitions of nearby symbols as Next Edit context (`nextEdit.definitions`), cursor moves where Zeta predicted after Tab | [design](superpowers/specs/2026-11-19-zeta-full-design.md) | released in [v1.2.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.2.0) |
 | 4f. Speculative decoding for local models | n-gram speculative decoding (`--spec-type ngram-cache,ngram-simple`) in the router presets when llama-server supports it; `--spec-type none` in a model's extra arguments turns it off | [design](superpowers/specs/2026-11-20-speculative-decoding-design.md) | released in [v1.3.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.3.0) |
+| 4g. Hardening before publishing | Limits on numeric settings, one Authorization header, detection backoff, rejected Next Edit memory, a notice for competing inline-suggestion extensions, atomic argv.json writes, isolated integration runs, actionlint in CI | [plan](superpowers/plans/2026-11-20-hardening.md), [design](superpowers/specs/2026-11-20-hardening-design.md) | released in [v1.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.4.0) |
 | 5. Publishing and Copilot (later) | Marketplace and Open VSX release jobs, `docs/PUBLISHING.md`, Copilot sidecar spike | not written yet | not started |
 
 ## Known follow-ups
@@ -140,3 +141,11 @@ Phase 4f (check on the release `.vsix`; [design](superpowers/specs/2026-11-20-sp
 
 - With a llama-server that lists `--spec-type`, the Local Models server log shows `draft acceptance` lines after a Next Edit or completion request.
 - Adding `--spec-type none` to a model's extra arguments removes them after the model reloads.
+
+Phase 4g (check on the release `.vsix`; [design](superpowers/specs/2026-11-20-hardening-design.md)):
+
+- Enable Native Next Edit UI on a symlinked `argv.json` keeps the symlink.
+- With GitHub Copilot installed, the competing-extension notice shows once; How to fix opens `docs/conflicts.md`; Don't show again silences it.
+- A Next Edit dismissed with Esc does not come back unchanged after a cursor move.
+- `completions.prefixLines: -50` logs one line and completions still work.
+- A backend with an `Authorization` header and a stored key shows the "API key not sent" note.

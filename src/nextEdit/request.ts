@@ -2,7 +2,7 @@ import type { ChatMessage, FimBackend } from '../backends/types';
 import { chatRequestEnvelope } from '../completion/route';
 import type { FimValues } from '../completion/effective';
 import { ThinkingError } from '../completion/stream';
-import { ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
+import { leakedReasoning, ReasoningFilter, startsWithThinkOpener } from '../models/thinking';
 import type { HostFlavor } from '../types';
 import { classify, cursorWithin, isTrivialEdit, regionEdit, type LineEdit, type NextEditShow, type Pos } from './diff';
 import type { ChatFormat, CompletionFormat, FormatAnswer, NextEditFormat, NextEditInput } from './formats/format';
@@ -50,7 +50,8 @@ interface RunOptions {
 /**
  * Runs one Next Edit request in the format's transport and decides how the answer is shown.
  * Resolves undefined for no change, an invalid, truncated or trivial answer. On the chat route, throws ThinkingError when
- * the model reasons (a reasoning event, or a think block with text at the start of the content). Throws the backend's
+ * the model reasons (a reasoning event, a think block with text at the start of the content, or text before a bare
+ * closing tag ahead of the answer's fence: a template that prefills `<think>`). Throws the backend's
  * errors, a TimeoutError included.
  */
 export async function runNextEdit(o: RunOptions): Promise<NextEditResult | undefined> {
@@ -111,6 +112,8 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
   });
   o.onPrompt?.(req.messages);
 
+  // The controller never asks a model that may think (`thinkingBlocked`), so the display filter keeps a bare closing tag
+  // as answer text; once the stream is over, text before a bare closer ahead of the first fence is leaked reasoning.
   const filter = new ReasoningFilter();
   let raw = '';
   let finished = false;
@@ -139,9 +142,16 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
   }
   if (!finished) filter.end();
   abort();
+  if (leakedReasoning(beforeFence(raw))) throw new ThinkingError();
   const visible = filter.visible;
   o.onAnswer?.(visible);
   return format.parse(visible, true);
+}
+
+/** The text before the first line that starts with a fence, or all of it. */
+function beforeFence(text: string): string {
+  const at = text.search(/^```/m);
+  return at < 0 ? text : text.slice(0, at);
 }
 
 /** Undefined when the server stopped at the token limit: a cut-off answer is never used. */

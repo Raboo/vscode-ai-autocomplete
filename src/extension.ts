@@ -85,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): {
     }
   };
 
+  const loggedNotes = new Set<string>();
   const rebuild = (): string[] => {
     const r = readSettings();
     settings = r.settings;
@@ -93,6 +94,7 @@ export function activate(context: vscode.ExtensionContext): {
     debouncers.clear();
     isLocal.clear();
     capabilities.clear();
+    for (const n of r.notes) if (!loggedNotes.has(n)) { loggedNotes.add(n); log.warn(`settings: ${n}`); }
     return r.problems;
   };
 

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { DEFAULT_DISABLE_IN_FILES, FIM_LIMITS, parseSettings, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
+import { DEFAULT_DISABLE_IN_FILES, COMPLETION_LIMITS, FIM_LIMITS, parseSettings, NEXT_EDIT_DISPLAYS, NEXT_EDIT_FORMATS, THINKING_STRATEGIES } from '../../src/config/settings';
 import { COMPLETIONS_KEYS } from '../../src/config/rename';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 /** Every setting, from one configuration object or from titled sections. */
@@ -188,14 +188,15 @@ test('the Get started walkthrough: media exists and ships, command links name re
   }
 });
 test('numeric completion settings have bounds and defaults equal to the reader\'s', () => {
-  const lim = { maxTokens: [1, 1024, 128], prefixLines: [0, undefined, 200], suffixLines: [0, undefined, 60], debounceMs: [0, 2000, null] } as const;
+  const defaults = { maxTokens: 128, prefixLines: 200, suffixLines: 60, debounceMs: null } as const;
   const reader = parseSettings({ inspect: () => undefined }).settings.fim;
-  for (const [k, [min, max, def]] of Object.entries(lim)) {
+  for (const [k, def] of Object.entries(defaults)) {
+    const { min, max } = COMPLETION_LIMITS[k as keyof typeof COMPLETION_LIMITS];
     for (const prefix of ['completions', 'fim']) {
       const p = settingProps[`aiAutocomplete.${prefix}.${k}`];
       expect(p.type, k).toEqual(k === 'debounceMs' ? ['integer', 'null'] : 'integer');
       expect(p.minimum, k).toBe(min);
-      expect(p.maximum, k).toBe(max);
+      expect(p.maximum, k).toBe(max === Infinity ? undefined : max);
     }
     expect(settingProps[`aiAutocomplete.completions.${k}`].default, k).toBe(def);
     expect((reader as unknown as Record<string, unknown>)[k], k).toBe(def);

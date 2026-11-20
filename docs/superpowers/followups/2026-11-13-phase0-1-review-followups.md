@@ -5,7 +5,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 ## Settings
 
 - `fim.disableInLanguages` and `fim.extraContext` keep normal resource precedence. A workspace can therefore widen what the extra-context ring captures, or turn extra context back on. The data still goes only to the user's own backend.
-- Numeric settings accept 0, negatives and fractions. Add `integer` and `minimum` to the schema and clamp them in `num()`.
 - Problems are reported inconsistently for dropped values (bad `hostFlavor`, non-string headers, non-object `modelOverrides`).
 - Defaults live in both `package.json` and the `settings.ts` fallbacks, and no test checks they agree.
 - `toggle` writes Global, so a workspace `fim.enabled` value silently overrides it.
@@ -14,11 +13,8 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 - An abort with a custom reason is classified as a network failure. Callers must use a plain `abort()`.
 - Late in-flight failures count as consecutive. After the circuit expires, a single failure re-opens it.
-- Failed model detection (`GET /models`) is not backed off. It probes again on every debounced keystroke while the server is down, or while a server lists several models and the backend sets no `fimModel`.
 - `0.0.0.0` and `::` count as not local. This fails safe.
 - A `/props` response that is not ok is not cancelled. A missing `res.body` silently ends as an empty completion.
-- A user `Authorization` header in a different case is sent alongside the stored key.
-- `Content-Type` can be duplicated the same way.
 - `extraBody` can override `stream`, `model` and `prompt`. This is a user opt-in.
 
 ## Context, filters, provider
@@ -47,7 +43,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 
 ## CI and automation (check at the first push)
 
-- actionlint has never been run, because the Docker daemon was down: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`.
 - CodeQL **default setup** must stay off. While it is on, uploads from the advanced `codeql.yml` workflow are rejected.
 - Watch whether Dependabot auto-merges, which use `GITHUB_TOKEN`, trigger the `push` workflows on `main`.
 - `setup-github-repo.sh` treats an unknown `-*` argument as the repo. The first `gh` call fails before any write, but the script should reject the argument up front.
@@ -80,7 +75,6 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 ## From the v0.1.0 smoke test (2026-11-15)
 
 - The connection test sends a tiny sample prompt, so it can pass while real prompts fail. oMLX (an LM Studio engine) rejects larger prompts with a prefill memory guard when the model barely fits in RAM. A test step with a prompt near the backend's context size would catch this.
-- Kilo Code, Continue and other installed autocomplete extensions compete for the same ghost text. Detecting another active inline-completion provider and saying so on the Backends page would save a debugging round.
 
 ## From Phase 2 (2026-11-15)
 
@@ -92,7 +86,6 @@ Parked by the Phase 2 reviews (the final review's fix wave did the rest):
 ### Thinking control and the reasoning filter
 
 - `THINKING_STRATEGIES` is a hand-kept copy of the `ThinkingStrategy` union, with no type-level check that the two agree.
-- On the chat route a bare closing tag still drops everything before it, so a chat answer whose code contains `</think>` (or `[/THINK]`, `<channel|>`) loses the text before it. FIM routes strip only a leading reasoning block.
 - FIM routes pass no finish reason. An unclosed reasoning block at the start of FIM output shows nothing and a later opener is kept as code, so this matters only if a FIM model ever reasons mid-output.
 - `thinking.test.ts` gaps: `thinking` for an unclosed block, a closer split across pushes inside a block, Harmony's `<|end|>` followed by the final marker, and a bare `[/THINK]`.
 - `TAGS.find` relies on no tag being a prefix of another; a comment should say the list must stay prefix-free.
@@ -143,10 +136,7 @@ Not done in the revisions:
 
 - Complete while the suggest widget is open (needs a spec decision).
 - Prefetch the next line for local servers.
-- Recent-edit hunks as context, designed with the Phase 3 edit-history tracker.
-- Warm-up request for local servers.
 - Structural stop rules.
-- Bounded LSP definitions and signature help.
 - Test chat-wrapped FIM for Qwen3-Coder.
 - Twinny's secret shield for hosted providers.
 
@@ -198,12 +188,9 @@ Left open by the Phase 3a plan, its task reviews and its final review.
 
 - Copilot's replace-to-end-of-line rebase (Ruling 12): an edit that rewrites the rest of the cursor line is dropped as an inline edit instead of being rebased into ghost text.
 - No drift check is possible right before VS Code applies a native inline edit (Review Focus 1): between an edit appearing and Tab, VS Code may have shifted its range. Covered only by the smoke test.
-- Rejected-edit memory: after Esc, only a 5 s cooldown applies, so the same edit can come back.
 - The import-only edit filter: edits that only change import lines are not filtered out.
 - Use the proposed `onDidChange` instead of the `inlineSuggest.trigger` command to show a fresh result (Ruling 9). After an explicit trigger (Alt+\) at a document version and cursor, VS Code never shows a later Next Edit result for that same state (it treats the trigger as answered); fixing it needs the `onDidChange` path or a design change.
 - A Next Edit state in the status bar (Ruling 8): failures are only logged and notified.
-- Test on the Backends page should also test Next Edit (the `nextEditModel`).
-- The settings deferred in Ruling 7: `nextEdit.format`, `nextEdit.display`, region size, history size and `nextEdit.contextBudget`.
 - `EDIT_ECHO_MS` is a 100 ms time heuristic; a version-based echo check would be sturdier, and a slow CI runner could double-request.
 - The shared backoff means a Next Edit timeout pauses FIM on the same backend: decide whether Next Edit should have its own backoff.
 - Requests already asked for a version and line are not retried after a dropped result or a failure until the document changes (R16 trade-off).
@@ -217,12 +204,10 @@ Left open by the Phase 3a plan, its task reviews and its final review.
 
 - A stream cut off at max tokens right after a bare ```` ``` ```` line counts as closed; treat `finish_reason: length` as truncated (R29).
 - If the cursor moves after a ghost result is stored but before VS Code runs the queued trigger, FIM runs once at the new cursor (R30). The ghost-cursor rule, remote eligibility, snooze during a request and the remote-side opt-in path have no automated tests.
-- `history.test.ts` "when the merged diff is too large, the edit becomes its own entry" relies on two ~400-edit diffs finishing inside the 50 ms bound; shrink the file if CI ever flakes (R31).
 - Unit-test gaps: history merge cancel-out and merge-then-cap paths, top-of-file insertion header; region tests with mixed line lengths and an exact-budget boundary; chatXtab lines after the region, real clipping, several snippets, `stableChars` with exactly 4 lines; classify on an empty file, a file without a trailing newline and the ghost path that starts above the cursor line; caller-abort propagation and a split empty think block in `request.test.ts`; the Backends page placeholder with a blank model.
 - `clipAroundRegion` throws on a region past the file end (callers pass matching line counts), and unused budget below the region does not flow back above it.
 - `parseChatXtab`'s think-block check duplicates `stream.ts`'s predicate; `runNextEdit` adds its abort listener before its `try`.
 - The provider does not guard `itemFor`; a throw there leaves FIM empty for that call.
-- argv.json is written in place, without a backup or an atomic rename.
 - `useNextEditBackend` repeats `useBackend`'s target rule and `pickBackend`'s lookup; the collapsed backend card does not show `nextEditModel`.
 - Integration: "without the proposed API an edit elsewhere is not applied" also passes when nothing is offered; the stale-result test may pass through cancellation; both launches share one user-data dir.
 
@@ -236,13 +221,11 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 - LSP diagnostics in the prompt: the model sees the errors a rename or a type change causes, so it can point at the next fix.
 - Splitting disjoint hunks of an answer into a queue: an answer that edits two places shows one edit at a time instead of being dropped or shown as one big rewrite.
 - Reusing a request while the user types into its ghost text: no new request per keystroke while the typed text still matches the suggestion.
-- A cursor target after accept: Tab lands where the next edit probably is, so repeated Tab walks through a change faster.
 - A context-exit retrigger: leaving a string, comment or block asks again at once instead of waiting for the next pause.
 - Native `displayLocation` labels and `debounceDelayMs: 0` metadata: VS Code labels the edit and does not delay it, which makes the native view feel faster.
 
 ### Parked during execution
 
-- Local integration runs: the user's `~/.vscode/argv.json` (the native opt-in) also enables the proposed API in the test VS Code, so three `main`-launch tests fail locally; CI has no such file. Isolate `.vscode-test.mjs` from `~/.vscode/argv.json`.
 - Sweep: the original-window shift test is weak (old and new text are equal at the shifted position); no +20/+21 boundary test; no v2 test that drops a hunk with `<|cursor|>`; the current file path is not checked for reserved strings; an all-blank window gets its blank lines appended to a non-blank answer.
 - Zeta: a tail block replaced by one blank line is treated like a deletion; deleting the whole region leaves one empty line; the same marker twice with text between counts as no change, so an insertion answered that way is ignored; no test for a cursor on a block boundary.
 - History: after a file is closed and reopened with different text, `previous()` still describes the text before closing; hunk arrays are returned by reference.
@@ -255,11 +238,3 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 
 - A symmetric sanity guard for raw formats: drop answers that delete many non-blank lines while adding none, or are much shorter than the window.
 - Sweep v1: an answer that stops early is read as deleting the window's tail.
-
-### From the smoke test (Phase 3b)
-
-- LM Studio's MLX engine drops the leading space of the first generated token on `/v1/completions`, streaming or not (seen 2026-11-16 with Sweep v2 7B and Qwen3.5-4B: `def f(x):\n    return` gives `"x**2"`, `def f(x):\n` gives `"   return x**2"`). Sweep now restores the missing space on its first generated line. Completions on the template route are likely affected too (`total = total +` gave `"1"`): ghost text after a word or at the start of an indented line can lose a space. **Fixed in 0.5.1** (design `docs/superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md`): the cause is mlx-lm's `_maybe_trim_space`; LM Studio requests hold back the end of the cursor line, and at line start a leading space is restored. Still open: report it to LM Studio, and skip the hold-back for GGUF models (`/api/v0/models` `compatibility_type`) if the shortened prompt ever shows a quality cost. Also fixed: LM Studio's StopIteration error when generation ends inside a partial `\n\n\n` match.
-
-### From the Phase 4 work
-
-- `test/unit/nextEdit/history.test.ts` "merged diff is too large" failed once in a full run (passes isolated); find the timing dependence.

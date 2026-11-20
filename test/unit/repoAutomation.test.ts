@@ -43,6 +43,13 @@ describe('repo automation', () => {
     expect(ci).not.toMatch(/^ {4}name:/m);
   });
 
+  test('the check job runs actionlint pinned by version and sha256', () => {
+    const ci = readFileSync(`${wfDir}/ci.yml`, 'utf8');
+    expect(ci).toMatch(/ACTIONLINT_VERSION: \d+\.\d+\.\d+/);
+    expect(ci).toMatch(/ACTIONLINT_SHA256: [0-9a-f]{64}/);
+    expect(ci).toContain('sha256sum -c');
+  });
+
   test('release-please manifest matches package.json version', () => {
     expect(JSON.parse(readFileSync('.release-please-manifest.json', 'utf8'))['.']).toBe(pkg.version);
   });

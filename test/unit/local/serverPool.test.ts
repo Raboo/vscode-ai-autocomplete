@@ -535,15 +535,26 @@ describe('ServerPool: llama-server checks', () => {
     expect(await setup({ launch, help: 'old' }).pool.binaryProblem()).toMatch(/too old/);
   });
 
-  test('presets carry the speculative line only when the help text knows --spec-type', async () => {
-    const on = fakeLaunch({ autoReady: true });
-    const a = setup({ launch: on.launch, help: '--models-preset P\n--spec-type [none|ngram-cache]\n' });
+  test('every presets write carries the speculative line only when the help text knows --spec-type', async () => {
+    const a = setup({ launch: fakeLaunch({ autoReady: true }).launch, help: '--models-preset P\n--spec-type [none|ngram-cache]\n' });
     await a.pool.start();
-    expect(a.presets.at(-1)).toContain('cache-reuse = 256\nspec-type = ngram-cache,ngram-simple\n');
-    const off = fakeLaunch({ autoReady: true });
-    const b = setup({ launch: off.launch });
+    await a.pool.syncPresets();
+    expect(a.presets.length).toBeGreaterThan(1);
+    for (const text of a.presets) expect(text).toContain('cache-reuse = 256\nspec-type = ngram-cache,ngram-simple\n');
+    const b = setup({ launch: fakeLaunch({ autoReady: true }).launch });
     await b.pool.start();
-    expect(b.presets[0]).not.toContain('spec-type');
+    await b.pool.syncPresets();
+    expect(b.presets.length).toBeGreaterThan(1);
+    for (const text of b.presets) expect(text).not.toContain('spec-type');
+  });
+
+  test('a window that adopted another window\'s router still writes the speculative line', async () => {
+    const states: Record<number, PortState> = { 8012: 'ours' };
+    const a = setup({ launch: fakeLaunch({ autoReady: true }).launch, probe: portStates(states), help: '--models-preset P\n--spec-type [none|ngram-cache]\n' });
+    await a.pool.start();
+    await a.pool.syncPresets();
+    expect(a.presets.length).toBeGreaterThan(1);
+    for (const text of a.presets) expect(text).toContain('spec-type = ngram-cache,ngram-simple');
   });
 
   test('the help text is read once per binary path', async () => {

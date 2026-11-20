@@ -178,8 +178,7 @@ export class ServerPool {
   private readonly output: string[] = [];
   private readonly listeners = new Set<() => void>();
   private announced = '';
-  /** Binaries whose help lists `--models-preset`; a too-old one is checked again on the next start (it may be updated). */
-  /** Router-capable binaries seen, with whether each supports speculative decoding. */
+  /** Binaries whose help lists `--models-preset`, with whether each supports speculative decoding; a too-old one is checked again on the next start (it may be updated). */
   private readonly routerBinaries = new Map<string, boolean>();
 
   constructor(private readonly d: ServerPoolDeps) {}
@@ -206,9 +205,9 @@ export class ServerPool {
     try {
       if (previous) await this.halt(previous);
       if (slot.cancelled) throw cancelled();
-      const first = this.presets();
-      const names = first.names;
-      await this.d.writePresets(first.text);
+      await this.knowSpeculative();
+      const { text, names } = this.presets();
+      await this.d.writePresets(text);
       if (slot.cancelled) throw cancelled();
       // The record as this start found it: one that differs when this start writes its own was written meanwhile (another window).
       const found = JSON.stringify(this.managed() ?? null);
@@ -217,10 +216,6 @@ export class ServerPool {
       if (await this.ours(saved, names, slot)) return this.adopt(slot, saved);
       if (slot.cancelled) throw cancelled();
       const binary = await this.routerBinary();
-      if (slot.cancelled) throw cancelled();
-      // The first render could not know whether this binary supports speculative decoding (its help is read just now).
-      const rendered = this.presets();
-      if (rendered.text !== first.text) await this.d.writePresets(rendered.text);
       if (slot.cancelled) throw cancelled();
 
       const { port, changed } = await portFor(saved, (p) => this.d.freePort(p));
@@ -300,6 +295,15 @@ export class ServerPool {
     } catch (err) {
       this.d.log.error('local models: writing the presets file failed', err);
       throw new LocalRuntimeError(PRESETS_FAILED);
+    }
+  }
+
+  /** Reads the help text (cached) so presets know about speculation; an adopting window has no need for a local binary, so errors are ignored (the flag is then false). */
+  private async knowSpeculative(): Promise<void> {
+    try {
+      await this.routerBinary();
+    } catch {
+      // no usable local binary: presets are rendered without speculation
     }
   }
 
@@ -587,6 +591,7 @@ export class ServerPool {
   async syncPresets(): Promise<void> {
     let text: string;
     try {
+      await this.knowSpeculative();
       text = this.presets().text;
       await this.d.writePresets(text);
     } catch (err) {

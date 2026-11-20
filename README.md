@@ -113,6 +113,8 @@ Zeta 2.1 has no official GGUF: the list offers a community quant (Q4_K_M by mrad
 
 **Where files go.** Under `models/<owner>/<repo>/<file>` in the models folder. On macOS the default is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
 
+**Speculative decoding.** The `local` backend lets llama-server guess the next tokens from text already in the prompt (`--spec-type ngram-cache,ngram-simple`); the model then verifies the guesses, so Next Edit answers do not change, they only arrive sooner. It is on automatically when your llama-server supports it. To turn it off for one model, add `--spec-type none` to that model's extra arguments. The server log shows `draft acceptance` lines while it works.
+
 **Stopping and removing.**
 
 - **AI Autocomplete: Stop Local Models** stops the llama-server in all windows now. It starts again when VS Code starts (or a window opens) with `local` still selected, or when you select `local` again.
@@ -171,12 +173,12 @@ A Next Edit answer rewrites a whole region, so it arrives later than a completio
 
 | Model (llama.cpp, Metal) | Feature | First token, warm | Whole answer, warm | Whole answer, cold |
 | --- | --- | --- | --- | --- |
-| Sweep Next Edit 1.5B Q8_0 | completions | 0.39 s | 1.1 s | 1.2 s |
-| Mellum 4B Q8_0 | completions | 0.98 s | 1.5 s | 2.8 s |
-| Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.34 s | 3.2 s | 3.2 s |
-| Zeta 2.1 Q4_K_M (8B) | Next Edit | 1.8 s | 8.4 s | 9.3 s |
+| Sweep Next Edit 1.5B Q8_0 | completions | 0.38 s | 0.90 s | 1.2 s |
+| Mellum 4B Q8_0 | completions | 0.97 s | 1.44 s | 2.8 s |
+| Sweep Next Edit 1.5B Q8_0 | Next Edit | 0.33 s | 0.71 s | 3.2 s |
+| Zeta 2.1 Q4_K_M (8B) | Next Edit | 1.79 s | 3.5 s | 9.3 s |
 
-On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone. Zeta 2.1 is better at edits further from the cursor, but it takes about 8 s per answer here (the prompt now follows Zeta's trained layout; the first request after loading the model took 12 s), so use it next to a completion model rather than instead of one.
+These numbers are with speculative decoding on (the default for local models, see below); the cold column was measured before it. On a machine like this, Sweep 1.5B is the practical choice for Next Edit alone: its answers arrive in under a second, and its completions fit about twice the text within the 500 ms cap. Zeta 2.1 is better at edits further from the cursor and is now practical for Next Edit alone at about 3.5 s per answer.
 
 #### Definitions as context
 

@@ -8,6 +8,7 @@ Measured on the owner's M3 Pro (warm prompt cache, `scripts/bench/latency.ts`), 
 
 - Next Edit: Zeta 2.1 Q4_K_M 8.3 s → 3.5 s per answer; Sweep 1.5B 3.06 s → 0.71 s, same answers.
 - Completions (500 ms generation cap): about twice the text in the same time (Sweep 145 → 281 chars, Qwen2.5-Coder 1.5B 148 → 283, Mellum 4B 56 → 103, Qwen2.5-Coder 3B 46 → 116).
+- Cold (new file) whole-answer medians with speculation on: Sweep 1.5B completions 1.38 s, Mellum 4B completions 2.77 s, Sweep 1.5B Next Edit 0.80 s, Zeta 2.1 Q4_K_M Next Edit 4.54 s (`scripts/bench/latency.ts`, 2026-11-20).
 
 `ngram-cache,ngram-simple` was the best of 13 configurations tried on Zeta (`ngram-mod` adds 0.35 s to the first token; `ngram-map-k`/`ngram-map-k4v` gain nothing). Draft-model types are out: no small model shares the recipes' tokenizers in a useful way.
 

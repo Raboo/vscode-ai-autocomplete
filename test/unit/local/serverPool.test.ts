@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { parseSettings, type Inspected, type Settings } from '../../../src/config/settings';
 import type { ManagedServer } from '../../../src/local/backendEntry';
 import { LocalRuntimeError, type ChildLike } from '../../../src/local/llamaServer';
@@ -555,6 +555,35 @@ describe('ServerPool: llama-server checks', () => {
     await a.pool.syncPresets();
     expect(a.presets.length).toBeGreaterThan(1);
     for (const text of a.presets) expect(text).toContain('spec-type = ngram-cache,ngram-simple');
+  });
+
+  test('a too old binary: one help read per start and per 30 s, however many syncs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { launch } = fakeLaunch({ autoReady: true });
+      const { pool, helps } = setup({ launch, help: 'old' });
+      await pool.startSelected();
+      expect(helps).toHaveLength(1);
+      await pool.syncPresets();
+      vi.setSystemTime(Date.now() + 29_000);
+      await pool.syncPresets();
+      expect(helps).toHaveLength(1);
+      vi.setSystemTime(Date.now() + 2_000);
+      await pool.startSelected();
+      expect(helps).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('no binary but another window\'s router answering: start adopts, presets have no speculative line', async () => {
+    const { launch, launched } = fakeLaunch({ autoReady: true });
+    const { pool, presets, helps } = setup({ launch, binary: () => undefined, probe: portStates({ 8012: 'ours' }) });
+    await pool.start();
+    expect(launched).toHaveLength(0);
+    expect(helps).toEqual([]);
+    expect(presets.length).toBeGreaterThan(0);
+    for (const text of presets) expect(text).not.toContain('spec-type');
   });
 
   test('the help text is read once per binary path', async () => {

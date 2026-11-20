@@ -171,6 +171,9 @@ interface Slot {
  * The llama-server router of the `local` backend: at most one per window, stoppable while it is still loading. A router
  * already running on the saved port with the preset models (another window's) is adopted instead of started.
  */
+/** How long a binary that failed the router check is not checked again. */
+const REJECTED_MS = 30_000;
+
 export class ServerPool {
   private slot: Slot | undefined;
   private disposed = false;
@@ -180,6 +183,8 @@ export class ServerPool {
   private announced = '';
   /** Binaries whose help lists `--models-preset`, with whether each supports speculative decoding; a too-old one is checked again on the next start (it may be updated). */
   private readonly routerBinaries = new Map<string, boolean>();
+  /** Binaries that failed the router check, with when and why: not read again for 30 s, so repeated settings changes do not spawn `--help` each time. */
+  private readonly rejectedBinaries = new Map<string, { at: number; error: string }>();
 
   constructor(private readonly d: ServerPoolDeps) {}
 
@@ -345,13 +350,20 @@ export class ServerPool {
     const binary = this.d.binary();
     if (!binary) throw new LocalRuntimeError(`llama-server was not found. ${INSTALL_HINT.llamaServer}`);
     if (this.routerBinaries.has(binary)) return binary;
+    const rejected = this.rejectedBinaries.get(binary);
+    if (rejected && Date.now() - rejected.at < REJECTED_MS) throw new LocalRuntimeError(rejected.error);
     let help = '';
     try {
       help = await this.d.helpText(binary);
     } catch (err) {
       this.d.log.debug(`llama-server --help failed: ${message(err)}`);
     }
-    if (!supportsRouter(help)) throw new LocalRuntimeError(`${TOO_OLD} ${INSTALL_HINT.llamaServer}`);
+    if (!supportsRouter(help)) {
+      const error = `${TOO_OLD} ${INSTALL_HINT.llamaServer}`;
+      this.rejectedBinaries.set(binary, { at: Date.now(), error });
+      throw new LocalRuntimeError(error);
+    }
+    this.rejectedBinaries.delete(binary);
     this.routerBinaries.set(binary, supportsSpeculative(help));
     return binary;
   }

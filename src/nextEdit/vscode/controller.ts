@@ -22,6 +22,7 @@ import { formatBudgets, type FormatAnswer, type NextEditFormat, type NextEditInp
 import { EditHistory, recentEditsFile, type RecentSnippets, type Snippet } from '../history';
 import { rebaseEdit } from '../rebase';
 import { type LineSpan } from '../region';
+import { RejectedEdits } from '../rejected';
 import { runNextEdit, warmNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, nextEditPauseMs, TriggerPolicy } from '../trigger';
 import { EditDecorations } from './decorations';
@@ -83,6 +84,7 @@ export class NextEditController implements vscode.Disposable {
    * `result`, so accepted() reads the predicted cursor from here (checked against the document first).
    */
   private lastItem: Held | undefined;
+  private readonly rejectedEdits = new RejectedEdits();
   /** An inline edit shown as decorations, waiting for Tab or Esc. Never returned by itemFor(). */
   private pending: Held | undefined;
   private readonly decorations = new EditDecorations();
@@ -169,7 +171,8 @@ export class NextEditController implements vscode.Disposable {
     );
   }
 
-  rejected(): void {
+  rejected(held: Held | undefined = this.pending ?? this.lastItem ?? this.result): void {
+    if (held) this.rejectedEdits.remember(held.uri, held.edit, held.text.split(/\r?\n/));
     this.policy.rejected(Date.now());
     this.result = undefined;
     this.lastItem = undefined;
@@ -233,8 +236,9 @@ export class NextEditController implements vscode.Disposable {
   /** Esc on a pending decoration: a rejection. An Esc with nothing pending (a stale context key) rejects nothing. */
   nextEditDismiss(): void {
     if (!this.pending) return;
+    const held = this.pending;
     this.clearPending();
-    this.rejected();
+    this.rejected(held);
   }
 
   /** A snooze started: a pending decoration goes, so Tab and Esc are the editor's again. */
@@ -329,6 +333,7 @@ export class NextEditController implements vscode.Disposable {
     this.cancel(uri);
     if (this.warmUri === uri) this.abortWarm();
     this.policy.closed(uri);
+    this.rejectedEdits.forget(uri);
     this.warmed.forget(uri);
     const idle = this.idleTimers.get(uri);
     if (idle) clearTimeout(idle.timer);
@@ -347,6 +352,7 @@ export class NextEditController implements vscode.Disposable {
     const uri = doc.uri.toString();
     // Definitions quoting this file are looked up again.
     this.definitions.forget(this.path(doc));
+    this.rejectedEdits.prune(uri, doc.getText().split(/\r?\n/));
     const active = this.tracking() && this.eligible(doc);
     // The user typing a pending edit or a held result keeps the rest of it; any other change to its document, an undo
     // included, leaves it pointing at shifted lines.
@@ -767,6 +773,11 @@ export class NextEditController implements vscode.Disposable {
         log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
         this.note(uri, 'filtered', { detail: 'needs-inline-edit-ui', ms });
         this.offerNativeUi();
+        return;
+      }
+      if (this.rejectedEdits.isRejected(uri, result.edit, result.text.split(/\r?\n/))) {
+        log.debug('next edit: result dropped, the user rejected it');
+        this.note(uri, 'filtered', { detail: 'rejected', ms });
         return;
       }
       this.clearPending();

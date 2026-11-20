@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { classifyError, getJson, HttpError, joinUrl, postJson, StreamError, throwIfStreamError } from '../../src/backends/http';
+import { authHeaders, classifyError, getJson, HttpError, joinUrl, postJson, StreamError, throwIfStreamError } from '../../src/backends/http';
 import { startMockHttp } from './helpers/mockHttp';
 
 describe('joinUrl', () => {
@@ -151,5 +151,20 @@ describe('getJson', () => {
       await m.close();
       await other.close();
     }
+  });
+});
+
+describe('authHeaders', () => {
+  const cfg = (headers?: Record<string, string>) => ({ id: 'a', kind: 'openai', baseUrl: 'http://x', ...(headers ? { headers } : {}) }) as never;
+  test('adds the bearer key when the user set no Authorization header', () => {
+    expect(authHeaders(cfg({ 'x-a': '1' }), 'k')).toEqual({ 'x-a': '1', authorization: 'Bearer k' });
+    expect(authHeaders(cfg(), 'k')).toEqual({ authorization: 'Bearer k' });
+  });
+  test('a user Authorization header in any case replaces the key', () => {
+    expect(authHeaders(cfg({ Authorization: 'x' }), 'k')).toEqual({ Authorization: 'x' });
+    expect(authHeaders(cfg({ AUTHORIZATION: 'x' }), 'k')).toEqual({ AUTHORIZATION: 'x' });
+  });
+  test('no key, no extra header', () => {
+    expect(authHeaders(cfg({ Authorization: 'x' }), undefined)).toEqual({ Authorization: 'x' });
   });
 });

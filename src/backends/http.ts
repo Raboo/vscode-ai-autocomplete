@@ -96,7 +96,12 @@ export function classifyError(err: unknown): ErrorClass {
   return { kind: 'network' };
 }
 
-/** Request headers for a backend: config headers plus a bearer token when a key is set. */
+/** True when the headers hold an Authorization header, in any letter case. */
+export function hasAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
+  return Object.keys(headers ?? {}).some((k) => k.toLowerCase() === 'authorization');
+}
+
+/** Request headers for a backend: config headers plus a bearer token when a key is set; the user's own Authorization header wins over the key. */
 export function authHeaders(config: BackendConfig, key: string | undefined): Record<string, string> {
-  return { ...config.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) };
+  return { ...config.headers, ...(key && !hasAuthorizationHeader(config.headers) ? { authorization: `Bearer ${key}` } : {}) };
 }

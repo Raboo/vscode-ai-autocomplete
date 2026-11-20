@@ -17,14 +17,16 @@ const offWhenStarFalse = (v: unknown): boolean =>
  * Ids and setting keys were read from each extension's published manifest (read only), 2026-11-20:
  * https://github.gallery.vsassets.io/_apis/public/gallery/publisher/github/extension/copilot/latest/assetbyname/Microsoft.VisualStudio.Code.Manifest
  * (same URL shape for continue/continue, kilocode/kilo-code, Codeium/codeium, supermaven/supermaven, TabNine/tabnine-vscode).
- * Tabnine has no setting that turns inline suggestions off, so it counts as active when installed.
+ * Tabnine has no setting that turns inline suggestions off, and `supermaven.enable` has no documented schema, so those two count as active when installed.
  */
 export const CONFLICTS: readonly Conflict[] = [
   { id: 'github.copilot', name: 'GitHub Copilot', setting: { key: 'github.copilot.enable', isOff: offWhenStarFalse } },
+  // Copilot Chat ships the completions too and contributes the same setting: one notice, shown as "GitHub Copilot".
+  { id: 'github.copilot-chat', name: 'GitHub Copilot', setting: { key: 'github.copilot.enable', isOff: offWhenStarFalse } },
   { id: 'continue.continue', name: 'Continue', setting: { key: 'continue.enableTabAutocomplete', isOff: offWhenFalse } },
   { id: 'kilocode.kilo-code', name: 'Kilo Code', setting: { key: 'kilo-code.new.autocomplete.enableAutoTrigger', isOff: offWhenFalse } },
   { id: 'codeium.codeium', name: 'Codeium (Windsurf)', setting: { key: 'codeium.enableConfig', isOff: offWhenStarFalse } },
-  { id: 'supermaven.supermaven', name: 'Supermaven', setting: { key: 'supermaven.enable', isOff: offWhenStarFalse } },
+  { id: 'supermaven.supermaven', name: 'Supermaven' },
   { id: 'tabnine.tabnine-vscode', name: 'Tabnine' },
 ];
 
@@ -39,8 +41,10 @@ export function activeConflicts(
 ): { id: string; name: string }[] {
   const ids = new Set(installed.map((e) => e.id.toLowerCase()));
   const out: { id: string; name: string }[] = [];
+  // Entries with one name (Copilot and Copilot Chat) are one notice and one dismissal.
+  const dismissedNames = new Set(CONFLICTS.filter((c) => dismissed.has(c.id)).map((c) => c.name));
   for (const c of CONFLICTS) {
-    if (!ids.has(c.id) || dismissed.has(c.id)) continue;
+    if (!ids.has(c.id) || dismissedNames.has(c.name) || out.some((o) => o.name === c.name)) continue;
     if (c.setting?.isOff(getSetting(c.setting.key))) continue;
     out.push({ id: c.id, name: c.name });
   }

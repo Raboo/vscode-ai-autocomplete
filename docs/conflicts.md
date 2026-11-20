@@ -6,7 +6,9 @@ Settings keys below come from each extension's published manifest. Use **Prefere
 
 ## GitHub Copilot
 
-Run **GitHub Copilot: Toggle Completions** (or the Copilot status bar menu, then "Disable Completions"), or set:
+The same setting covers Copilot Chat, which ships the completions too.
+
+Run **GitHub Copilot: Toggle (Enable/Disable) Completions**, or set:
 
 ```json
 "github.copilot.enable": { "*": false }
@@ -30,11 +32,11 @@ Run **GitHub Copilot: Toggle Completions** (or the Copilot status bar menu, then
 "codeium.enableConfig": { "*": false }
 ```
 
-Or run **Codeium: Disable** from the command palette.
+Or run **Windsurf: Toggle Autocomplete Globally** from the command palette.
 
 ## Supermaven
 
-Run **Supermaven: Toggle**, or set `"supermaven.enable": { "*": false }`.
+Run **Supermaven: Toggle** from the command palette.
 
 ## Tabnine
 

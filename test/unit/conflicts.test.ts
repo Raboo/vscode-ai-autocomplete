@@ -37,7 +37,29 @@ describe('activeConflicts', () => {
 
   it('covers the six known extensions with lowercase ids', () => {
     expect(CONFLICTS.map((c) => c.id).sort()).toEqual([
-      'codeium.codeium', 'continue.continue', 'github.copilot', 'kilocode.kilo-code', 'supermaven.supermaven', 'tabnine.tabnine-vscode',
+      'codeium.codeium', 'continue.continue', 'github.copilot', 'github.copilot-chat', 'kilocode.kilo-code', 'supermaven.supermaven', 'tabnine.tabnine-vscode',
     ]);
+  });
+
+  it('reads the Kilo Code and Codeium settings', () => {
+    const kilo = (k: string): unknown => ({ 'kilo-code.new.autocomplete.enableAutoTrigger': false })[k];
+    expect(activeConflicts([{ id: 'kilocode.kilo-code' }], kilo, new Set())).toEqual([]);
+    expect(activeConflicts([{ id: 'kilocode.kilo-code' }], none, new Set())).toHaveLength(1);
+    const codeium = (k: string): unknown => ({ 'codeium.enableConfig': { '*': false } })[k];
+    expect(activeConflicts([{ id: 'codeium.codeium' }], codeium, new Set())).toEqual([]);
+    const on = (k: string): unknown => ({ 'codeium.enableConfig': { '*': true } })[k];
+    expect(activeConflicts([{ id: 'codeium.codeium' }], on, new Set())).toHaveLength(1);
+  });
+
+  it('ignores the Supermaven setting', () => {
+    const get = (k: string): unknown => ({ 'supermaven.enable': { '*': false } })[k];
+    expect(activeConflicts([{ id: 'supermaven.supermaven' }], get, new Set())).toHaveLength(1);
+  });
+
+  it('shows Copilot and Copilot Chat as one notice, dismissed together', () => {
+    const both = [{ id: 'github.copilot' }, { id: 'github.copilot-chat' }];
+    expect(activeConflicts(both, none, new Set())).toEqual([{ id: 'github.copilot', name: 'GitHub Copilot' }]);
+    expect(activeConflicts(both, none, new Set(['github.copilot']))).toEqual([]);
+    expect(activeConflicts([{ id: 'github.copilot-chat' }], none, new Set())).toHaveLength(1);
   });
 });

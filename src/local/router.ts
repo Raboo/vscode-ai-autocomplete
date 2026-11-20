@@ -16,8 +16,9 @@ function sectionName(name: string): string {
 }
 
 /** The presets.ini text for the given models (callers pass the downloaded, not hidden ones). */
-export function renderPresets(models: LocalModel[], filePath: (m: LocalModel) => string): string {
+export function renderPresets(models: LocalModel[], filePath: (m: LocalModel) => string, o: { speculative: boolean }): string {
   const lines = ['version = 1', '', '[*]', 'ngl = 99', 'fa = on', 'cache-reuse = 256'];
+  if (o.speculative) lines.push('spec-type = ngram-cache,ngram-simple');
   for (const m of models) {
     if (!Number.isInteger(m.contextTokens) || m.contextTokens < 1) throw new Error('presets: context must be a positive integer');
     const file = safe(filePath(m), 'path');
@@ -39,6 +40,11 @@ export function routerArgs(o: { presetsPath: string; modelsMax: number; port: nu
 
 export function supportsRouter(helpText: string): boolean {
   return helpText.includes('--models-preset');
+}
+
+/** Whether this llama-server knows n-gram speculative decoding (`--spec-type` with `ngram-cache` in its help). */
+export function supportsSpeculative(helpText: string): boolean {
+  return helpText.includes('--spec-type') && helpText.includes('ngram-cache');
 }
 
 export interface RouterModel {

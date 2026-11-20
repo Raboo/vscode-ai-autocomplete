@@ -535,6 +535,17 @@ describe('ServerPool: llama-server checks', () => {
     expect(await setup({ launch, help: 'old' }).pool.binaryProblem()).toMatch(/too old/);
   });
 
+  test('presets carry the speculative line only when the help text knows --spec-type', async () => {
+    const on = fakeLaunch({ autoReady: true });
+    const a = setup({ launch: on.launch, help: '--models-preset P\n--spec-type [none|ngram-cache]\n' });
+    await a.pool.start();
+    expect(a.presets.at(-1)).toContain('cache-reuse = 256\nspec-type = ngram-cache,ngram-simple\n');
+    const off = fakeLaunch({ autoReady: true });
+    const b = setup({ launch: off.launch });
+    await b.pool.start();
+    expect(b.presets[0]).not.toContain('spec-type');
+  });
+
   test('the help text is read once per binary path', async () => {
     const { launch } = fakeLaunch({ autoReady: true });
     let binary = '/bin/llama-server';

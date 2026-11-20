@@ -4,7 +4,7 @@ import { DEFAULT_PORT, LOCAL_BACKEND_ID, parseManaged, portFor, routerWanted, se
 import { LlamaServerProcess, LocalRuntimeError, defaultSpawn, formatTail, type ChildLike, type SpawnLike } from './llamaServer';
 import { mergeModels, type LocalModel } from './modelList';
 import { RECIPES, type Recipe } from './recipes';
-import { renderPresets, routerArgs, supportsRouter, type PortState } from './router';
+import { renderPresets, routerArgs, supportsRouter, supportsSpeculative, type PortState } from './router';
 import { INSTALL_HINT } from './runtimes';
 
 const KILL_GRACE_MS = 5000;
@@ -179,7 +179,8 @@ export class ServerPool {
   private readonly listeners = new Set<() => void>();
   private announced = '';
   /** Binaries whose help lists `--models-preset`; a too-old one is checked again on the next start (it may be updated). */
-  private readonly routerBinaries = new Set<string>();
+  /** Router-capable binaries seen, with whether each supports speculative decoding. */
+  private readonly routerBinaries = new Map<string, boolean>();
 
   constructor(private readonly d: ServerPoolDeps) {}
 
@@ -205,8 +206,9 @@ export class ServerPool {
     try {
       if (previous) await this.halt(previous);
       if (slot.cancelled) throw cancelled();
-      const { text, names } = this.presets();
-      await this.d.writePresets(text);
+      const first = this.presets();
+      const names = first.names;
+      await this.d.writePresets(first.text);
       if (slot.cancelled) throw cancelled();
       // The record as this start found it: one that differs when this start writes its own was written meanwhile (another window).
       const found = JSON.stringify(this.managed() ?? null);
@@ -215,6 +217,10 @@ export class ServerPool {
       if (await this.ours(saved, names, slot)) return this.adopt(slot, saved);
       if (slot.cancelled) throw cancelled();
       const binary = await this.routerBinary();
+      if (slot.cancelled) throw cancelled();
+      // The first render could not know whether this binary supports speculative decoding (its help is read just now).
+      const rendered = this.presets();
+      if (rendered.text !== first.text) await this.d.writePresets(rendered.text);
       if (slot.cancelled) throw cancelled();
 
       const { port, changed } = await portFor(saved, (p) => this.d.freePort(p));
@@ -290,11 +296,17 @@ export class ServerPool {
       paths.set(m.name, path);
     }
     try {
-      return { text: renderPresets(served, (m) => paths.get(m.name) as string), names: served.map((m) => m.name) };
+      return { text: renderPresets(served, (m) => paths.get(m.name) as string, { speculative: this.speculative() }), names: served.map((m) => m.name) };
     } catch (err) {
       this.d.log.error('local models: writing the presets file failed', err);
       throw new LocalRuntimeError(PRESETS_FAILED);
     }
+  }
+
+  /** Whether the configured llama-server supports speculative decoding (known once it was checked for router mode). */
+  private speculative(): boolean {
+    const binary = this.d.binary();
+    return binary !== undefined && this.routerBinaries.get(binary) === true;
   }
 
   /** Why no router can be started with the configured llama-server (missing, or too old), or undefined. Setup asks before it downloads. */
@@ -336,7 +348,7 @@ export class ServerPool {
       this.d.log.debug(`llama-server --help failed: ${message(err)}`);
     }
     if (!supportsRouter(help)) throw new LocalRuntimeError(`${TOO_OLD} ${INSTALL_HINT.llamaServer}`);
-    this.routerBinaries.add(binary);
+    this.routerBinaries.set(binary, supportsSpeculative(help));
     return binary;
   }
 

@@ -3,13 +3,20 @@ name: Release Please
 on:
   push:
     branches: [main]
+  # Manual re-run of the package and publish steps for an existing release tag (the release-please job is skipped).
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and publish, for example v1.4.0
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   release-please:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -42,15 +49,32 @@ jobs:
 
   vsix:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - name: Pick and validate the tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$RELEASE_TAG"
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag must look like v1.2.3."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ steps.tag.outputs.tag }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -66,4 +90,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
+      # The token comes only through the OVSX_PAT environment variable, which ovsx reads; it is never on a command line.
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::notice::No Open VSX token secret: skipping Open VSX. Publish by hand or re-run this workflow with the tag."
+            exit 0
+          fi
+          shopt -s nullglob
+          files=(ai-autocomplete-*.vsix)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ai-autocomplete-*.vsix, found ${#files[@]}."
+            exit 1
+          fi
+          # Creating the namespace fails when it exists already; that answer is fine, any other failure is not.
+          if ! out=$(npx ovsx create-namespace raboo 2>&1); then
+            if printf '%s' "$out" | grep -qi 'already exists'; then
+              echo "Namespace raboo already exists."
+            else
+              printf '%s\n' "$out"
+              exit 1
+            fi
+          fi
+          npx ovsx publish "${files[0]}"

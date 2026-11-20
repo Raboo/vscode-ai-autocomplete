@@ -12,7 +12,8 @@ export function watchConflicts(context: vscode.ExtensionContext): void {
   const check = (): void => {
     const dismissed = new Set(context.globalState.get<string[]>(DISMISSED_KEY, []));
     const found = activeConflicts(
-      vscode.extensions.all.map((e) => ({ id: e.id, isActive: e.isActive })),
+      // Extensions shipped with VS Code (Copilot Chat in current versions) live under the app root.
+      vscode.extensions.all.map((e) => ({ id: e.id, isActive: e.isActive, builtIn: e.extensionUri.fsPath.startsWith(vscode.env.appRoot) })),
       (key) => {
         const i = key.lastIndexOf('.');
         // Keys like "github.copilot.enable" are read as section "github.copilot", key "enable"; try the longest section first.
@@ -23,6 +24,11 @@ export function watchConflicts(context: vscode.ExtensionContext): void {
         return undefined;
       },
       dismissed,
+      (key) => {
+        // Only values the user set count, not the default.
+        const i = vscode.workspace.getConfiguration().inspect(key);
+        return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue;
+      },
     ).filter((c) => !shown.has(c.id));
     for (const c of found) {
       shown.add(c.id);

@@ -50,7 +50,8 @@ export type ErrorClass = { kind: 'abort' } | { kind: 'http'; status: number } | 
 export async function postJson(url: string, body: unknown, o: PostOptions): Promise<Response> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { ...o.headers, 'content-type': 'application/json' },
+    // A user Content-Type in another case would be sent alongside ours: the body is always JSON.
+    headers: { ...withoutContentType(o.headers), 'content-type': 'application/json' },
     body: JSON.stringify(body),
     redirect: 'manual',
     signal: AbortSignal.any([o.signal, AbortSignal.timeout(o.timeoutMs)]),
@@ -60,6 +61,10 @@ export async function postJson(url: string, body: unknown, o: PostOptions): Prom
     throw new HttpError(res.status, text.slice(0, MAX_BODY_TEXT), url);
   }
   return res;
+}
+
+function withoutContentType(headers: Record<string, string> | undefined): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers ?? {}).filter(([k]) => k.toLowerCase() !== 'content-type'));
 }
 
 /** GETs JSON. Same error contract as postJson: non-2xx (including an unfollowed 3xx) throws an HttpError. */

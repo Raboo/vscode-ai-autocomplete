@@ -1,18 +1,26 @@
 # Other extensions that offer inline suggestions
 
-When two extensions offer inline suggestions at once, they compete for the same ghost text. AI Autocomplete warns once per extension and session. Turn the other one's inline suggestions off in one of these ways, then reload the window if it still shows.
+When two extensions offer inline suggestions at once, they compete for the same ghost text. AI Autocomplete warns once per extension and session when another one is installed and its inline suggestions are on. Copilot Chat, which current VS Code ships built in, counts only once you have set `github.copilot.enable` yourself to a value that is not off (its default does not count, since it suggests nothing until you sign in), and no Copilot entry counts while `chat.disableAIFeatures` is `true`. Turn the other one's inline suggestions off in one of these ways, then reload the window if it still shows.
 
 Settings keys below come from each extension's published manifest. Use **Preferences: Open User Settings (JSON)**.
 
 ## GitHub Copilot
 
-The same setting covers Copilot Chat, which ships the completions too.
+Current VS Code ships GitHub Copilot Chat built in, and it holds the completions too; the older GitHub Copilot extension uses the same setting.
 
-Run **GitHub Copilot: Toggle (Enable/Disable) Completions**, or set:
+Run **GitHub Copilot: Toggle (Enable/Disable) Inline Suggestions** (`github.copilot.chat.completions.toggle`, built-in Copilot Chat) or, with the older extension, **GitHub Copilot: Toggle (Enable/Disable) Completions**, or set:
 
 ```json
 "github.copilot.enable": { "*": false }
 ```
+
+Copilot's next edit suggestions compete with AI Autocomplete's Next Edit too. Turn them off with:
+
+```json
+"github.copilot.nextEditSuggestions.enabled": false
+```
+
+Setting `"chat.disableAIFeatures": true` turns off all of Copilot's built-in AI features, these included.
 
 ## Continue
 

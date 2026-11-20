@@ -62,4 +62,35 @@ describe('activeConflicts', () => {
     expect(activeConflicts(both, none, new Set(['github.copilot']))).toEqual([]);
     expect(activeConflicts([{ id: 'github.copilot-chat' }], none, new Set())).toHaveLength(1);
   });
+
+  describe('built-in extensions (Copilot Chat ships inside VS Code)', () => {
+    const chat = [{ id: 'GitHub.copilot-chat', builtIn: true }];
+    const defaults = (k: string): unknown => ({ 'github.copilot.enable': { '*': true } })[k];
+
+    it('do not count with the setting at its default', () => {
+      expect(activeConflicts(chat, defaults, new Set())).toEqual([]);
+      expect(activeConflicts(chat, defaults, new Set(), () => undefined)).toEqual([]);
+    });
+
+    it('count when the user set the setting on', () => {
+      const user = (k: string): unknown => ({ 'github.copilot.enable': { '*': true } })[k];
+      expect(activeConflicts(chat, defaults, new Set(), user)).toEqual([{ id: 'github.copilot-chat', name: 'GitHub Copilot' }]);
+    });
+
+    it('do not count when the user set the setting off', () => {
+      const off = (k: string): unknown => ({ 'github.copilot.enable': { '*': false } })[k];
+      expect(activeConflicts(chat, off, new Set(), off)).toEqual([]);
+    });
+
+    it('leave a marketplace-installed Copilot on today\'s rule', () => {
+      expect(activeConflicts([{ id: 'GitHub.copilot', builtIn: false }], defaults, new Set())).toHaveLength(1);
+    });
+  });
+
+  it('never counts Copilot when chat.disableAIFeatures is true', () => {
+    const get = (k: string): unknown => ({ 'chat.disableAIFeatures': true, 'github.copilot.enable': { '*': true } })[k];
+    const user = (k: string): unknown => ({ 'github.copilot.enable': { '*': true } })[k];
+    const all = [{ id: 'github.copilot' }, { id: 'github.copilot-chat', builtIn: true }, { id: 'continue.continue' }];
+    expect(activeConflicts(all, get, new Set(), user)).toEqual([{ id: 'continue.continue', name: 'Continue' }]);
+  });
 });

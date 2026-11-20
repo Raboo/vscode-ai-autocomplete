@@ -80,6 +80,16 @@ describe('postJson', () => {
     expect(seen).toEqual({ ct: 'application/json', body: '{"a":1}' });
   });
 
+  test('a user Content-Type header in any case is replaced, not duplicated', async () => {
+    let ct = '';
+    const base = await listen((req, res) => {
+      ct = String(req.headers['content-type']);
+      res.end('ok');
+    });
+    await postJson(base, {}, { headers: { 'Content-Type': 'text/plain', 'x-a': '1' }, signal: new AbortController().signal, timeoutMs: 2000 });
+    expect(ct).toBe('application/json');
+  });
+
   test('500 rejects with HttpError carrying status and truncated body', async () => {
     const base = await listen((_req, res) => {
       res.statusCode = 500;

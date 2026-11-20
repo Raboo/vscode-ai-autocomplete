@@ -50,6 +50,7 @@ Known issues found by the per-task reviews and the final whole-branch review of 
 - The Dependabot `actions` group has no `update-types: [minor, patch]`, so one major bump holds back the whole group.
 - The dry-run output escapes the commas in the topic list (cosmetic).
 - There is no `.vscode-test` cache, and the integration tests run against an unpinned `stable` VS Code.
+- Dependabot does not update the actionlint version pinned in `ci.yml`'s step `env` (`ACTIONLINT_VERSION`, `ACTIONLINT_SHA256`): bump both by hand.
 
 ## Backends page (2026-11-14 review)
 
@@ -89,6 +90,7 @@ Parked by the Phase 2 reviews (the final review's fix wave did the rest):
 - FIM routes pass no finish reason. An unclosed reasoning block at the start of FIM output shows nothing and a later opener is kept as code, so this matters only if a FIM model ever reasons mid-output.
 - `thinking.test.ts` gaps: `thinking` for an unclosed block, a closer split across pushes inside a block, Harmony's `<|end|>` followed by the final marker, and a bare `[/THINK]`.
 - `TAGS.find` relies on no tag being a prefix of another; a comment should say the list must stay prefix-free.
+- Single-line mode on the chat route (`src/completion/stream.ts`): leaked reasoning is caught only once the answer is final, so a stream that stops early at the first line returns the first line of leaked reasoning as ghost text before a later bare closer arrives.
 
 ### Chat transport and OpenRouter
 
@@ -238,3 +240,7 @@ Left out of 3b on purpose (Ruling 13). Each would help in the way named.
 
 - A symmetric sanity guard for raw formats: drop answers that delete many non-blank lines while adding none, or are much shorter than the window.
 - Sweep v1: an answer that stops early is read as deleting the window's tail.
+
+### From the smoke test (Phase 3b)
+
+- LM Studio MLX leading space (fixed in 0.5.1, design `docs/superpowers/specs/2026-11-16-lmstudio-mlx-fixes-design.md`), still open: report the MLX leading-space bug to LM Studio; skip the hold-back for GGUF models (`/api/v0/models` `compatibility_type`) if the shortened prompt ever shows a quality cost.

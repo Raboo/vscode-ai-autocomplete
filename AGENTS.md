@@ -118,7 +118,7 @@ Why each piece exists:
 Workflows (`.github/workflows/`):
 
 - `ci.yml`: jobs `check` (lint, typecheck, build, test, package) and `integration` (VS Code under `xvfb-run`). Job ids must stay `check` and `integration`, with no `name:`, because the ruleset requires those names.
-- `release-please.yml`: job `release-please` opens or updates the release PR and turns on auto-merge (squash) for it; job `vsix` runs on release, uploads `ai-autocomplete-X.Y.Z.vsix` to the release and publishes it to Open VSX (`npx ovsx`, token from the `OPEN_VSX_TOKEN` secret passed as `OVSX_PAT`; it creates the `raboo` namespace if missing and skips with a notice when the secret is empty). A `workflow_dispatch` with the input `tag` (for example `v1.4.0`) rebuilds that tag, uploads the `.vsix` to its GitHub release and publishes it to Open VSX; the release-please job does not run then. See `docs/PUBLISHING.md`.
+- `release-please.yml`: job `release-please` opens or updates the release PR and turns on auto-merge (squash) for it; job `vsix` runs on release and uploads `ai-autocomplete-X.Y.Z.vsix` to the release; job `open-vsx` publishes it to Open VSX (`npx --no-install ovsx` from the workflow commit's lockfile, token from the `OPEN_VSX_TOKEN` secret passed as `OVSX_PAT`; it creates the `raboo` namespace if missing and skips with a notice when the secret is empty). A `workflow_dispatch` with the input `tag` (for example `v1.4.0`) rebuilds that tag, uploads the `.vsix` to its GitHub release and publishes it to Open VSX; the release-please job does not run then. See `docs/PUBLISHING.md`.
 - `dependabot-automerge.yml`: enables auto-merge (squash) for Dependabot patch and minor PRs.
 - `codeql.yml`: job `analyze`.
 - Every job has `timeout-minutes`; keep it when adding jobs.

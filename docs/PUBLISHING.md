@@ -20,7 +20,7 @@ The release job creates the `raboo` namespace if it is missing.
 
 1. release-please merges its release PR, which tags the release.
 2. The `vsix` job in `.github/workflows/release-please.yml` checks out the tag, runs lint, typecheck, build and tests, builds `ai-autocomplete-X.Y.Z.vsix` and uploads it to the GitHub release.
-3. The same job publishes that `.vsix` to Open VSX with `npx ovsx publish`. The token reaches `ovsx` only through the `OVSX_PAT` environment variable. If the `OPEN_VSX_TOKEN` secret is empty, the step prints a notice and skips Open VSX.
+3. A separate `open-vsx` job (run from the workflow's own commit, so this repo's pinned `ovsx` is used) publishes that `.vsix` to Open VSX with `npx --no-install ovsx publish`. The token reaches `ovsx` only through the `OVSX_PAT` environment variable. If the `OPEN_VSX_TOKEN` secret is empty, the step prints a notice and skips Open VSX.
 
 ### Republish a tag
 

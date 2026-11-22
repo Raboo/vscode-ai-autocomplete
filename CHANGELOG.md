@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.4.0...v1.5.0) (2026-11-22)
+
+
+### Features
+
+* Instinct next edit format and recipe ([595faa9](https://github.com/Raboo/vscode-ai-autocomplete/commit/595faa9046f67b6c999d8b917aa0461833f0cb3e))
+
 ## [1.4.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.3.0...v1.4.0) (2026-11-20)
 
 

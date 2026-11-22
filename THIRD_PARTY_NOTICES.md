@@ -100,8 +100,8 @@ SOFTWARE.
 
 The Apache-2.0 license text is this project's own `LICENSE` file, which applies to the adapted parts. No file of the Sweep projects is copied; the adapted parts are the layouts of the prompts and the rules for reading the answers.
 
-## Continue (Instinct)
+## Continue (continuedev/continue)
 
-`src/nextEdit/formats/instinct.ts` adapts the Next Edit prompt of Continue's Instinct model: the system prompt and user prompt prefix as they appear in the training data `continuedev/instinct-data` @ e557e3ed, and the prompt layout of `core/nextEdit` in `continuedev/continue` @ 5522c6f44ca0ac3528b37244818fbfa39b5af470. Apache-2.0. Copyright Continue Dev, Inc.
+`src/nextEdit/formats/instinct.ts` adapts the Instinct Next Edit prompt from `core/nextEdit/constants.ts`, `core/nextEdit/templating/instinct.ts` and `core/nextEdit/templating/NextEditPromptEngine.ts` @ 5522c6f44ca0ac3528b37244818fbfa39b5af470, with the system prompt and user prompt prefix as they appear in the training data `continuedev/instinct-data` @ e557e3ed. Apache-2.0. Copyright Continue Dev, Inc.
 
 The Apache-2.0 license text is this project's own `LICENSE` file, which applies to the adapted parts.

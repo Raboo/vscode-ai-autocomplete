@@ -45,7 +45,6 @@ describe('instinctMessages', () => {
       '<|editable_region_end|>',
       ...fileLines.slice(26)
     ];
-    // window: 25 lines either side of the cursor, so line 0 is out of reach only when above 20-25 (not here)
     const expected =
       'Reference the user excerpt, user edits, and the snippets to understand the developer\'s intent. Update the editable region of the user excerpt by predicting and completing the changes they would have made next. This may be a deletion, addition, or modification of code.' +
       '\n\n### Context:\n\n<|context_file|> `a.ts`\n<|snippet|>\nexport const a = 1;\n' +
@@ -109,6 +108,12 @@ describe('parseInstinct', () => {
   it('strips cursor, region tags and fences', () => {
     expect(parseInstinct('a<|user_cursor_is_here|>b\n<|editable_region_start|>\n<|editable_region_end|>')).toEqual({ kind: 'rewrite', lines: ['ab'] });
     expect(parseInstinct('```ts\n  a\n```')).toEqual({ kind: 'rewrite', lines: ['  a'] });
+  });
+  it('keeps plain code that contains a fence line', () => {
+    expect(parseInstinct('a\n```\nb')).toEqual({ kind: 'rewrite', lines: ['a', '```', 'b'] });
+  });
+  it('keeps an unclosed opening fence as it is', () => {
+    expect(parseInstinct('```ts\n  a')).toEqual({ kind: 'rewrite', lines: ['```ts', '  a'] });
   });
   it('empty is invalid', () => {
     expect(parseInstinct('')).toEqual({ kind: 'invalid', why: 'empty' });

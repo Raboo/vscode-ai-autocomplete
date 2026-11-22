@@ -23,12 +23,12 @@ export function instinctRegion(cursorLine: number, lineCount: number): LineSpan 
   return editableRegion(cursorLine, lineCount, 1, 5);
 }
 
-const renderEdit = (path: string) => (e: DiffEntry): string =>
-  `User edited file "${path}"\n\n\`\`\`diff\n${e.contextText.replace(/\n+$/, '')}\n\`\`\``;
+const renderEdit = (e: DiffEntry): string =>
+  `User edited file "${e.path}"\n\n\`\`\`diff\n${e.contextText.replace(/\n+$/, '')}\n\`\`\``;
 
 export function instinctMessages(i: NextEditInput, systemSuffix?: string): { messages: ChatMessage[]; stableChars: number } {
   const snippets = pickSnippets(i.snippets, i.budgets.snippetsChars, RESERVED);
-  const edits = newestThatFit(i.history, (e) => renderEdit(e.path)(e), i.budgets.historyChars).reverse();
+  const edits = newestThatFit(i.history, renderEdit, i.budgets.historyChars).reverse();
 
   const clipped = clipLinesAroundRegion(i.lines, i.region, i.budgets.fileChars);
   const start = Math.min(i.region.start, Math.max(clipped.start, i.cursor.line - WINDOW_LINES));
@@ -72,10 +72,10 @@ function problem(i: NextEditInput): string | undefined {
 /** The answer has no closing marker, so the last line is taken as it is (`complete` does not matter). */
 export function parseInstinct(text: string): FormatAnswer {
   let lines = text.split(/\r?\n/);
-  const open = lines.findIndex((l) => l.startsWith('```'));
-  if (open >= 0) {
+  const open = lines.findIndex((l) => l.trim() !== '');
+  if (open >= 0 && lines[open].startsWith('```')) {
     const close = lines.findIndex((l, n) => n > open && l.trim() === '```');
-    lines = lines.slice(open + 1, close >= 0 ? close : undefined);
+    if (close >= 0) lines = lines.slice(open + 1, close);
   }
   lines = lines.filter((l) => l.trim() !== REGION_START && l.trim() !== REGION_END).map((l) => l.split(CURSOR).join(''));
   if (lines.every((l) => l.trim() === '')) return { kind: 'invalid', why: 'empty' };

@@ -4,7 +4,7 @@ import { TEMPLATES } from '../models/templates';
 import { BACKEND_FIELD_RENAMES, COMPLETIONS_KEYS, inspectRenamed, OLD_NAME_NOTE, oldKeyProblem, renameBackendEntry, type CompletionsKey } from './rename';
 import type { BackendConfig, BackendFimSettings, BackendKind, FimMode, FimTemplateId, HostFlavor, ModelOverrideBody, Multiline, Sampling, ThinkingStrategy } from '../types';
 
-export const NEXT_EDIT_FORMATS = ['auto', 'chatXtab', 'sweep', 'zeta21'] as const;
+export const NEXT_EDIT_FORMATS = ['auto', 'chatXtab', 'sweep', 'zeta21', 'instinct'] as const;
 export const NEXT_EDIT_DISPLAYS = ['auto', 'native', 'decorations'] as const;
 export type NextEditFormatSetting = (typeof NEXT_EDIT_FORMATS)[number];
 export type NextEditDisplay = (typeof NEXT_EDIT_DISPLAYS)[number];

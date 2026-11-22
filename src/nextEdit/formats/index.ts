@@ -6,9 +6,10 @@ import { instinctFormat } from './instinct';
 import { sweepFormat } from './sweep';
 import { zeta21Format } from './zeta21';
 
-/** The format for a setting: `auto` picks by the model id (Zeta, Sweep, else chatXtab). */
+/** The format for a setting: `auto` picks by the model id (Instinct, Zeta, Sweep, else chatXtab). */
 export function formatIdFor(setting: NextEditFormatSetting, model: string | undefined): FormatId {
   if (setting !== 'auto') return setting;
+  if (model !== undefined && /instinct/i.test(model)) return 'instinct';
   if (model !== undefined && /zeta/i.test(model)) return 'zeta21';
   if (model !== undefined && /sweep/i.test(model)) return 'sweep';
   return 'chatXtab';

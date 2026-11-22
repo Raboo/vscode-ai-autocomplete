@@ -46,7 +46,7 @@ export interface EditView {
   cardId: string | null; form: BackendForm; keyMode: 'no' | 'optional' | 'yes'; keyStored: boolean; fields: FieldView[];
   /** `tag` is "ready", "chat prompt" (with ", cannot turn thinking off" for a model that cannot do so), or why the backend has no route for that model. */
   models?: { id: string; tag: string }[]; modelsError?: string; errors: { field: ErrorField; message: string }[]; warnings: string[];
-  /** The format the Next Edit model will use ("Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format" or "chat prompt (chatXtab)"); none when the backend is not used for Next Edit. */
+  /** The format the Next Edit model will use ("Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format", "Instinct format" or "chat prompt (chatXtab)"); none when the backend is not used for Next Edit. */
   nextEditFormat?: string;
   testing: boolean; test?: TestStep[];
 }

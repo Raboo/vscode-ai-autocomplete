@@ -303,9 +303,13 @@ describe('nextEdit settings', () => {
     expect(settings.nextEdit).toMatchObject({ format: 'zeta21', display: 'decorations', regionLinesAbove: 3, regionLinesBelow: 20, historySize: 2, contextBudget: 6000 });
     expect(problems).toEqual([]);
   });
+  test('nextEdit.format accepts instinct', () => {
+    const r = parseSettings(src({ 'nextEdit.format': { globalValue: 'instinct' } }));
+    expect(r.settings.nextEdit.format).toBe('instinct');
+  });
   test('nextEdit 3b invalid values fall back with a problem', () => {
     const cases: [string, unknown, string, unknown][] = [
-      ['format', 'instinct', 'format', 'auto'], ['display', 'popup', 'display', 'auto'],
+      ['format', 'bogus', 'format', 'auto'], ['display', 'popup', 'display', 'auto'],
       ['regionLinesAbove', 21, 'regionLinesAbove', 5], ['regionLinesBelow', -1, 'regionLinesBelow', 10],
       ['historySize', 11, 'historySize', 5], ['contextBudget', 500, 'contextBudget', 3500],
       ['historySize', 2.5, 'historySize', 5],

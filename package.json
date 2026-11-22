@@ -524,13 +524,15 @@
               "auto",
               "chatXtab",
               "sweep",
-              "zeta21"
+              "zeta21",
+              "instinct"
             ],
             "enumDescriptions": [
               "Picks the format by the model name.",
               "Chat prompt, for general chat models such as Qwen on Strata.",
               "Sweep next-edit models on a raw completions route.",
-              "Zeta 2.1 on a raw completions route."
+              "Zeta 2.1 on a raw completions route.",
+              "Continue's Instinct on a chat completions route."
             ],
             "description": "Prompt and answer format of Next Edit requests.",
             "order": 4
@@ -550,7 +552,7 @@
             "minimum": 0,
             "maximum": 20,
             "default": 5,
-            "description": "Lines above the cursor the model may rewrite. Not used by Zeta 2.1, which sizes its region by length.",
+            "description": "Lines above the cursor the model may rewrite. Not used by Zeta 2.1 or Instinct, which size their own region.",
             "order": 6
           },
           "aiAutocomplete.nextEdit.regionLinesBelow": {
@@ -559,7 +561,7 @@
             "minimum": 0,
             "maximum": 40,
             "default": 10,
-            "description": "Lines below the cursor the model may rewrite. Not used by Zeta 2.1, which sizes its region by length.",
+            "description": "Lines below the cursor the model may rewrite. Not used by Zeta 2.1 or Instinct, which size their own region.",
             "order": 7
           },
           "aiAutocomplete.nextEdit.historySize": {

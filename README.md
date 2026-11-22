@@ -110,6 +110,7 @@ The page has:
 | --- | --- | --- | --- | --- |
 | Sweep Next Edit 1.5B (recommended) | 1.5 GB | completions and Next Edit | Apache-2.0 | `sweep-next-edit-1.5b` |
 | Zeta 2.1 (community quant, not official) | 5.1 GB | Next Edit | Apache-2.0 | `zeta-2.1` |
+| Instinct 7B | 4.7 GB | Next Edit, completions | Apache-2.0 | `instinct` |
 | Qwen2.5-Coder 1.5B | 1.6 GB | completions | Apache-2.0 | `qwen2.5-coder-1.5b` |
 | Qwen2.5-Coder 3B | 3.3 GB | completions | Apache-2.0 | `qwen2.5-coder-3b` |
 | Qwen2.5-Coder 7B | 8.1 GB | completions | Apache-2.0 | `qwen2.5-coder-7b` |
@@ -196,9 +197,9 @@ When nothing appears, run **AI Autocomplete: Why No Suggestion?** (also in the s
 
 ### What a backend is used for
 
-Each backend has **Use for** checkboxes on the Backends page: **Completions**, **Next Edit** or both. A backend with only Next Edit ticked is never used for ghost-text completions, so you can add a Zeta server and keep it out of the completion picker. A Sweep model can do both: it is a Qwen2.5-Coder fine-tune and fills in the middle with the qwen template, so one Sweep backend with both boxes ticked serves completions and Next Edit.
+Each backend has **Use for** checkboxes on the Backends page: **Completions**, **Next Edit** or both. A backend with only Next Edit ticked is never used for ghost-text completions, so you can add a Zeta server and keep it out of the completion picker. A Sweep model can do both: it is a Qwen2.5-Coder fine-tune and fills in the middle with the qwen template, so one Sweep backend with both boxes ticked serves completions and Next Edit. An Instinct model can do both too, like Sweep, but it is about half the speed of Qwen2.5-Coder 3B for completions.
 
-- **Model** shows only with Completions ticked, and **Next Edit model** only with Next Edit ticked. With both ticked, an empty Next Edit model means the same model as for completions. With only Next Edit ticked, an empty Next Edit model means the model the server lists (or the one you pick from its list). The Next Edit model's hint says which format the model will use: "Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format" or "chat prompt (chatXtab)".
+- **Model** shows only with Completions ticked, and **Next Edit model** only with Next Edit ticked. With both ticked, an empty Next Edit model means the same model as for completions. With only Next Edit ticked, an empty Next Edit model means the model the server lists (or the one you pick from its list). The Next Edit model's hint says which format the model will use: "Zeta 2.1 format", "Sweep v1 format", "Sweep v2 format", "Instinct format" or "chat prompt (chatXtab)".
 - At least one use must stay ticked. Unticking a use removes that use's model when you save.
 - Each backend's card says what it is used for ("Completions · Next Edit", "Completions only" or "Next Edit only") and has **Use for completions** and **Use for Next Edit** buttons, with a "Completions" or "Next Edit" badge on the backend selected for it.
 - **Select Completion Backend** (the menu's **Completions** entry) lists only backends used for completions. **Select Next Edit Backend** lists only backends used for Next Edit (and Off). **Set API Key** lists all backends.
@@ -275,12 +276,13 @@ Next Edit suggests the edit you are likely to make next. After you change code, 
 
 **Typing it yourself:** if you start typing what Next Edit suggests (or what it is about to suggest), the rest of the suggestion stays and moves with your text; `Tab` applies what is left. Any other change drops it.
 
-**Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `sweep` gets Sweep, any other model gets `chatXtab`.
+**Formats:** `aiAutocomplete.nextEdit.format` (default `auto`) picks the prompt and answer format. In `auto` the model's name decides: a name with `zeta` gets Zeta 2.1, a name with `instinct` gets Instinct (checked first), a name with `sweep` gets Sweep, any other model gets `chatXtab`.
 
 | Format | Fits | Route |
 | --- | --- | --- |
 | `sweep` | Sweep next-edit 0.5B, 1.5B and v2-7B | raw completions (llama.cpp `/completion`, or `/v1/completions` on LM Studio and others) |
 | `zeta21` | Zeta 2.1 | raw completions |
+| `instinct` | Continue Instinct | chat completions |
 | `chatXtab` | chat models such as Qwen3.8 on Strata | chat |
 
 Sweep 0.5B and 1.5B use Sweep's first prompt layout; a model name with `v2` or `7b` uses the v2 layout. Which layout the 0.5B and 1.5B GGUF files answer best is not settled yet. To force v2, set the format to `sweep` and use a model name that contains `v2`.
@@ -312,14 +314,14 @@ With the opt-in (and `display` on `auto` or `native`), an edit away from the cur
 
 | Setting | Default | Limits |
 | --- | --- | --- |
-| `aiAutocomplete.nextEdit.format` | `auto` | `auto`, `chatXtab`, `sweep`, `zeta21` |
+| `aiAutocomplete.nextEdit.format` | `auto` | `auto`, `chatXtab`, `sweep`, `zeta21`, `instinct` |
 | `aiAutocomplete.nextEdit.display` | `auto` | `auto`, `native`, `decorations` |
 | `aiAutocomplete.nextEdit.regionLinesAbove` | 5 | 0 to 20 |
 | `aiAutocomplete.nextEdit.regionLinesBelow` | 10 | 0 to 40 |
 | `aiAutocomplete.nextEdit.historySize` | 5 | 0 to 10 recent edit diffs |
 | `aiAutocomplete.nextEdit.contextBudget` | 3500 | 1000 to 16000 tokens, split between the file (3/7), the edit history (2/7) and recently viewed snippets (2/7) |
 
-A value outside its limits is ignored, and a warning names it. The region settings apply to `chatXtab` and `zeta21`, not to Sweep.
+A value outside its limits is ignored, and a warning names it. The region settings apply to `chatXtab`, not to Sweep, Zeta 2.1 or Instinct.
 
 **Status bar menu:** besides **Next Edit: <backend>**, the menu has **Enable native Next Edit UI...**, which appears until the native view is active (it runs the opt-in command above; after a successful opt-in it stays until VS Code restarts). **Settings...** opens the Settings page filtered to this extension.
 

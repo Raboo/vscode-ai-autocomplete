@@ -13,7 +13,7 @@ const byId = (id: string): Recipe => {
 describe('RECIPES', () => {
   test('ids are unique and the default comes first', () => {
     expect(new Set(RECIPES.map((r) => r.id)).size).toBe(RECIPES.length);
-    expect(RECIPES.map((r) => r.id)).toEqual(['sweep-1.5b', 'zeta-2.1', 'qwen2.5-coder-1.5b', 'qwen2.5-coder-3b', 'qwen2.5-coder-7b', 'mellum-4b']);
+    expect(RECIPES.map((r) => r.id)).toEqual(['sweep-1.5b', 'zeta-2.1', 'instinct-7b', 'qwen2.5-coder-1.5b', 'qwen2.5-coder-3b', 'qwen2.5-coder-7b', 'mellum-4b']);
     expect(RECIPES[0].id).toBe('sweep-1.5b');
   });
 
@@ -25,6 +25,17 @@ describe('RECIPES', () => {
     expect(r.license).toBe('Apache-2.0');
     expect(r.uses.length).toBeGreaterThan(0);
     expect(r.modelName).not.toMatch(/v2/i);
+  });
+
+  test('instinct-7b', () => {
+    const r = byId('instinct-7b');
+    expect(r).toMatchObject({
+      label: 'Instinct 7B', repo: 'continuedev/instinct-GGUF', revision: 'c3f24799cc492d3252505628f49760f2fe133f43', file: 'instinct-Q4_K_M.gguf',
+      bytes: 4683073376, sha256: '65eff06597c533456ac031479f31175e894e9e6ff79a562ed4d1f859f154af29', license: 'Apache-2.0', modelName: 'instinct', contextTokens: 8192,
+    });
+    expect(r.uses).toEqual(['completions', 'nextEdit']);
+    expect(r.note).toBeUndefined();
+    expect(pickFormat('auto', r.modelName).id).toBe('instinct');
   });
 
   test('uses', () => {
@@ -53,7 +64,7 @@ describe('RECIPES', () => {
   });
 
   test('labels', () => {
-    expect(RECIPES.map((r) => r.label)).toEqual(['Sweep Next Edit 1.5B', 'Zeta 2.1 (community quant)', 'Qwen2.5-Coder 1.5B', 'Qwen2.5-Coder 3B', 'Qwen2.5-Coder 7B', 'Mellum 4B']);
+    expect(RECIPES.map((r) => r.label)).toEqual(['Sweep Next Edit 1.5B', 'Zeta 2.1 (community quant)', 'Instinct 7B', 'Qwen2.5-Coder 1.5B', 'Qwen2.5-Coder 3B', 'Qwen2.5-Coder 7B', 'Mellum 4B']);
   });
 
   test('model names work with the existing model rules', () => {

@@ -53,6 +53,20 @@ export const RECIPES: readonly Recipe[] = [
     contextTokens: 8192,
     note: 'community quant, not official',
   },
+  // Continue's Instinct (a Qwen2.5-Coder-7B fine-tune), official GGUF; it does Next Edit and, with the qwen template, completions.
+  {
+    id: 'instinct-7b',
+    label: 'Instinct 7B',
+    repo: 'continuedev/instinct-GGUF',
+    revision: 'c3f24799cc492d3252505628f49760f2fe133f43',
+    file: 'instinct-Q4_K_M.gguf',
+    bytes: 4683073376,
+    sha256: '65eff06597c533456ac031479f31175e894e9e6ff79a562ed4d1f859f154af29',
+    license: 'Apache-2.0',
+    uses: ['completions', 'nextEdit'],
+    modelName: 'instinct',
+    contextTokens: 8192,
+  },
   {
     id: 'qwen2.5-coder-1.5b',
     label: 'Qwen2.5-Coder 1.5B',

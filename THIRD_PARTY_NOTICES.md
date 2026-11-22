@@ -99,3 +99,9 @@ SOFTWARE.
 `src/nextEdit/formats/sweep.ts` adapts the prompt layouts of two inference scripts on Hugging Face: `sweepai/sweep-next-edit-1.5B` `run_model.py` @ 409016591c6c1a94f545f22328a85a3516118f34 and `sweepai/sweep-next-edit-v2-7B` `inference.py` @ 851f4ac1427ec91eb6c19d408409490d6e0c00a0. Apache-2.0. Copyright Sweep AI.
 
 The Apache-2.0 license text is this project's own `LICENSE` file, which applies to the adapted parts. No file of the Sweep projects is copied; the adapted parts are the layouts of the prompts and the rules for reading the answers.
+
+## Continue (Instinct)
+
+`src/nextEdit/formats/instinct.ts` adapts the Next Edit prompt of Continue's Instinct model: the system prompt and user prompt prefix as they appear in the training data `continuedev/instinct-data` @ e557e3ed, and the prompt layout of `core/nextEdit` in `continuedev/continue` @ 5522c6f44ca0ac3528b37244818fbfa39b5af470. Apache-2.0. Copyright Continue Dev, Inc.
+
+The Apache-2.0 license text is this project's own `LICENSE` file, which applies to the adapted parts.

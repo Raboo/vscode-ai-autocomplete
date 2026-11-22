@@ -5,7 +5,7 @@ Rules every AI agent follows in this repo. `CLAUDE.md` only imports this file.
 ## What this is
 
 - An autocomplete-only VS Code extension: no chat, no agents, no telemetry.
-- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phases 3a and 3b: the chatXtab, Sweep and Zeta 2.1 formats, ghost text, native inline edits and a decoration fallback); self-hosted backends first.
+- Fast FIM (fill-in-the-middle) ghost-text completion and Next Edit (Phases 3a and 3b: the chatXtab, Sweep, Zeta 2.1 and Instinct formats, ghost text, native inline edits and a decoration fallback); self-hosted backends first.
 - Design spec: `docs/superpowers/specs/2026-11-13-ai-autocomplete-design.md`. Phase status: `docs/ROADMAP.md`.
 
 ## Hard rules
@@ -54,10 +54,11 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - Next Edit (`src/nextEdit/`, all pure except `vscode/`):
   - `history.ts`: edit-diff history per file (merged per area, with structured hunks and the text before the latest change) and recently viewed snippets;
-  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages; Zeta 2.1 uses a length-based region (1225 chars, at most 40 lines) that ignores those settings;
+  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages; Zeta 2.1 uses a length-based region (1225 chars, at most 40 lines), Instinct a fixed region (1 above, 5 below) and Sweep its own window, all ignoring those settings;
   - `formats/format.ts`: the format interface (chat or raw completion transport), the answer type and the shared reserved-string and budgeting helpers;
   - `formats/index.ts`: `pickFormat`, which maps the `nextEdit.format` setting and the model id to a format;
   - `formats/chatXtab.ts`: the chat prompt (our own wording, Copilot/Mercury tag names) and the answer parser;
+  - `formats/instinct.ts`: Instinct prompt and answer parser; adapts Continue's Apache-2.0 prompt text, see `THIRD_PARTY_NOTICES.md`;
   - `formats/sweep.ts`: Sweep next-edit prompts (v1 and v2 layouts) and answer parser; adapts Apache-2.0 scripts, see `THIRD_PARTY_NOTICES.md`;
   - `formats/zeta21.ts`: Zeta 2.1 prompt with marker blocks and answer parser, follows the model card and Zed's published zed-zeta-bindings, read only, no code copied;
   - `related.ts`: definitions as context, pure (identifiers near the cursor, excerpts, merging, cache);

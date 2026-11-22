@@ -2,12 +2,14 @@ import type { NextEditFormatSetting } from '../../config/settings';
 import { chatXtabFormat } from './chatXtab';
 import type { RouteCaps } from '../../backends/types';
 import type { FormatId, NextEditFormat } from './format';
+import { instinctFormat } from './instinct';
 import { sweepFormat } from './sweep';
 import { zeta21Format } from './zeta21';
 
-/** The format for a setting: `auto` picks by the model id (Zeta, Sweep, else chatXtab). */
+/** The format for a setting: `auto` picks by the model id (Instinct, Zeta, Sweep, else chatXtab). */
 export function formatIdFor(setting: NextEditFormatSetting, model: string | undefined): FormatId {
   if (setting !== 'auto') return setting;
+  if (model !== undefined && /instinct/i.test(model)) return 'instinct';
   if (model !== undefined && /zeta/i.test(model)) return 'zeta21';
   if (model !== undefined && /sweep/i.test(model)) return 'sweep';
   return 'chatXtab';
@@ -40,6 +42,8 @@ export function nextEditFormatLabel(setting: NextEditFormatSetting, model: strin
       return `Sweep ${sweepVariant(model)} format`;
     case 'zeta21':
       return 'Zeta 2.1 format';
+    case 'instinct':
+      return 'Instinct format';
     case 'chatXtab':
       return 'chat prompt (chatXtab)';
   }
@@ -51,6 +55,8 @@ export function pickFormat(setting: NextEditFormatSetting, model: string | undef
       return sweepFormat(sweepVariant(model));
     case 'zeta21':
       return zeta21Format;
+    case 'instinct':
+      return instinctFormat;
     case 'chatXtab':
       return chatXtabFormat;
   }

@@ -154,6 +154,13 @@ describe('runNextEdit', () => {
     expect((await r.result)?.edit).toMatchObject({ startLine: 7, endLine: 9 });
   });
 
+  test('an instinct answer cut at max tokens is invalid', async () => {
+    const snap = snapshot();
+    const r = run([content('x = 1\n'), { type: 'finish', reason: 'length' }], { snap, format: pickFormat('instinct', 'm') });
+    expect(await r.result).toBeUndefined();
+    expect(r.captured.parsed).toEqual([{ kind: 'invalid', why: 'truncated' }]);
+  });
+
   test('a reasoning event fails fast with ThinkingError', async () => {
     const r = run([{ type: 'reasoning', text: 'hm' }, content('NO_CHANGE')]);
     await expect(r.result).rejects.toBeInstanceOf(ThinkingError);

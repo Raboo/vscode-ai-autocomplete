@@ -2,7 +2,7 @@ import type { ChatMessage } from '../../backends/types';
 import type { DiffEntry, DiffHunk, Snippet } from '../history';
 import { nextEditBudgets, type LineSpan, type NextEditBudgets } from '../region';
 
-export type FormatId = 'chatXtab' | 'sweep' | 'zeta21';
+export type FormatId = 'chatXtab' | 'sweep' | 'zeta21' | 'instinct';
 
 /** What a Next Edit prompt is built from. */
 export interface NextEditInput {

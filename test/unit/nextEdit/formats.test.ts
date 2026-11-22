@@ -106,3 +106,14 @@ describe('raw-format stops', () => {
     }
   });
 });
+
+describe('instinct selection', () => {
+  it('auto picks Instinct by model name, before Zeta and Sweep', () => {
+    for (const m of ['instinct', 'nate/instinct:latest', 'instinct-zeta-mix', 'instinct-sweep']) expect(formatIdFor('auto', m)).toBe('instinct');
+  });
+  it('setting, label and Next Edit only', () => {
+    expect(pickFormat('instinct', 'x').id).toBe('instinct');
+    expect(nextEditFormatLabel('auto', 'instinct')).toBe('Instinct format');
+    expect(nextEditOnlyModel('instinct')).toBeUndefined();
+  });
+});

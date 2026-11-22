@@ -39,6 +39,8 @@ const family = (id: string, re: RegExp, thinking: ThinkingStrategy, samplingPara
 const PRESETS: Preset[] = [
   // Sweep's Next Edit models are Qwen2.5-Coder fine-tunes and keep its FIM tokens (checked live on sweep-next-edit-v2-7b).
   coder('sweep', /sweep/i, 'qwen'),
+  // Instinct is a Qwen2.5-Coder-7B fine-tune and still fills in the middle with the qwen template (checked live on llama.cpp /infill).
+  coder('instinct', /instinct/i, 'qwen'),
   coder('qwen-coder', /qwen[\d.]*[-_ ]?coder|codeqwen/i, 'qwen'),
   coder('codestral', /codestral/i, 'codestral', CODESTRAL_SAMPLING),
   coder('deepseek-coder', /deepseek[-_ ]?coder/i, 'deepseek'),

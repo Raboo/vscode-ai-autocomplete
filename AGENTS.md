@@ -54,7 +54,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `src/webview/backends/` is the page itself: `main.ts` (DOM), pure `render.ts`, `style.css`, with its own `tsconfig.webview.json`. `src/ui/backendsPanel.ts` hosts it.
 - Next Edit (`src/nextEdit/`, all pure except `vscode/`):
   - `history.ts`: edit-diff history per file (merged per area, with structured hunks and the text before the latest change) and recently viewed snippets;
-  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages; Zeta 2.1 uses a length-based region (1225 chars, at most 40 lines) that ignores those settings;
+  - `region.ts`: the editable region (default 5 above, 10 below; the `regionLinesAbove`/`regionLinesBelow` settings change it) and clipping the file to 10-line pages; Zeta 2.1 uses a length-based region (1225 chars, at most 40 lines), Instinct a fixed region (1 above, 5 below) and Sweep its own window, all ignoring those settings;
   - `formats/format.ts`: the format interface (chat or raw completion transport), the answer type and the shared reserved-string and budgeting helpers;
   - `formats/index.ts`: `pickFormat`, which maps the `nextEdit.format` setting and the model id to a format;
   - `formats/chatXtab.ts`: the chat prompt (our own wording, Copilot/Mercury tag names) and the answer parser;

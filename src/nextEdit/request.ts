@@ -117,6 +117,7 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
   const filter = new ReasoningFilter();
   let raw = '';
   let finished = false;
+  let reason: string | undefined;
   try {
     for await (const ev of o.backend.streamChat(req)) {
       if (ev.type === 'reasoning') {
@@ -127,6 +128,7 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
       if (ev.type === 'finish') {
         filter.end(ev.reason);
         finished = true;
+        reason = ev.reason;
         break;
       }
       filter.push(ev.text);
@@ -145,7 +147,8 @@ async function chatAnswer(o: RunOptions, format: ChatFormat): Promise<FormatAnsw
   if (leakedReasoning(beforeFence(raw))) throw new ThinkingError();
   const visible = filter.visible;
   o.onAnswer?.(visible);
-  return format.parse(visible, true);
+  // A stream cut at the token limit is not whole; one that ends without a finish event counts as complete.
+  return format.parse(visible, reason !== 'length');
 }
 
 /** The text before the first line that starts with a fence, or all of it. */

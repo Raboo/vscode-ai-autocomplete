@@ -56,7 +56,7 @@ export function instinctMessages(i: NextEditInput, systemSuffix?: string): { mes
       { role: 'system', content: systemSuffix ? `${INSTINCT_SYSTEM}\n${systemSuffix}` : INSTINCT_SYSTEM },
       { role: 'user', content: user }
     ],
-    stableChars: head.length
+    stableChars: /[\ud800-\udbff]/.test(head) ? [...head].length : head.length
   };
 }
 
@@ -69,8 +69,9 @@ function problem(i: NextEditInput): string | undefined {
   return tooLong(i) ? 'tooLong' : undefined;
 }
 
-/** The answer has no closing marker, so the last line is taken as it is (`complete` does not matter). */
-export function parseInstinct(text: string): FormatAnswer {
+/** The answer has no closing marker, so a stream cut at the token limit (`complete` false) is never used. */
+export function parseInstinct(text: string, complete: boolean): FormatAnswer {
+  if (!complete) return { kind: 'invalid', why: 'truncated' };
   let lines = text.split(/\r?\n/);
   const open = lines.findIndex((l) => l.trim() !== '');
   if (open >= 0 && lines[open].startsWith('```')) {

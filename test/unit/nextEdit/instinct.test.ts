@@ -83,6 +83,11 @@ describe('instinctMessages', () => {
     expect(user).not.toContain('line 18');
   });
 
+  it('stableChars counts code points with an emoji in a snippet', () => {
+    const r = instinctMessages(input({ snippets: [{ path: 'a.ts', text: '// \u{1F600}' }] }));
+    expect(r.stableChars).toBe([...r.messages[1].content.slice(0, r.messages[1].content.indexOf('### User Edits:'))].length);
+  });
+
   it('stableChars is the index of the edits heading', () => {
     const r = instinctMessages(input());
     expect(r.stableChars).toBe(r.messages[1].content.indexOf('### User Edits:'));
@@ -103,21 +108,24 @@ describe('instinct problem', () => {
 
 describe('parseInstinct', () => {
   it('rewrites', () => {
-    expect(parseInstinct('  a\n  b')).toEqual({ kind: 'rewrite', lines: ['  a', '  b'] });
+    expect(parseInstinct('  a\n  b', true)).toEqual({ kind: 'rewrite', lines: ['  a', '  b'] });
   });
   it('strips cursor, region tags and fences', () => {
-    expect(parseInstinct('a<|user_cursor_is_here|>b\n<|editable_region_start|>\n<|editable_region_end|>')).toEqual({ kind: 'rewrite', lines: ['ab'] });
-    expect(parseInstinct('```ts\n  a\n```')).toEqual({ kind: 'rewrite', lines: ['  a'] });
+    expect(parseInstinct('a<|user_cursor_is_here|>b\n<|editable_region_start|>\n<|editable_region_end|>', true)).toEqual({ kind: 'rewrite', lines: ['ab'] });
+    expect(parseInstinct('```ts\n  a\n```', true)).toEqual({ kind: 'rewrite', lines: ['  a'] });
   });
   it('keeps plain code that contains a fence line', () => {
-    expect(parseInstinct('a\n```\nb')).toEqual({ kind: 'rewrite', lines: ['a', '```', 'b'] });
+    expect(parseInstinct('a\n```\nb', true)).toEqual({ kind: 'rewrite', lines: ['a', '```', 'b'] });
   });
   it('keeps an unclosed opening fence as it is', () => {
-    expect(parseInstinct('```ts\n  a')).toEqual({ kind: 'rewrite', lines: ['```ts', '  a'] });
+    expect(parseInstinct('```ts\n  a', true)).toEqual({ kind: 'rewrite', lines: ['```ts', '  a'] });
+  });
+  it('a stream cut at the token limit is truncated', () => {
+    expect(parseInstinct('  a\n  b', false)).toEqual({ kind: 'invalid', why: 'truncated' });
   });
   it('empty is invalid', () => {
-    expect(parseInstinct('')).toEqual({ kind: 'invalid', why: 'empty' });
-    expect(parseInstinct('\n  \n')).toEqual({ kind: 'invalid', why: 'empty' });
+    expect(parseInstinct('', true)).toEqual({ kind: 'invalid', why: 'empty' });
+    expect(parseInstinct('\n  \n', true)).toEqual({ kind: 'invalid', why: 'empty' });
   });
   it('done is false', () => {
     expect(instinctFormat.done('anything')).toBe(false);

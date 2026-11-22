@@ -9,7 +9,8 @@ Support Continue's open Next Edit model **Instinct** (`continuedev/instinct`, Ap
 ## Goals, non-goals, anti-goals
 
 - Goals: an `instinct` format that reproduces the prompt the model was trained on; `auto` picks it for model ids containing `instinct`; an `instinct-7b` recipe.
-- Non-goals: completions with Instinct (unverified; the recipe is Next Edit only); Continue's full-file-diff region strategy.
+- Non-goals: Continue's full-file-diff region strategy.
+- Completions: tested on 2026-11-22 with llama.cpp `/infill` (build 12359) on six cases: Instinct still fills in the middle with Qwen's FIM tokens; answers matched Qwen2.5-Coder 3B in four cases and ran on longer in two (cut by the existing stop rules), at about half the speed (440–700 ms). So the recipe serves both, like Sweep, but is not recommended for completions alone.
 - Anti-goals: a prompt that drifts from the training format (the model degrades silently); unattributed copying of Continue's text.
 
 ## Approaches
@@ -71,8 +72,8 @@ Where Continue's runtime code and its training data differ, the training data wi
 ## Other changes
 
 - `FormatId` and `NEXT_EDIT_FORMATS` gain `instinct`; `package.json` enum and description; `formatIdFor` picks it for `/instinct/i` (checked before Zeta and Sweep); `nextEditFormatLabel` says "Instinct format".
-- `presets.ts`: an `instinct` row (`/instinct/i`, no thinking), before `qwen-coder`.
-- Recipe `instinct-7b`: label "Instinct 7B", repo `continuedev/instinct-GGUF`, revision `c3f24799cc492d3252505628f49760f2fe133f43`, file `instinct-Q4_K_M.gguf`, 4683073376 bytes, sha256 `65eff06597c533456ac031479f31175e894e9e6ff79a562ed4d1f859f154af29`, Apache-2.0, uses `['nextEdit']`, model name `instinct`, context 8192, placed after `zeta-2.1`, never the default, no note (it is official).
+- `presets.ts`: an `instinct` row (`/instinct/i`, qwen FIM template, no thinking), before `qwen-coder`.
+- Recipe `instinct-7b`: label "Instinct 7B", repo `continuedev/instinct-GGUF`, revision `c3f24799cc492d3252505628f49760f2fe133f43`, file `instinct-Q4_K_M.gguf`, 4683073376 bytes, sha256 `65eff06597c533456ac031479f31175e894e9e6ff79a562ed4d1f859f154af29`, Apache-2.0, uses `['completions', 'nextEdit']`, model name `instinct`, context 8192, placed after `zeta-2.1`, never the default, no note (it is official).
 - Attribution: `formats/instinct.ts` starts with `// Portions adapted from Continue core/nextEdit @ 5522c6f44ca0ac3528b37244818fbfa39b5af470 (Apache-2.0). Copyright Continue Dev, Inc.`; `THIRD_PARTY_NOTICES.md` names those files for Continue. AGENTS.md's ban on Continue's hole-filler prompt is unaffected (that prompt's licence is unverified; this one is Continue's own Apache-2.0 text).
 - Docs: README formats table, recipes table, the benchmark row (measured by the owner or with `scripts/bench/latency.ts`), AGENTS.md layout line.
 

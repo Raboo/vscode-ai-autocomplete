@@ -18,8 +18,8 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 4e. Full Zeta 2.1 coverage | Zeta region by length (1225 chars, up to 40 lines), 16-line marker blocks, Zeta budgets, three-line history context, definitions of nearby symbols as Next Edit context (`nextEdit.definitions`), cursor moves where Zeta predicted after Tab | [design](superpowers/specs/2026-11-19-zeta-full-design.md) | released in [v1.2.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.2.0) |
 | 4f. Speculative decoding for local models | n-gram speculative decoding (`--spec-type ngram-cache,ngram-simple`) in the router presets when llama-server supports it; `--spec-type none` in a model's extra arguments turns it off | [design](superpowers/specs/2026-11-20-speculative-decoding-design.md) | released in [v1.3.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.3.0) |
 | 4g. Hardening before publishing | Limits on numeric settings, one Authorization header, detection backoff, rejected Next Edit memory, a notice for competing inline-suggestion extensions, atomic argv.json writes, isolated integration runs, actionlint in CI | [plan](superpowers/plans/2026-11-20-hardening.md), [design](superpowers/specs/2026-11-20-hardening-design.md) | released in [v1.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.4.0) |
-| 4h. Instinct next edit | `instinct` Next Edit format (Continue's Instinct on chat completions), preset row, Instinct 7B recipe that serves completions and Next Edit | [plan](superpowers/plans/2026-11-22-instinct.md), [design](superpowers/specs/2026-11-22-instinct-design.md) | in progress |
-| 5a. Open VSX publishing | The release job publishes the `.vsix` to Open VSX with `OPEN_VSX_TOKEN`; manual republish of a tag; `docs/PUBLISHING.md` | [plan](superpowers/plans/2026-11-20-open-vsx.md), [design](superpowers/specs/2026-11-20-open-vsx-design.md) | in progress (released with the next release) |
+| 4h. Instinct next edit | `instinct` Next Edit format (Continue's Instinct on chat completions), preset row, Instinct 7B recipe that serves completions and Next Edit | [plan](superpowers/plans/2026-11-22-instinct.md), [design](superpowers/specs/2026-11-22-instinct-design.md) | released in [v1.5.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.5.0) |
+| 5a. Open VSX publishing | The release job publishes the `.vsix` to Open VSX with `OPEN_VSX_TOKEN`; manual republish of a tag; `docs/PUBLISHING.md` | [plan](superpowers/plans/2026-11-20-open-vsx.md), [design](superpowers/specs/2026-11-20-open-vsx-design.md) | released: v1.4.0 published by hand, v1.5.0 by the release job |
 | 5b. VS Code Marketplace build without the proposed API (Option A) | A second package variant without `enabledApiProposals` and with the native-UI opt-in command hidden, so Next Edit always uses decorations there; Open VSX and GitHub keep the full build | not written yet | not started |
 | 5c. Copilot sidecar spike (later) | Spike of running next to Copilot | not written yet | not started |
 
@@ -152,6 +152,14 @@ Phase 4g (check on the release `.vsix`; [design](superpowers/specs/2026-11-20-ha
 - A Next Edit dismissed with Esc does not come back unchanged after a cursor move.
 - `completions.prefixLines: -50` logs one line and completions still work.
 - A backend with an `Authorization` header and a stored key shows the "API key not sent" note.
+
+Phase 4h (check on the release `.vsix`; [design](superpowers/specs/2026-11-22-instinct-design.md)):
+
+- Local Models page: Instinct 7B shows as already downloaded (same file as before) and Use starts it; the backend gets Completions and Next Edit.
+- Backends page Test on the Instinct backend: the Next Edit step says "Instinct format" and suggests an edit or no change, never a cut-off warning on the sample.
+- Rename a parameter, move to the next use: Instinct offers the rename (note the time in the log; expect about Zeta's speed).
+- With `debug.logPrompts` on, the prompt has `### Context:`, `### User Edits:` (newest first) and `### User Excerpt:` with the region tags around 1 line above and 5 below the cursor.
+- Completions with Instinct work but are slower than Qwen2.5-Coder 3B; ghost text never runs past the closing bracket.
 
 Phase 5a (check after the next release; [design](superpowers/specs/2026-11-20-open-vsx-design.md)):
 

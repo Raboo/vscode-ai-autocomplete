@@ -33,7 +33,7 @@ Open VSX refuses a version it already has, so a tag that is already published ca
 There are two builds, because the Marketplace and `vsce` refuse extensions that declare proposed APIs:
 
 - The full build (GitHub release `.vsix` and Open VSX) declares `inlineCompletionsAdditions`, so Next Edit can use native inline edits after the opt-in.
-- The Marketplace build (`ai-autocomplete-X.Y.Z-marketplace.vsix`, from `npm run package:marketplace`) has no `enabledApiProposals`, so Next Edit always uses decorations. It is never attached to the GitHub release; the `vsix` job keeps it only as the workflow artifact `vsix-marketplace`.
+- The Marketplace build (`ai-autocomplete-X.Y.Z-marketplace.vsix`, from `npm run package:marketplace`) is the extension `raboo.ai-autocomplete-prediction`: the Marketplace refused the name `ai-autocomplete` on 2026-11-25 (it is taken there, though not publicly listed). It has no `enabledApiProposals`, so Next Edit always uses decorations. It is never attached to the GitHub release; the `vsix` job keeps it only as the workflow artifact `vsix-marketplace`.
 
 Design: `docs/superpowers/specs/2026-11-25-marketplace-build-design.md`.
 

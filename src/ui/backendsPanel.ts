@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
+import { SELF_ID } from '../flavor';
 import { createBackend } from '../backends';
 import type { ApiKeyProvider } from '../backends/types';
 import type { Secrets } from '../config/secrets';
@@ -185,7 +186,7 @@ export class BackendsPanel implements vscode.Disposable {
       case 'removeKey':
         return this.removeKey(m.id);
       case 'openSettings':
-        await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:raboo.ai-autocomplete');
+        await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${SELF_ID}`);
         return;
       case 'setUpLocal':
         // Not awaited: a download can take minutes, and the page's other messages must not wait for it.

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { readFile } from 'node:fs/promises';
 import { writeFileAtomic } from '../nextEdit/atomicWrite';
 import { homedir } from 'node:os';
-import { RELEASES_URL } from '../flavor';
+import { RELEASES_URL, SELF_ID } from '../flavor';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
@@ -14,13 +14,13 @@ import type { StatusBar } from './statusBar';
 import { menuEntries, menuGroups, menuInputs } from './statusModel';
 
 /** Where VS Code reads argv.json for this window, or undefined on the remote side of a remote window (that home is the remote machine's) or for an unknown product. */
-export function localArgvPath(context: vscode.ExtensionContext): string | undefined {
+function localArgvPath(context: vscode.ExtensionContext): string | undefined {
   const remoteSide = vscode.env.remoteName !== undefined && context.extension.extensionKind === vscode.ExtensionKind.Workspace;
   return remoteSide ? undefined : argvPath(vscode.env.appName, homedir(), process.env);
 }
 
 /** The notice that says the Marketplace build cannot show the native view, with a button to the releases. */
-export function offerReleases(message: string): void {
+function offerReleases(message: string): void {
   void vscode.window.showInformationMessage(message, 'Open releases').then((pick) => (pick ? vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL)) : undefined));
 }
 
@@ -94,7 +94,7 @@ export function offerFirstBackend(message: string): void {
   void vscode.window.showInformationMessage(message, local, server, start).then((c) => {
     if (c === local) return vscode.commands.executeCommand('aiAutocomplete.setUpLocalModel');
     if (c === server) return vscode.commands.executeCommand('aiAutocomplete.manageBackends', { add: true });
-    if (c === start) return vscode.commands.executeCommand('workbench.action.openWalkthrough', `${EXTENSION_ID}#getStarted`, false);
+    if (c === start) return vscode.commands.executeCommand('workbench.action.openWalkthrough', `${SELF_ID}#getStarted`, false);
     return undefined;
   });
 }
@@ -197,7 +197,7 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
       await (pick === OFF ? setSwitch('nextEdit.enabled', false) : useNextEditBackend(pick));
     }),
     reg('manageBackends', (arg) => d.manageBackends(openOptions(arg))),
-    reg('openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`)),
+    reg('openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${SELF_ID}`)),
     reg('setApiKey', async () => {
       const id = await pickBackend('Set the API key for which backend?');
       if (!id) return;

@@ -25,6 +25,7 @@ import { type LineSpan } from '../region';
 import { RejectedEdits } from '../rejected';
 import { runNextEdit, warmNextEdit, type NextEditResult } from '../request';
 import { CHAIN_DELAY_MS, HISTORY_IDLE_MS, keepRequestWhileTyping, nextEditPauseMs, TriggerPolicy } from '../trigger';
+import { MARKETPLACE } from '../../flavor';
 import { EditDecorations } from './decorations';
 import { DefinitionLookup } from './definitions';
 
@@ -769,7 +770,7 @@ export class NextEditController implements vscode.Disposable {
         this.note(uri, 'filtered', { detail: 'cursor-moved', ms });
         return;
       }
-      const display = displayFor(result.show, s.nextEdit.display, this.native);
+      const display = displayFor(result.show, MARKETPLACE && s.nextEdit.display === 'native' ? 'auto' : s.nextEdit.display, this.native);
       if (display === 'drop') {
         log.debug("next edit: result dropped, an inline edit needs VS Code's inline-edit UI");
         this.note(uri, 'filtered', { detail: 'needs-inline-edit-ui', ms });

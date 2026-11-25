@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { readFile } from 'node:fs/promises';
 import { writeFileAtomic } from '../nextEdit/atomicWrite';
 import { homedir } from 'node:os';
+import { MARKETPLACE, RELEASES_URL } from '../flavor';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
@@ -11,6 +12,17 @@ import type { OpenOptions } from './backendsPanel';
 import { outcomeLabel, relativeTime, type OutcomeLog } from '../completion/outcomes';
 import type { StatusBar } from './statusBar';
 import { menuEntries, menuGroups, menuInputs } from './statusModel';
+
+/** Where VS Code reads argv.json for this window, or undefined on the remote side of a remote window (that home is the remote machine's) or for an unknown product. */
+export function localArgvPath(context: vscode.ExtensionContext): string | undefined {
+  const remoteSide = vscode.env.remoteName !== undefined && context.extension.extensionKind === vscode.ExtensionKind.Workspace;
+  return remoteSide ? undefined : argvPath(vscode.env.appName, homedir(), process.env);
+}
+
+/** The notice that says the Marketplace build cannot show the native view, with a button to the releases. */
+export function offerReleases(message: string): void {
+  void vscode.window.showInformationMessage(message, 'Open releases').then((pick) => (pick ? vscode.env.openExternal(vscode.Uri.parse(RELEASES_URL)) : undefined));
+}
 
 export const SNOOZE_KEY = 'snoozedUntil';
 
@@ -238,13 +250,15 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('removeLocalModels', () => d.localModels.remove()),
     reg('manageLocalModels', () => d.localModels.manage()),
     reg('enableNativeNextEdit', async () => {
+      if (MARKETPLACE) {
+        offerReleases('The native Next Edit view needs the GitHub or Open VSX build of AI Autocomplete: the VS Code Marketplace does not allow the API it uses.');
+        return;
+      }
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
         void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
       };
-      // Running on the remote side of a remote window, this home is the remote machine's; VS Code reads the local argv.json.
-      const remoteSide = vscode.env.remoteName !== undefined && d.context.extension.extensionKind === vscode.ExtensionKind.Workspace;
-      const path = remoteSide ? undefined : argvPath(vscode.env.appName, homedir(), process.env);
+      const path = localArgvPath(d.context);
       if (!path) return manual();
       try {
         const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {

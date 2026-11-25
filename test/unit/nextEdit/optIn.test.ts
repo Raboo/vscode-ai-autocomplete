@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../../../src/nextEdit/optIn';
+import { EXTENSION_ID, argvPath, hasProposedApiOptIn, withProposedApiOptIn } from '../../../src/nextEdit/optIn';
 
 test('argvPath per product', () => {
   expect(argvPath('Visual Studio Code', '/h', {})).toBe('/h/.vscode/argv.json');
@@ -46,4 +46,11 @@ test('trailing commas and comments-only files are accepted', () => {
   const only = withProposedApiOptIn('// just a comment\n', EXTENSION_ID)!;
   expect(only).toContain('// just a comment');
   expect(only).toContain(EXTENSION_ID);
+});
+
+test('hasProposedApiOptIn', () => {
+  expect(hasProposedApiOptIn('{"enable-proposed-api":["raboo.ai-autocomplete"]}', EXTENSION_ID)).toBe(true);
+  expect(hasProposedApiOptIn('{\n // c\n "enable-proposed-api": ["raboo.ai-autocomplete",],\n}', EXTENSION_ID)).toBe(true);
+  expect(hasProposedApiOptIn('{"enable-proposed-api":["other.ext"]}', EXTENSION_ID)).toBe(false);
+  for (const t of ['', '{', '[]']) expect(hasProposedApiOptIn(t, EXTENSION_ID)).toBe(false);
 });

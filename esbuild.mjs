@@ -18,6 +18,7 @@ const extension = {
   mainFields: ['module', 'main'],
   sourcemap: !production,
   minify: production,
+  define: { __MARKETPLACE__: JSON.stringify(process.env.AI_AUTOCOMPLETE_FLAVOR === 'marketplace') },
   logLevel: 'info',
 };
 

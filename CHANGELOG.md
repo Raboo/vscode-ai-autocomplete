@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.5.0...v1.6.0) (2026-11-25)
+
+
+### Features
+
+* VS Code Marketplace build without the proposed API ([#38](https://github.com/Raboo/vscode-ai-autocomplete/issues/38)) ([12956eb](https://github.com/Raboo/vscode-ai-autocomplete/commit/12956ebd3a0af1099b25149b83675558c03281f0))
+
 ## [1.5.0](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.4.0...v1.5.0) (2026-11-22)
 
 

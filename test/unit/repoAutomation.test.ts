@@ -92,6 +92,37 @@ describe('repo automation', () => {
     expect(tsIgnore?.[0]).toMatch(/">=6\.1\.0"/);
   });
 
+  test('CI builds the Marketplace package and checks it has no proposed API', () => {
+    const ci = readFileSync(`${wfDir}/ci.yml`, 'utf8');
+    const check = ci.slice(ci.search(/^ {2}check:/m), ci.search(/^ {2}integration:/m));
+    expect(check.indexOf('npm run package:marketplace')).toBeGreaterThan(check.indexOf('npm run package\n'));
+    expect(check).toMatch(/unzip -p ai-autocomplete-\*-marketplace\.vsix extension\/package\.json/);
+    expect(check).toContain('enabledApiProposals');
+  });
+
+  test('the marketplace job publishes with Trusted Publishing, gated by MARKETPLACE_PUBLISH', () => {
+    const rp = readFileSync(`${wfDir}/release-please.yml`, 'utf8');
+    const job = rp.slice(rp.search(/^ {2}marketplace:/m));
+    expect(job).toMatch(/needs: vsix/);
+    expect(job).toMatch(/permissions:\n\s+contents: read\n\s+id-token: write/);
+    expect(job).toMatch(/^ {4}timeout-minutes: \d+$/m);
+    expect(job).toContain('npx --no-install vsce publish --oidc');
+    expect(job).not.toMatch(/npx (?!--no-install)/);
+    expect(job).toMatch(/MARKETPLACE_PUBLISH: \$\{\{ vars\.MARKETPLACE_PUBLISH \}\}/);
+    expect(job).toContain('"$MARKETPLACE_PUBLISH" != "true"');
+    expect(job).toContain('::notice::');
+    expect(job).toContain('vsix-marketplace');
+    expect(rp).not.toMatch(/VSCE_PAT|MARKETPLACE_TOKEN/);
+  });
+
+  test('the vsix job uploads the Marketplace package only as an artifact', () => {
+    const rp = readFileSync(`${wfDir}/release-please.yml`, 'utf8');
+    const vsix = rp.slice(rp.search(/^ {2}vsix:/m), rp.search(/^ {2}open-vsx:|^ {2}# Publishing runs/m));
+    expect(vsix).toContain('name: vsix-marketplace');
+    expect(vsix).toContain('gh release upload "$TAG" "ai-autocomplete-${TAG#v}.vsix"');
+    expect(vsix).not.toMatch(/gh release upload[^\n]*\*/);
+  });
+
   test('setup script dry run prints the expected settings', () => {
     const out = execFileSync('bash', ['scripts/setup-github-repo.sh', '--dry-run', 'o/r'], { encoding: 'utf8' });
     for (const s of ['enable-auto-merge', 'delete-branch-on-merge', 'can_approve_pull_request_reviews', 'vulnerability-alerts', 'automated-security-fixes', '"context": "check"', '"context": "integration"']) {

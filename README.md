@@ -14,7 +14,8 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 ## Install
 
 - **Open VSX** (VSCodium, Cursor, Windsurf and other VS Code builds): search for "AI Autocomplete" in the Extensions view, or open [open-vsx.org/extension/raboo/ai-autocomplete](https://open-vsx.org/extension/raboo/ai-autocomplete).
-- **GitHub `.vsix`** (also for stock VS Code, because the VS Code Marketplace is not available yet): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette.
+- **VS Code Marketplace** (stock VS Code): search for "AI Autocomplete" in the Extensions view. This build shows Next Edit with decorations; the native inline-edit view needs the GitHub `.vsix` below.
+- **GitHub `.vsix`** (stock VS Code, with the native inline-edit view for Next Edit): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette. Turn off auto-update for the extension, or VS Code may replace it with the Marketplace build.
 
 ## Quick start
 
@@ -302,7 +303,7 @@ With a decoration showing:
 - `Tab` keeps its normal job when something else wants it: accepting ghost text, a native inline edit or a suggest-widget item, moving through snippet placeholders, and indenting a selection or multiple cursors. `Esc` keeps its normal job with multiple cursors, ghost text, the suggest widget or snippet mode.
 - Any change to the file, a switch to another editor, snooze or a new result clears the decoration. `Tab` never applies an edit to text that changed.
 
-**Native inline edits:** run **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code (not just reload the window). The command adds this extension to `enable-proposed-api` in VS Code's `argv.json`. It keeps the comments in that file; if the file is malformed it is left alone and VS Code's runtime-arguments file opens with instructions to paste. Until you opt in, VS Code logs an error that the extension declares a proposed API it may not use. That is expected.
+**Native inline edits** (GitHub `.vsix` and Open VSX builds only; the Marketplace build always uses decorations): run **AI Autocomplete: Enable Native Next Edit UI**, then quit and reopen VS Code (not just reload the window). The command adds this extension to `enable-proposed-api` in VS Code's `argv.json`. It keeps the comments in that file; if the file is malformed it is left alone and VS Code's runtime-arguments file opens with instructions to paste. Until you opt in, VS Code logs an error that the extension declares a proposed API it may not use. That is expected.
 
 With the opt-in (and `display` on `auto` or `native`), an edit away from the cursor shows as an inline edit. `Tab` jumps to it and `Tab` again accepts it. `Esc` dismisses it, and nothing shows again for 5 s. After you accept, the next suggestion is requested at once, so repeated `Tab` walks through a refactor.
 

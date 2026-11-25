@@ -30,8 +30,27 @@ Open VSX refuses a version it already has, so a tag that is already published ca
 
 ## VS Code Marketplace
 
-Blocked. The extension declares the proposed API `inlineCompletionsAdditions` (for native Next Edit inline edits), and the Marketplace and `vsce` refuse extensions that declare proposed APIs; the only exceptions are Microsoft's own extensions. The path is finalization of that API (see [microsoft/vscode#205594](https://github.com/microsoft/vscode/issues/205594)).
+There are two builds, because the Marketplace and `vsce` refuse extensions that declare proposed APIs:
 
-Planned as a separate roadmap step (5b in `ROADMAP.md`): a Marketplace build without the proposal, where Next Edit always uses decorations. Open VSX and GitHub releases keep the full build.
+- The full build (GitHub release `.vsix` and Open VSX) declares `inlineCompletionsAdditions`, so Next Edit can use native inline edits after the opt-in.
+- The Marketplace build (`ai-autocomplete-X.Y.Z-marketplace.vsix`, from `npm run package:marketplace`) has no `enabledApiProposals`, so Next Edit always uses decorations. It is never attached to the GitHub release; the `vsix` job keeps it only as the workflow artifact `vsix-marketplace`.
 
-Until then, stock VS Code users install the `.vsix` from the GitHub release.
+Design: `docs/superpowers/specs/2026-11-25-marketplace-build-design.md`.
+
+### One-time setup (the owner)
+
+1. Create the publisher `raboo` at <https://marketplace.visualstudio.com/manage>.
+2. Create a Trusted Publishing policy for it (GitHub OIDC, no token): repository owner `Raboo`, repository `vscode-ai-autocomplete`, workflow `release-please.yml`, environment empty.
+3. Set the repository variable `MARKETPLACE_PUBLISH` to `true` (Settings, Secrets and variables, Actions, Variables).
+
+No Marketplace token or secret exists anywhere.
+
+### How a release reaches the Marketplace
+
+1. The `vsix` job also runs `npm run package:marketplace` and uploads the result as the artifact `vsix-marketplace` (tags from before this script skip it with a notice).
+2. The `marketplace` job (run from the workflow's own commit, with `id-token: write`) downloads that artifact and runs `npx --no-install vsce publish --oidc --packagePath <file>`.
+3. The variable `MARKETPLACE_PUBLISH` turns automatic publishing on. While it is not `true`, or when the artifact is missing, the job prints a notice and skips.
+
+If the Marketplace refuses an OIDC publish for the first version of a new extension, download that run's `vsix-marketplace` artifact and upload it by hand once at <https://marketplace.visualstudio.com/manage>. Later versions publish through the workflow.
+
+Republishing a tag (the manual workflow run) also runs the `marketplace` job; the Marketplace refuses a version it already has.

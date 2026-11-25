@@ -39,6 +39,13 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run package
+      - run: npm run package:marketplace
+      - name: The Marketplace package declares no proposed API
+        run: |
+          if unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json | grep -q enabledApiProposals; then
+            echo "::error::The Marketplace package declares enabledApiProposals."
+            exit 1
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vsix

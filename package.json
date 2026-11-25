@@ -7,7 +7,7 @@
     "color": "#0b1530",
     "theme": "dark"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Fast AI code completion for self-hosted and cloud models. Autocomplete only: no chat, no agents, no telemetry.",
   "license": "Apache-2.0",
   "author": {

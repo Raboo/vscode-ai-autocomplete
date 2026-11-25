@@ -20,7 +20,7 @@ Phase status for AI Autocomplete. The spec is `superpowers/specs/2026-11-13-ai-a
 | 4g. Hardening before publishing | Limits on numeric settings, one Authorization header, detection backoff, rejected Next Edit memory, a notice for competing inline-suggestion extensions, atomic argv.json writes, isolated integration runs, actionlint in CI | [plan](superpowers/plans/2026-11-20-hardening.md), [design](superpowers/specs/2026-11-20-hardening-design.md) | released in [v1.4.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.4.0) |
 | 4h. Instinct next edit | `instinct` Next Edit format (Continue's Instinct on chat completions), preset row, Instinct 7B recipe that serves completions and Next Edit | [plan](superpowers/plans/2026-11-22-instinct.md), [design](superpowers/specs/2026-11-22-instinct-design.md) | released in [v1.5.0](https://github.com/Raboo/vscode-ai-autocomplete/releases/tag/v1.5.0) |
 | 5a. Open VSX publishing | The release job publishes the `.vsix` to Open VSX with `OPEN_VSX_TOKEN`; manual republish of a tag; `docs/PUBLISHING.md` | [plan](superpowers/plans/2026-11-20-open-vsx.md), [design](superpowers/specs/2026-11-20-open-vsx-design.md) | released: v1.4.0 published by hand, v1.5.0 by the release job |
-| 5b. VS Code Marketplace build without the proposed API (Option A) | A second package variant without `enabledApiProposals` and with the native-UI opt-in command hidden, so Next Edit always uses decorations there; Open VSX and GitHub keep the full build | [design](superpowers/specs/2026-11-25-marketplace-build-design.md), [plan](superpowers/plans/2026-11-25-marketplace-build.md) | in progress |
+| 5b. VS Code Marketplace build without the proposed API (Option A) | A second package variant without `enabledApiProposals` and with the native-UI opt-in command hidden, so Next Edit always uses decorations there; Open VSX and GitHub keep the full build | [design](superpowers/specs/2026-11-25-marketplace-build-design.md), [plan](superpowers/plans/2026-11-25-marketplace-build.md) | released: v1.6.0 (build and job), v1.6.2 first on the Marketplace as `raboo.ai-autocomplete-prediction`, "AI Autocomplete Prediction" (the Marketplace refused the name `ai-autocomplete` and the display name "AI Autocomplete") |
 | 5c. Copilot sidecar spike (later) | Spike of running next to Copilot | not written yet | not started |
 
 ## Known follow-ups
@@ -166,3 +166,11 @@ Phase 5a (check after the next release; [design](superpowers/specs/2026-11-20-op
 - open-vsx.org/extension/raboo/ai-autocomplete shows the released version.
 - Installing it in VSCodium works and completions appear.
 - Actions, release-please, Run workflow with tag `v1.4.0` publishes 1.4.0 to Open VSX (only with the owner's yes).
+
+Phase 5b (check on the Marketplace listing; [design](superpowers/specs/2026-11-25-marketplace-build-design.md)):
+
+- marketplace.visualstudio.com/items?itemName=raboo.ai-autocomplete-prediction shows "AI Autocomplete Prediction" 1.6.2 with the README.
+- In a VS Code profile without the GitHub build, install it from the Extensions view: completions work, Next Edit shows decorations (Tab/Esc), the status bar menu has no "Enable native Next Edit UI...", and the log says "marketplace build".
+- Run **Enable Native Next Edit UI** there: it explains the GitHub/Open VSX build and "Open releases" opens the latest release; argv.json is unchanged.
+- With the GitHub `.vsix` also installed: the warning "installed twice" appears, nothing errors, and its button uninstalls the Marketplace copy.
+- The next release publishes to the Marketplace by itself (the `marketplace` job's log ends with "Published").

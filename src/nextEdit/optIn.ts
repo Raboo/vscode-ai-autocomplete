@@ -17,6 +17,15 @@ export function argvPath(appName: string, home: string, env: { VSCODE_PORTABLE?:
   return dir ? join(home, dir, 'argv.json') : undefined;
 }
 
+/** Whether argv.json text already lists `id` in "enable-proposed-api"; false for empty, malformed or non-object text. */
+export function hasProposedApiOptIn(text: string, id: string): boolean {
+  const errors: ParseError[] = [];
+  const parsed: unknown = parse(text, errors, { allowTrailingComma: true });
+  if (errors.length > 0 || typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
+  const list = (parsed as Record<string, unknown>)['enable-proposed-api'];
+  return Array.isArray(list) && list.includes(id);
+}
+
 /** The argv.json text with `id` in "enable-proposed-api" (comments kept), or undefined when it is already listed. Throws when the text is not a JSONC object, so a damaged file is never rewritten. */
 export function withProposedApiOptIn(text: string, id: string): string | undefined {
   const errors: ParseError[] = [];

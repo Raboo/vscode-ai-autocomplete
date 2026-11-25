@@ -1,5 +1,6 @@
 import { nextEditLine, sessionLine, type SessionStats } from '../completion/outcomes';
 import type { StatusState } from '../completion/requestStatus';
+import { MARKETPLACE } from '../flavor';
 import { LOCAL_BACKEND_ID } from '../local/backendEntry';
 
 export interface LastStatus { state: StatusState; detail?: string }
@@ -29,7 +30,7 @@ export function activity(s: { enabled: boolean; fim: { enabled: boolean }; nextE
 export interface MenuEntry { label: string; id: string }
 
 /** What the menu shows besides the status; a backend is undefined when that feature is off. */
-export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean; local?: true }
+export interface MenuInputs { backendCount: number; enabled: boolean; completionBackend?: string; nextEditBackend?: string; nativeNextEdit: boolean; local?: true; marketplace?: true }
 
 type MenuSettings = { enabled: boolean; backends: { id?: unknown }[]; fim: { enabled: boolean; backendId?: string }; nextEdit: { enabled: boolean; backendId?: string } };
 
@@ -44,6 +45,7 @@ export function menuInputs(s: MenuSettings, nativeNextEdit: boolean): MenuInputs
     ...(s.fim.enabled ? { completionBackend: s.fim.backendId ?? 'none' } : {}),
     ...(s.nextEdit.enabled && s.nextEdit.backendId !== undefined ? { nextEditBackend: s.nextEdit.backendId } : {}),
     nativeNextEdit,
+    ...(MARKETPLACE ? { marketplace: true as const } : {}),
     ...(s.backends.some((b) => b.id === LOCAL_BACKEND_ID) ? { local: true as const } : {}),
   };
 }
@@ -132,7 +134,7 @@ export function menuEntries(shown: StatusState, m: MenuInputs): MenuEntry[] {
     if (e === SET_UP_LOCAL && m.local) return LOCAL_MODELS;
     return e;
   };
-  const menu = MENU.filter((e) => !(m.nativeNextEdit && e === ENABLE_NATIVE)).map(label);
+  const menu = MENU.filter((e) => !((m.nativeNextEdit || m.marketplace) && e === ENABLE_NATIVE)).map(label);
   let list = shown === 'error' ? [RETRY, ...menu.filter((e) => e !== RETRY)] : shown === 'snoozed' ? [RESUME, ...menu] : [...menu];
   if (m.backendCount === 0) list = [MANAGE, SET_UP_LOCAL, ...list.filter((e) => e !== MANAGE && e !== SET_UP_LOCAL)];
   return list;

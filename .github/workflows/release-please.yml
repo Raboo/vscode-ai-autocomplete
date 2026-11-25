@@ -56,6 +56,7 @@ jobs:
       contents: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      marketplace_built: ${{ steps.marketplace.outputs.built }}
     steps:
       - name: Pick and validate the tag
         id: tag
@@ -88,7 +89,8 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run package
-      - run: gh release upload "$TAG" ai-autocomplete-*.vsix --clobber
+      # Name the full package exactly: the -marketplace package never goes to the GitHub release.
+      - run: gh release upload "$TAG" "ai-autocomplete-${TAG#v}.vsix" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -96,7 +98,28 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vsix
-          path: ai-autocomplete-*.vsix
+          path: ai-autocomplete-*[0-9].vsix
+          if-no-files-found: error
+      # Tags from before the Marketplace build have no such script: they skip it.
+      - name: Build the Marketplace package
+        id: marketplace
+        run: |
+          if ! node -e 'process.exit(require("./package.json").scripts["package:marketplace"] ? 0 : 1)'; then
+            echo "::notice::This tag has no package:marketplace script: no Marketplace package."
+            exit 0
+          fi
+          npm run package:marketplace
+          unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json > "$RUNNER_TEMP/mp-package.json"
+          if grep -q enabledApiProposals "$RUNNER_TEMP/mp-package.json"; then
+            echo "::error::The Marketplace package declares enabledApiProposals."
+            exit 1
+          fi
+          echo "built=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.marketplace.outputs.built == 'true'
+        with:
+          name: vsix-marketplace
+          path: ai-autocomplete-*-marketplace.vsix
           if-no-files-found: error
 
   # Publishing runs from the workflow's own commit, so the ovsx version is the one pinned in this repo's lockfile even
@@ -146,3 +169,47 @@ jobs:
             fi
           fi
           npx --no-install ovsx publish "${files[0]}"
+
+  # Marketplace Trusted Publishing: GitHub OIDC, no token or secret. The owner creates the policy on the Marketplace
+  # and sets the repository variable MARKETPLACE_PUBLISH to true; until then this job skips.
+  marketplace:
+    needs: vsix
+    if: ${{ !cancelled() && needs.vsix.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.vsix.outputs.marketplace_built == 'true'
+        with:
+          name: vsix-marketplace
+      - name: Publish to the VS Code Marketplace
+        env:
+          MARKETPLACE_PUBLISH: ${{ vars.MARKETPLACE_PUBLISH }}
+        run: |
+          if [ "$MARKETPLACE_PUBLISH" != "true" ]; then
+            echo "::notice::MARKETPLACE_PUBLISH is not true: skipping the Marketplace. See docs/PUBLISHING.md."
+            exit 0
+          fi
+          shopt -s nullglob
+          files=(ai-autocomplete-*-marketplace.vsix)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::No vsix-marketplace artifact (the vsix job built none: a tag from before the Marketplace build): skipping the Marketplace."
+            exit 0
+          fi
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ai-autocomplete-*-marketplace.vsix, found ${#files[@]}."
+            exit 1
+          fi
+          npx --no-install vsce publish --oidc --packagePath "${files[0]}"

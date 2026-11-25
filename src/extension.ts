@@ -17,13 +17,16 @@ import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
 import { LocalServers } from './local/vscode/servers';
 import { Downloads, removeLocalModels, setUpLocalModel } from './local/vscode/setup';
+import { MARKETPLACE } from './flavor';
+import { hasProposedApiOptIn, EXTENSION_ID } from './nextEdit/optIn';
+import { readFile } from 'node:fs/promises';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { LEGACY_MANAGED_KEY, MIGRATED_KEY } from './local/migrate';
 import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
-import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
+import { localArgvPath, offerFirstBackend, offerReleases, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
 import { watchConflicts } from './ui/conflicts';
 import { StatusBar } from './ui/statusBar';
@@ -172,7 +175,22 @@ export function activate(context: vscode.ExtensionContext): {
     native = false;
   }
   nextEdit.native = native;
-  log.info(native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)");
+  log.info(
+    `${MARKETPLACE ? 'marketplace build; ' : ''}${native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)"}`,
+  );
+  if (MARKETPLACE) {
+    // A user who enabled the native view for the GitHub build and then installed this one gets told once why it does not show.
+    const argv = localArgvPath(context);
+    if (argv) {
+      readFile(argv, 'utf8')
+        .then((text) => {
+          if (!hasProposedApiOptIn(text, EXTENSION_ID) || context.globalState.get('marketplaceNoticeSession') === vscode.env.sessionId) return;
+          void context.globalState.update('marketplaceNoticeSession', vscode.env.sessionId);
+          offerReleases('This is the VS Code Marketplace build of AI Autocomplete, which cannot show the native Next Edit view. Get the GitHub or Open VSX build for it.');
+        })
+        .catch((err: unknown) => log.debug(`argv.json not read: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  }
 
   // Warm-up: a document that becomes active fills local llama.cpp's prompt cache with the window at the cursor. Shortly after
   // the switch, so a cursor placed right after opening (go to definition, a search result) is the one used.

@@ -32,6 +32,10 @@ describe('menuEntries', () => {
   const ids = (state: Parameters<typeof menuEntries>[0], count = 1, native = false) => menuEntries(state, M({ backendCount: count, nativeNextEdit: native })).map((e) => e.id);
   const BACKENDS = ['selectBackend', 'selectNextEditBackend'];
   const PAUSE = ['toggleEnabled', 'snooze'];
+  test('the Marketplace build has no Enable native Next Edit UI entry', () => {
+    expect(menuEntries('idle', M({ marketplace: true })).map((e) => e.id)).not.toContain('enableNativeNextEdit');
+    expect(menuEntries('idle', M()).map((e) => e.id)).toContain('enableNativeNextEdit');
+  });
   test('lists Retry now first while the status is error', () => {
     expect(menuEntries('error', M())[0]).toEqual({ label: 'Retry now', id: 'retry' });
     expect(ids('error').filter((id) => id === 'retry')).toHaveLength(1);

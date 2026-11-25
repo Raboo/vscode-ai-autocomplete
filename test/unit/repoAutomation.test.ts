@@ -98,6 +98,10 @@ describe('repo automation', () => {
     expect(check.indexOf('npm run package:marketplace')).toBeGreaterThan(check.indexOf('npm run package\n'));
     expect(check).toMatch(/unzip -p ai-autocomplete-\*-marketplace\.vsix extension\/package\.json/);
     expect(check).toContain('enabledApiProposals');
+    expect(check).toMatch(/unzip -p ai-autocomplete-\*-marketplace\.vsix extension\/dist\/extension\.js > "\$RUNNER_TEMP/);
+    expect(check).toContain('needs the GitHub or Open VSX build');
+    expect(check).toContain('native Next Edit UI enabled. Quit');
+    expect(check).not.toMatch(/unzip [^\n]*\|/);
   });
 
   test('the marketplace job publishes with Trusted Publishing, gated by MARKETPLACE_PUBLISH', () => {
@@ -112,6 +116,9 @@ describe('repo automation', () => {
     expect(job).toContain('"$MARKETPLACE_PUBLISH" != "true"');
     expect(job).toContain('::notice::');
     expect(job).toContain('vsix-marketplace');
+    expect(job).toMatch(/download-artifact[^\n]*\n\s+if: needs\.vsix\.outputs\.marketplace_built == 'true'/);
+    expect(job).not.toContain('continue-on-error');
+    expect(rp).toMatch(/marketplace_built: \$\{\{ steps\.marketplace\.outputs\.built \}\}/);
     expect(rp).not.toMatch(/VSCE_PAT|MARKETPLACE_TOKEN/);
   });
 
@@ -119,6 +126,7 @@ describe('repo automation', () => {
     const rp = readFileSync(`${wfDir}/release-please.yml`, 'utf8');
     const vsix = rp.slice(rp.search(/^ {2}vsix:/m), rp.search(/^ {2}open-vsx:|^ {2}# Publishing runs/m));
     expect(vsix).toContain('name: vsix-marketplace');
+    expect(vsix).not.toMatch(/path: ai-autocomplete-\*\.vsix/);
     expect(vsix).toContain('gh release upload "$TAG" "ai-autocomplete-${TAG#v}.vsix"');
     expect(vsix).not.toMatch(/gh release upload[^\n]*\*/);
   });

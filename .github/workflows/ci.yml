@@ -40,10 +40,27 @@ jobs:
       - run: npm test
       - run: npm run package
       - run: npm run package:marketplace
-      - name: The Marketplace package declares no proposed API
+      - name: The Marketplace package has no proposed API and the Marketplace bundle
         run: |
-          if unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json | grep -q enabledApiProposals; then
+          full=$(ls ai-autocomplete-*[0-9].vsix)
+          mkdir "$RUNNER_TEMP/full" "$RUNNER_TEMP/mp"
+          unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json > "$RUNNER_TEMP/mp/package.json"
+          unzip -p ai-autocomplete-*-marketplace.vsix extension/dist/extension.js > "$RUNNER_TEMP/mp/extension.js"
+          unzip -p "$full" extension/dist/extension.js > "$RUNNER_TEMP/full/extension.js"
+          if grep -q enabledApiProposals "$RUNNER_TEMP/mp/package.json"; then
             echo "::error::The Marketplace package declares enabledApiProposals."
+            exit 1
+          fi
+          if ! grep -q "needs the GitHub or Open VSX build" "$RUNNER_TEMP/mp/extension.js"; then
+            echo "::error::The Marketplace bundle lacks the Marketplace branch of Enable Native Next Edit UI."
+            exit 1
+          fi
+          if grep -q "native Next Edit UI enabled. Quit" "$RUNNER_TEMP/mp/extension.js"; then
+            echo "::error::The Marketplace bundle still has the full build's opt-in code."
+            exit 1
+          fi
+          if ! grep -q "native Next Edit UI enabled. Quit" "$RUNNER_TEMP/full/extension.js"; then
+            echo "::error::The full bundle lacks its opt-in code."
             exit 1
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { readFile } from 'node:fs/promises';
 import { writeFileAtomic } from '../nextEdit/atomicWrite';
 import { homedir } from 'node:os';
-import { MARKETPLACE, RELEASES_URL } from '../flavor';
+import { RELEASES_URL } from '../flavor';
 import { EXTENSION_ID, argvPath, withProposedApiOptIn } from '../nextEdit/optIn';
 import type { Log } from '../log';
 import type { Secrets } from '../config/secrets';
@@ -249,11 +249,18 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
     reg('setUpLocalModel', (arg) => d.localModels.setUp(arg)),
     reg('removeLocalModels', () => d.localModels.remove()),
     reg('manageLocalModels', () => d.localModels.manage()),
-    reg('enableNativeNextEdit', async () => {
-      if (MARKETPLACE) {
-        offerReleases('The native Next Edit view needs the GitHub or Open VSX build of AI Autocomplete: the VS Code Marketplace does not allow the API it uses.');
-        return;
-      }
+    // The flavour flag is read inline so esbuild drops the full build's code from the Marketplace bundle.
+    reg('enableNativeNextEdit', () => (typeof __MARKETPLACE__ !== 'undefined' && __MARKETPLACE__ ? marketplaceEnableNative() : enableNative(d))),
+  ];
+}
+
+function marketplaceEnableNative(): void {
+  offerReleases('The native Next Edit view needs the GitHub or Open VSX build of AI Autocomplete: the VS Code Marketplace does not allow the API it uses.');
+}
+
+/** Writes the opt-in into argv.json (or tells the user how); the full build only. */
+async function enableNative(d: CommandDeps): Promise<void> {
+  {
       const manual = async () => {
         await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
         void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
@@ -276,6 +283,5 @@ export function registerCommands(d: CommandDeps): vscode.Disposable[] {
         d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);
         return manual();
       }
-    }),
-  ];
+  }
 }

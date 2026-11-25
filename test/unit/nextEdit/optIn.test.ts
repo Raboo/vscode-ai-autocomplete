@@ -52,5 +52,5 @@ test('hasProposedApiOptIn', () => {
   expect(hasProposedApiOptIn('{"enable-proposed-api":["raboo.ai-autocomplete"]}', EXTENSION_ID)).toBe(true);
   expect(hasProposedApiOptIn('{\n // c\n "enable-proposed-api": ["raboo.ai-autocomplete",],\n}', EXTENSION_ID)).toBe(true);
   expect(hasProposedApiOptIn('{"enable-proposed-api":["other.ext"]}', EXTENSION_ID)).toBe(false);
-  for (const t of ['', '{', '[]']) expect(hasProposedApiOptIn(t, EXTENSION_ID)).toBe(false);
+  for (const t of ['', '{', '[]', '{"enable-proposed-api":["raboo.ai-autocomplete"']) expect(hasProposedApiOptIn(t, EXTENSION_ID)).toBe(false);
 });

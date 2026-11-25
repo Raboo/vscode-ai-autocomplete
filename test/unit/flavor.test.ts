@@ -1,10 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
-import { MARKETPLACE } from '../../src/flavor';
+import { MARKETPLACE, RELEASES_URL } from '../../src/flavor';
 import { marketplaceManifest } from '../../scripts/marketplaceManifest.mjs';
 
 type Manifest = { enabledApiProposals?: unknown; contributes: { commands: unknown; configuration: { properties: Record<string, { enum: string[]; markdownEnumDescriptions: string[] }> }[] } } & Record<string, unknown>;
 const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as Manifest;
+
+test('the releases link', () => {
+  expect(RELEASES_URL).toBe('https://github.com/Raboo/vscode-ai-autocomplete/releases/latest');
+});
 
 test('MARKETPLACE is false outside the Marketplace build', () => {
   expect(MARKETPLACE).toBe(false);

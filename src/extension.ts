@@ -184,7 +184,9 @@ export function activate(context: vscode.ExtensionContext): {
     if (argv) {
       readFile(argv, 'utf8')
         .then((text) => {
-          if (hasProposedApiOptIn(text, EXTENSION_ID)) offerReleases('This is the VS Code Marketplace build of AI Autocomplete, which cannot show the native Next Edit view. Get the GitHub or Open VSX build for it.');
+          if (!hasProposedApiOptIn(text, EXTENSION_ID) || context.globalState.get('marketplaceNoticeSession') === vscode.env.sessionId) return;
+          void context.globalState.update('marketplaceNoticeSession', vscode.env.sessionId);
+          offerReleases('This is the VS Code Marketplace build of AI Autocomplete, which cannot show the native Next Edit view. Get the GitHub or Open VSX build for it.');
         })
         .catch((err: unknown) => log.debug(`argv.json not read: ${err instanceof Error ? err.message : String(err)}`));
     }

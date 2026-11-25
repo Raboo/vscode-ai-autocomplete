@@ -260,28 +260,26 @@ function marketplaceEnableNative(): void {
 
 /** Writes the opt-in into argv.json (or tells the user how); the full build only. */
 async function enableNative(d: CommandDeps): Promise<void> {
-  {
-      const manual = async () => {
-        await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
-        void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
-      };
-      const path = localArgvPath(d.context);
-      if (!path) return manual();
-      try {
-        const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {
-          if (err.code === 'ENOENT') return '';
-          throw err;
-        });
-        const next = withProposedApiOptIn(text, EXTENSION_ID);
-        if (next === undefined) {
-          void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI is already enabled. If Next Edit still shows only ghost text, quit and reopen VS Code.');
-          return;
-        }
-        await writeFileAtomic(path, next);
-        void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI enabled. Quit and reopen VS Code to finish.');
-      } catch (err) {
-        d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);
-        return manual();
-      }
+  const manual = async () => {
+    await vscode.commands.executeCommand('workbench.action.configureRuntimeArguments');
+    void vscode.window.showInformationMessage(`Add "enable-proposed-api": ["${EXTENSION_ID}"] to argv.json, then quit and reopen VS Code.`);
+  };
+  const path = localArgvPath(d.context);
+  if (!path) return manual();
+  try {
+    const text = await readFile(path, 'utf8').catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return '';
+      throw err;
+    });
+    const next = withProposedApiOptIn(text, EXTENSION_ID);
+    if (next === undefined) {
+      void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI is already enabled. If Next Edit still shows only ghost text, quit and reopen VS Code.');
+      return;
+    }
+    await writeFileAtomic(path, next);
+    void vscode.window.showInformationMessage('AI Autocomplete: native Next Edit UI enabled. Quit and reopen VS Code to finish.');
+  } catch (err) {
+    d.log.debug(`enable native next edit failed: ${err instanceof Error ? err.message : String(err)}`);
+    return manual();
   }
 }

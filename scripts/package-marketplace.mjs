@@ -22,8 +22,8 @@ child.on('close', (status) => {
   // vsce's prepublish left the minified Marketplace bundle in dist/: put the normal development bundle back.
   const env = { ...process.env };
   delete env.AI_AUTOCOMPLETE_FLAVOR;
-  spawnSync(process.execPath, ['esbuild.mjs'], { stdio: 'inherit', env });
-  process.exit(signalled ? 1 : (status ?? 1));
+  const rebuilt = spawnSync(process.execPath, ['esbuild.mjs'], { stdio: 'inherit', env });
+  process.exit(signalled || rebuilt.status !== 0 ? 1 : (status ?? 1));
 });
 child.on('error', (err) => {
   process.stderr.write(`${err.message}\n`);

@@ -38,6 +38,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
 - `npm test`: unit tests with vitest. Run `npm run build` first: a manifest test reads `dist/extension.js`.
 - `npm run test:integration`: builds, compiles `test/integration` to `out/test` and runs it in a downloaded VS Code (into `.vscode-test/`) against a mock llama.cpp server in two launches, `main` (all integration tests) and `proposed` (the nextEdit tests with `--enable-proposed-api raboo.ai-autocomplete`); tests type with the `type` command, because VS Code treats an explicit trigger after `editor.edit` as already answered. CI runs it under `xvfb-run`. `.vscode-test.mjs` sets `chat.disableAIFeatures` in the test profile: VS Code 1.146 focuses its chat input at startup, and without OS window focus (a locked screen) editor actions like `inlineSuggest.trigger` would hit it.
 - `npm run package`: build a `.vsix` with `vsce package --no-dependencies`.
+- `npm run package:marketplace`: build `ai-autocomplete-X.Y.Z-marketplace.vsix` (no `enabledApiProposals`, bundle built with `AI_AUTOCOMPLETE_FLAVOR=marketplace`); it restores `package.json` afterwards and rebuilds the development bundle, exiting non-zero if that rebuild fails.
 - `npm run vscode:prepublish`: production (minified) build, run by vsce.
 - `bash scripts/setup-github-repo.sh --dry-run`: print the GitHub repo settings the automation needs (never run it without `--dry-run` unless the user approved; see section 7).
 
@@ -82,6 +83,7 @@ Node version comes from `.nvmrc` (22); code must also work on newer Node.
   - `vscode/servers.ts`: the router wired to VS Code (global state, user settings, migration); `vscode/setup.ts`: downloads, Use, the one-button setup and Remove Downloaded Models; `vscode/localModelsActions.ts`: every message of the page;
   - `src/ui/localModelsPanel.ts` hosts the page, and `src/webview/localModels/` is the page itself (`main.ts`, pure `render.ts`, `style.css`); design: `docs/superpowers/specs/2026-11-18-local-models-page-design.md`.
 - `vscode`-facing modules are limited to the allowlist above: extension entry, logging, settings and secrets access, the inline completion provider, context tracking, `src/ui/*` and `src/nextEdit/vscode/*`.
+- Marketplace build: `src/flavor.ts` and `src/types/flavor.d.ts` declare the `__MARKETPLACE__` esbuild define (true only with `AI_AUTOCOMPLETE_FLAVOR=marketplace`), which drops the native opt-in code from that bundle; `scripts/package-marketplace.mjs` and `scripts/marketplaceManifest.mjs` build the package and its manifest. Design: `docs/superpowers/specs/2026-11-25-marketplace-build-design.md`.
 - See the spec's architecture tree for the full folder-by-folder breakdown.
 
 ## How work is done here

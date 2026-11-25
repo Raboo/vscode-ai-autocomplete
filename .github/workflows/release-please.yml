@@ -109,6 +109,11 @@ jobs:
             exit 0
           fi
           npm run package:marketplace
+          unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json > "$RUNNER_TEMP/mp-package.json"
+          if grep -q enabledApiProposals "$RUNNER_TEMP/mp-package.json"; then
+            echo "::error::The Marketplace package declares enabledApiProposals."
+            exit 1
+          fi
           echo "built=true" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.marketplace.outputs.built == 'true'

@@ -14,8 +14,8 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 ## Install
 
 - **Open VSX** (VSCodium, Cursor, Windsurf and other VS Code builds): search for "AI Autocomplete" in the Extensions view, or open [open-vsx.org/extension/raboo/ai-autocomplete](https://open-vsx.org/extension/raboo/ai-autocomplete).
-- **VS Code Marketplace** (stock VS Code): [raboo.ai-autocomplete](https://marketplace.visualstudio.com/items?itemName=raboo.ai-autocomplete), once it is listed there; until then, use the GitHub `.vsix`. This build shows Next Edit with decorations; the native inline-edit view needs the GitHub `.vsix` below.
-- **GitHub `.vsix`** (stock VS Code, with the native inline-edit view for Next Edit): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette. Turn off auto-update for the extension, or VS Code may replace it with the Marketplace build.
+- **VS Code Marketplace** (stock VS Code): [raboo.ai-autocomplete-prediction](https://marketplace.visualstudio.com/items?itemName=raboo.ai-autocomplete-prediction), once it is listed there; until then, use the GitHub `.vsix`. This build shows Next Edit with decorations; the native inline-edit view needs the GitHub `.vsix` below. It has its own id (the Marketplace refused the name `ai-autocomplete`) but the same settings, so install one build only: with both installed, the Marketplace copy stays off.
+- **GitHub `.vsix`** (stock VS Code, with the native inline-edit view for Next Edit): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette.
 
 ## Quick start
 

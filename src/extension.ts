@@ -17,16 +17,14 @@ import { readSettings } from './config/vscodeSettings';
 import { RECIPES, type Recipe } from './local/recipes';
 import { LocalServers } from './local/vscode/servers';
 import { Downloads, removeLocalModels, setUpLocalModel } from './local/vscode/setup';
-import { MARKETPLACE } from './flavor';
-import { hasProposedApiOptIn, EXTENSION_ID } from './nextEdit/optIn';
-import { readFile } from 'node:fs/promises';
+import { FULL_ID, MARKETPLACE, MARKETPLACE_ID } from './flavor';
 import { createLog } from './log';
 import { RecentSnippets } from './nextEdit/history';
 import { NextEditController } from './nextEdit/vscode/controller';
 import { BackendsPanel, type BackendsPanelDeps, type OpenOptions } from './ui/backendsPanel';
 import { LEGACY_MANAGED_KEY, MIGRATED_KEY } from './local/migrate';
 import { LocalModelsPanel, type LocalModelsPanelDeps } from './ui/localModelsPanel';
-import { localArgvPath, offerFirstBackend, offerReleases, registerCommands, SNOOZE_KEY } from './ui/commands';
+import { offerFirstBackend, registerCommands, SNOOZE_KEY } from './ui/commands';
 import { migrationRunner } from './ui/migrateSettings';
 import { watchConflicts } from './ui/conflicts';
 import { StatusBar } from './ui/statusBar';
@@ -42,7 +40,22 @@ const WARM_DELAY_MS = 250;
 /** Kept for deactivate(), which has no context to reach the manager through. */
 let localServers: LocalServers | undefined;
 
-export function activate(context: vscode.ExtensionContext): {
+/**
+ * The Marketplace build is a separate extension with the same commands and settings, so it stays off while the full build
+ * (GitHub or Open VSX) is installed: registering the same commands twice would fail.
+ */
+export function activate(context: vscode.ExtensionContext): ReturnType<typeof activateBuild> | undefined {
+  if (MARKETPLACE && vscode.extensions.getExtension(FULL_ID)) {
+    const uninstall = 'Uninstall the Marketplace copy';
+    void vscode.window
+      .showWarningMessage('AI Autocomplete is installed twice: the GitHub or Open VSX build and the Marketplace build. The Marketplace copy stays off; uninstall one of them.', uninstall)
+      .then((pick) => (pick === uninstall ? vscode.commands.executeCommand('workbench.extensions.uninstallExtension', MARKETPLACE_ID) : undefined));
+    return undefined;
+  }
+  return activateBuild(context);
+}
+
+function activateBuild(context: vscode.ExtensionContext): {
   status: StatusBar;
   secrets: Secrets;
   backendsPanel: () => BackendsPanel | undefined;
@@ -178,20 +191,6 @@ export function activate(context: vscode.ExtensionContext): {
   log.info(
     `${MARKETPLACE ? 'marketplace build; ' : ''}${native ? 'next edit: native inline edits available' : "next edit: native inline edits not available (VS Code's proposed API is not enabled for this extension)"}`,
   );
-  if (MARKETPLACE) {
-    // A user who enabled the native view for the GitHub build and then installed this one gets told once why it does not show.
-    const argv = localArgvPath(context);
-    if (argv) {
-      readFile(argv, 'utf8')
-        .then((text) => {
-          if (!hasProposedApiOptIn(text, EXTENSION_ID) || context.globalState.get('marketplaceNoticeSession') === vscode.env.sessionId) return;
-          void context.globalState.update('marketplaceNoticeSession', vscode.env.sessionId);
-          offerReleases('This is the VS Code Marketplace build of AI Autocomplete, which cannot show the native Next Edit view. Get the GitHub or Open VSX build for it.');
-        })
-        .catch((err: unknown) => log.debug(`argv.json not read: ${err instanceof Error ? err.message : String(err)}`));
-    }
-  }
-
   // Warm-up: a document that becomes active fills local llama.cpp's prompt cache with the window at the cursor. Shortly after
   // the switch, so a cursor placed right after opening (go to definition, a search result) is the one used.
   let warmTimer: ReturnType<typeof setTimeout> | undefined;

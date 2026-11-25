@@ -14,7 +14,7 @@ Autocomplete only: fast ghost-text code completion for VS Code, with no chat, no
 ## Install
 
 - **Open VSX** (VSCodium, Cursor, Windsurf and other VS Code builds): search for "AI Autocomplete" in the Extensions view, or open [open-vsx.org/extension/raboo/ai-autocomplete](https://open-vsx.org/extension/raboo/ai-autocomplete).
-- **VS Code Marketplace** (stock VS Code): [raboo.ai-autocomplete-prediction](https://marketplace.visualstudio.com/items?itemName=raboo.ai-autocomplete-prediction), once it is listed there; until then, use the GitHub `.vsix`. This build shows Next Edit with decorations; the native inline-edit view needs the GitHub `.vsix` below. It has its own id (the Marketplace refused the name `ai-autocomplete`) but the same settings, so install one build only: with both installed, the Marketplace copy stays off.
+- **VS Code Marketplace** (stock VS Code): [raboo.ai-autocomplete-prediction](https://marketplace.visualstudio.com/items?itemName=raboo.ai-autocomplete-prediction), once it is listed there; until then, use the GitHub `.vsix`. This build shows Next Edit with decorations; the native inline-edit view needs the GitHub `.vsix` below. It has its own id (the Marketplace refused the name `ai-autocomplete`): settings are shared, but API keys and downloaded local models are kept per id, so after switching builds set your API keys again and point `aiAutocomplete.local.modelsDir` at the old models folder (or download again). Install one build only: with both installed, the Marketplace copy stays off.
 - **GitHub `.vsix`** (stock VS Code, with the native inline-edit view for Next Edit): download `ai-autocomplete-X.Y.Z.vsix` from the [latest release](https://github.com/Raboo/vscode-ai-autocomplete/releases/latest) and run `code --install-extension ai-autocomplete-X.Y.Z.vsix`, or use *Extensions: Install from VSIX...* in the Command Palette.
 
 ## Quick start
@@ -119,7 +119,7 @@ The page has:
 
 Zeta 2.1 has no official GGUF: the list offers a community quant (Q4_K_M by mradermacher), marked as such. It is never the recommended first model, and it does Next Edit only (it cannot do completions). Sweep v2 7B has no official GGUF either, so it is not in the list; set it up by hand on the Backends page (or add a GGUF you trust with Add model).
 
-**Where files go.** Under `models/<owner>/<repo>/<file>` in the models folder. On macOS the default is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/`. A download that was cancelled leaves a `.part` file there.
+**Where files go.** Under `models/<owner>/<repo>/<file>` in the models folder. On macOS the default is `~/Library/Application Support/Code/User/globalStorage/raboo.ai-autocomplete/models/` (`raboo.ai-autocomplete-prediction` for the Marketplace build). A download that was cancelled leaves a `.part` file there.
 
 **Speculative decoding.** The `local` backend lets llama-server guess the next tokens from text already in the prompt (`--spec-type ngram-cache,ngram-simple`); the model then verifies the guesses, so Next Edit answers do not change, they only arrive sooner. It is on automatically when your llama-server supports it: its `llama-server --help` must list `--spec-type` (older builds run without it). To turn it off for one model, add `--spec-type none` to that model's extra arguments. The server log shows `draft acceptance` lines while it works.
 

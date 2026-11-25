@@ -48,7 +48,7 @@ The exact notice wording; how the script finds vsce (`npx --no-install vsce`); t
 
 The first Marketplace publish (v1.6.0) was refused: "The extension 'ai-autocomplete' already exists in the Marketplace" (the name is held, though not publicly listed). The owner chose the name `ai-autocomplete-prediction`, so the Marketplace build is the extension `raboo.ai-autocomplete-prediction` (approach 2 above, which the refusal forced; its objection, settings fighting when both are installed, is met by the guard below). Consequences:
 
-- `marketplaceManifest` also sets `name`; display name, publisher, version, commands and settings stay the same.
+- `marketplaceManifest` also sets `name`, and `displayName` to "AI Autocomplete Prediction" (v1.6.1 was refused: "Similar extension display name: All Autocomplete already exists"); publisher, version, commands and settings stay the same.
 - The running build's id (`SELF_ID` in `src/flavor.ts`) drives the settings filter and the walkthrough id.
 - Both builds cannot run together (same commands): the Marketplace build stays off, with a warning offering to uninstall it, when `raboo.ai-autocomplete` is installed.
 - API keys (SecretStorage), global state and the default models folder are per id, so they do not carry over between builds; the README says so.

@@ -23,8 +23,9 @@ test('marketplaceManifest drops the proposed API and keeps the rest', () => {
   expect(JSON.stringify(pkg)).toBe(before);
   expect(pkg.enabledApiProposals).toBeDefined();
   expect('enabledApiProposals' in out).toBe(false);
-  for (const k of ['publisher', 'version', 'displayName']) expect(out[k]).toEqual(pkg[k]);
+  for (const k of ['publisher', 'version']) expect(out[k]).toEqual(pkg[k]);
   expect(out.name).toBe('ai-autocomplete-prediction');
+  expect(out.displayName).toBe('AI Autocomplete Prediction');
   expect(out.contributes.commands).toEqual(pkg.contributes.commands);
 });
 

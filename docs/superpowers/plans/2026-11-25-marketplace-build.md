@@ -40,13 +40,13 @@
 **Interfaces:**
 - Produces: `export const MARKETPLACE: boolean` (`src/flavor.ts`); `export function hasProposedApiOptIn(text: string, id: string): boolean` (`optIn.ts`, false for empty, malformed or non-object text); `export function marketplaceManifest(pkg: object): object` (`scripts/marketplaceManifest.mjs`); `menuEntries`/`menuGroups` take the flavour through `MenuInputs.marketplace?: true`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `marketplaceManifest(pkg)` on the real `package.json`: no `enabledApiProposals` key; `name`, `publisher`, `version`, `contributes.commands` deep-equal the original; the `native` entry of `aiAutocomplete.nextEdit.display`'s `markdownEnumDescriptions` mentions the GitHub or Open VSX build; the input object is not mutated.
   - `MARKETPLACE` is `false` under vitest.
   - `hasProposedApiOptIn`: `'{"enable-proposed-api":["raboo.ai-autocomplete"]}'` → true; with comments and trailing comma → true; other ids only → false; `''`, `'{'`, `'[]'` → false.
   - Status menu: with `marketplace: true` and `nativeNextEdit: false`, no `enableNativeNextEdit` entry; without `marketplace`, unchanged.
-- [ ] **Step 2: Run to verify failure** — `npx vitest run test/unit/flavor.test.ts test/unit/statusModel.test.ts` FAIL.
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run to verify failure** — `npx vitest run test/unit/flavor.test.ts test/unit/statusModel.test.ts` FAIL.
+- [x] **Step 3: Implement**
   - `esbuild.mjs`: `define: { __MARKETPLACE__: JSON.stringify(process.env.AI_AUTOCOMPLETE_FLAVOR === 'marketplace') }` on the extension build only.
   - `src/flavor.ts`: `typeof __MARKETPLACE__ !== 'undefined' && __MARKETPLACE__ === true`.
   - Controller: in the Marketplace build a `native` display setting is treated as `auto` before `displayFor`.
@@ -54,8 +54,8 @@
   - `extension.ts`: log the flavour in the existing native-probe log line; in the Marketplace build, read argv.json (same path logic as the command, skipped on the remote side) and if `hasProposedApiOptIn` is true show one notice that this is the Marketplace build, which cannot show the native view, with "Open releases"; read errors are logged at debug and ignored.
   - `scripts/package-marketplace.mjs`: read `package.json` text, write `JSON.stringify(marketplaceManifest(pkg), null, 2) + '\n'`, run `npx --no-install vsce package --no-dependencies -o ai-autocomplete-<version>-marketplace.vsix` with `AI_AUTOCOMPLETE_FLAVOR=marketplace` (inherit stdio), restore the original text in `finally`, exit with vsce's code.
   - `package.json`: `"package:marketplace": "node scripts/package-marketplace.mjs"`.
-- [ ] **Step 4: Verify** — `npm run build && npm run typecheck && npm run lint && npm test` pass; then `npm run package:marketplace`, `git diff --exit-code package.json`, and `unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json | grep -c enabledApiProposals` prints `0`; `npm run package` afterwards gives a `.vsix` whose `extension/package.json` still lists `inlineCompletionsAdditions`. Delete both `.vsix` files.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Verify** — `npm run build && npm run typecheck && npm run lint && npm test` pass; then `npm run package:marketplace`, `git diff --exit-code package.json`, and `unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json | grep -c enabledApiProposals` prints `0`; `npm run package` afterwards gives a `.vsix` whose `extension/package.json` still lists `inlineCompletionsAdditions`. Delete both `.vsix` files.
+- [x] **Step 5: Commit**
 ```bash
 git add src/flavor.ts src/types/flavor.d.ts scripts/package-marketplace.mjs scripts/marketplaceManifest.mjs esbuild.mjs package.json src/nextEdit/optIn.ts src/ui/statusModel.ts src/ui/commands.ts src/nextEdit/vscode/controller.ts src/extension.ts test/unit/flavor.test.ts test/unit/statusModel.test.ts <optIn test file>
 git commit -m "feat: Marketplace build without the proposed API"

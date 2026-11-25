@@ -67,9 +67,9 @@ git commit -m "feat: Marketplace build without the proposed API"
 - Modify: `.github/workflows/ci.yml`, `.github/workflows/release-please.yml`, `docs/PUBLISHING.md`, `README.md`, `AGENTS.md`, `docs/ROADMAP.md`
 - Test: `test/unit/repoAutomation.test.ts`
 
-- [ ] **Step 1: Write the failing tests** in `repoAutomation.test.ts`: `ci.yml`'s `check` job runs `npm run package:marketplace` after `npm run package` and checks the packaged manifest has no `enabledApiProposals`; `release-please.yml` has a job `marketplace` with `needs: vsix`, permissions `contents: read` and `id-token: write`, a `timeout-minutes`, `vsce publish --oidc`, and a skip notice unless `vars.MARKETPLACE_PUBLISH == 'true'`; no `VSCE_PAT` anywhere; the `vsix` job uploads the artifact `vsix-marketplace` and its `gh release upload` names only the full package (not a glob that matches `-marketplace`).
-- [ ] **Step 2: Run to verify failure** — `npx vitest run test/unit/repoAutomation.test.ts` FAIL.
-- [ ] **Step 3: Implement**
+- [x] **Step 1: Write the failing tests** in `repoAutomation.test.ts`: `ci.yml`'s `check` job runs `npm run package:marketplace` after `npm run package` and checks the packaged manifest has no `enabledApiProposals`; `release-please.yml` has a job `marketplace` with `needs: vsix`, permissions `contents: read` and `id-token: write`, a `timeout-minutes`, `vsce publish --oidc`, and a skip notice unless `vars.MARKETPLACE_PUBLISH == 'true'`; no `VSCE_PAT` anywhere; the `vsix` job uploads the artifact `vsix-marketplace` and its `gh release upload` names only the full package (not a glob that matches `-marketplace`).
+- [x] **Step 2: Run to verify failure** — `npx vitest run test/unit/repoAutomation.test.ts` FAIL.
+- [x] **Step 3: Implement**
   - `ci.yml` `check`: after `npm run package`, `npm run package:marketplace` and `unzip -p ai-autocomplete-*-marketplace.vsix extension/package.json | grep -q enabledApiProposals && exit 1 || true` (or equivalent); the existing artifact keeps `*.vsix`.
   - `release-please.yml` `vsix`: upload `ai-autocomplete-<version>.vsix` by its exact name (version from the tag); then, only if `package.json` has a `package:marketplace` script (old tags skip with a notice), `npm run package:marketplace` and upload artifact `vsix-marketplace`.
   - New job `marketplace` mirroring `open-vsx`: checkout `github.sha`, `npm ci --ignore-scripts`, download `vsix-marketplace` (skip with a notice when it is missing), skip with a notice unless `MARKETPLACE_PUBLISH` is `true` (passed in through `env` from `vars`), require exactly one file, `npx --no-install vsce publish --oidc --packagePath "$file"`.
@@ -77,8 +77,8 @@ git commit -m "feat: Marketplace build without the proposed API"
   - `README.md`: install from the Marketplace; the Marketplace build shows Next Edit with decorations; for the native view install the GitHub `.vsix` and turn off auto-update for the extension.
   - `AGENTS.md`: the workflow list names the `marketplace` job; the approval line says releases publish to the Marketplace automatically once the owner has created the Trusted Publishing policy and set `MARKETPLACE_PUBLISH`; agents never create or change either; "Needs a human" names the policy and the variable instead of a Marketplace token.
   - `docs/ROADMAP.md`: row 5b design and plan links, status "in progress".
-- [ ] **Step 4: Verify** — `npm run build && npm run typecheck && npm run lint && npm test` pass; actionlint passes in CI.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Verify** — `npm run build && npm run typecheck && npm run lint && npm test` pass; actionlint passes in CI.
+- [x] **Step 5: Commit**
 ```bash
 git add .github/workflows/ci.yml .github/workflows/release-please.yml docs/PUBLISHING.md README.md AGENTS.md docs/ROADMAP.md test/unit/repoAutomation.test.ts
 git commit -m "ci: build and publish the Marketplace package"

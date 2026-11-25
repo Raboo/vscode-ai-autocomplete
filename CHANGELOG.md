@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.6.1...v1.6.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* show the Marketplace build as AI Autocomplete Prediction ([#42](https://github.com/Raboo/vscode-ai-autocomplete/issues/42)) ([7093f09](https://github.com/Raboo/vscode-ai-autocomplete/commit/7093f0969982ac619ca5a62b5bd5abfe73d74768))
+
 ## [1.6.1](https://github.com/Raboo/vscode-ai-autocomplete/compare/v1.6.0...v1.6.1) (2026-11-25)
 
 
